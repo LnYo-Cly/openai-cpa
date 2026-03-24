@@ -30,7 +30,7 @@ from curl_cffi import CurlMime
 
 # ================= 配置区开始 =================
 # 可选值: "imap" / "freemail" / "cloudflare_temp_email"
-EMAIL_API_MODE = "imap"
+EMAIL_API_MODE = "cloudflare_temp_email"
 
 # [公共配置: cloudflare_temp_email / imap 共享]
 MAIL_DOMAINS = "domain1.com,domain2.xyz,domain3.net" # 你的域名 (支持逗号分隔多域名随机轮换) 如果只有一个域名就只填一个域名
@@ -48,6 +48,11 @@ FREEMAIL_API_TOKEN = ""
 
 # [模式 "cloudflare_temp_email" 专属配置]
 ADMIN_AUTH = "" # 你的临时邮箱管理员密码
+
+
+
+# [验证码重发配置]
+MAX_OTP_RETRIES = 5  # 验证码重试次数
 
 DEFAULT_PROXY = "" #openai注册时代理地址，例子：http://127.0.0.1:7897。如果是国外服务器此项可以不填
 # [邮箱代理专项配置]
@@ -125,6 +130,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
     
     if EMAIL_API_MODE == "freemail":
         headers = {"Authorization": f"Bearer {FREEMAIL_API_TOKEN}", "Content-Type": "application/json"}
+        api_params = {}
 
         try:
             domain_res = requests.get(
@@ -132,26 +138,20 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                 headers=headers, 
                 proxies=mail_proxies, 
                 verify=_ssl_verify(), 
-                timeout=60
+                timeout=15
             )
-            domain_res.raise_for_status()
-            domains_list = domain_res.json()
+            raw_text = domain_res.text.strip()
             
-            if not domains_list or not isinstance(domains_list, list):
-                print(f"[{ts()}] [ERROR] Freemail 后端无可用的域名库存！")
-                return None, None
-
-            random_domain_index = random.randint(0, len(domains_list) - 1)
-            print(f"[{ts()}] [INFO] 成功拉取 Freemail 域名列表，随机选用: {domains_list[random_domain_index]}")
-
+            if raw_text.upper() == "OK" or not raw_text.startswith("["):
+                api_params["domainIndex"] = 0
+            else:
+                domains_list = domain_res.json()
+                if isinstance(domains_list, list) and len(domains_list) > 0:
+                    random_domain_index = random.randint(0, len(domains_list) - 1)
+                    api_params["domainIndex"] = random_domain_index
         except Exception as e:
-            print(f"[{ts()}] [ERROR] 获取 Freemail 可用域名列表失败: {e}")
-            return None, None
-        
-        
-        api_params = {
-            "domainIndex": random_domain_index
-        }
+            print(f"[{ts()}] [WARNING] 探测 Freemail 域名列表时出现小插曲: {e}。将直接使用默认参数生成。")
+            
         for attempt in range(5):
             try:
                 res = requests.get(
@@ -435,17 +435,33 @@ def get_oai_code(email: str, jwt: str = "", proxies: Any = None, processed_mail_
                 )
 
                 if res.status_code == 200:
-                    emails_list = res.json()
-                    if isinstance(emails_list, list) and emails_list:
-                        for mail in emails_list:
-                            mail_id = mail.get("id")
-                            if not mail_id or mail_id in processed_mail_ids:
-                                continue
-                            
-                            code = str(mail.get("verification_code") or "")
-                            
-                            if not code:
-                                content = str(mail.get("subject") or "")
+                    raw_data = res.json()
+                    
+                    if isinstance(raw_data, dict):
+                        emails_list = raw_data.get("data") or raw_data.get("emails") or raw_data.get("messages") or raw_data.get("results") or []
+                    else:
+                        emails_list = raw_data
+                        
+                    if not isinstance(emails_list, list):
+                        emails_list = []
+
+                    for mail in emails_list:
+                        mail_id = str(mail.get("id") or mail.get("timestamp") or mail.get("subject") or "")
+                        if not mail_id or mail_id in processed_mail_ids:
+                            continue
+                        
+                        subject_text = str(mail.get("subject") or mail.get("title") or "")
+                        code = ""
+                        
+                        code_match = re.search(r'(?<!\d)(\d{6})(?!\d)', subject_text)
+                        if code_match:
+                            code = code_match.group(1)
+                        
+                        if not code:
+                            code = str(mail.get("code") or mail.get("verification_code") or "")
+                        
+                        if not code:
+                            try:
                                 detail_res = requests.get(
                                     f"{FREEMAIL_API_URL.rstrip('/')}/api/email/{mail_id}",
                                     headers=headers,
@@ -458,12 +474,14 @@ def get_oai_code(email: str, jwt: str = "", proxies: Any = None, processed_mail_
                                         str(detail.get("content") or ""),
                                         str(detail.get("html_content") or ""),
                                     ]))
-                                code = _extract_otp_code(content)
-                            
-                            if code:
-                                processed_mail_ids.add(mail_id)
-                                print(f" 提取成功: {code}")
-                                return code
+                                    code = _extract_otp_code(content)
+                            except Exception:
+                                pass
+                        
+                        if code:
+                            processed_mail_ids.add(mail_id)
+                            print(f" 提取成功: {code}")
+                            return code
             else:
                 if jwt:
                     res = requests.get(
@@ -568,22 +586,33 @@ def _to_int(v: Any) -> int:
     try: return int(v)
     except (TypeError, ValueError): return 0
 
-def _post_form(url: str, data: Dict[str, str], proxies: Any = None, timeout: int = 30) -> Dict[str, Any]:
-    try:
-        resp = requests.post(
-            url, 
-            data=data, 
-            headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
-            proxies=proxies,
-            verify=_ssl_verify(),
-            timeout=timeout,
-            impersonate="chrome110"
-        )
-        if resp.status_code != 200: 
-            raise RuntimeError(f"token exchange failed: {resp.status_code}: {resp.text}")
-        return resp.json()
-    except Exception as exc:
-        raise RuntimeError(f"token exchange request failed: {exc}") from exc
+def _post_form(url: str, data: Dict[str, str], proxies: Any = None, timeout: int = 30, retries: int = 3) -> Dict[str, Any]:
+    """带有自动重试机制的表单提交 (用于对抗 TLS 闪断和代理掉线)"""
+    last_error: Optional[Exception] = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(
+                url, 
+                data=data, 
+                headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+                proxies=proxies,
+                verify=_ssl_verify(),
+                timeout=timeout,
+                impersonate="chrome110"
+            )
+            if resp.status_code != 200: 
+                raise RuntimeError(f"token exchange failed: {resp.status_code}: {resp.text}")
+            return resp.json()
+        except Exception as exc:
+            last_error = exc
+            if attempt < retries:
+                print(f"\n[{ts()}] [WARNING] 换取 Token 时遇到网络异常: {exc}。")
+                print(f"[{ts()}] [INFO] 正在给代理缓冲时间，准备第 {attempt + 1}/{retries} 次重试...")
+                time.sleep(2 * (attempt + 1))
+            else:
+                break
+                
+    raise RuntimeError(f"token exchange request failed after {retries} retries: {last_error}") from last_error
 
 def _post_with_retry(
     session: requests.Session, url: str, *, headers: Dict[str, Any], data: Any = None,
@@ -760,7 +789,7 @@ def run(proxy: Optional[str]) -> tuple:
                 _post_with_retry(s, otp_url if otp_url.startswith("http") else f"https://auth.openai.com{otp_url}", headers={"openai-sentinel-token": sentinel, "content-type": "application/json"}, json_body={}, proxies=proxies, timeout=30)
             
             code = ""
-            for resend_attempt in range(5):
+            for resend_attempt in range(max(1, MAX_OTP_RETRIES)):
                 if resend_attempt > 0:
                     print(f"\n[{ts()}] [INFO] 正在重试 {resend_attempt}/5...")
                     try:
@@ -807,7 +836,7 @@ def run(proxy: Optional[str]) -> tuple:
             pwd_json = pwd_login_resp.json() if pwd_login_resp.status_code == 200 else {}
             if pwd_json.get("page", {}).get("type", "") == "email_otp_verification" or "verify" in str(pwd_json.get("continue_url", "")):
                 code2 = ""
-                for resend_attempt in range(5):
+                for resend_attempt in range(max(1, MAX_OTP_RETRIES)):
                     if resend_attempt > 0:
                         print(f"\n[{ts()}] [INFO] 正在重试 {resend_attempt}/5...")
                         try:
