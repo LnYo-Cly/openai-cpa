@@ -1,7 +1,7 @@
 # [邮箱 API 模式选择]
 # https://github.com/smanx/freemail
 # https://github.com/dreamhunter2333/cloudflare_temp_email
-# https://github.com/wenfxl/cloud-mail
+# https://github.com/maillab/cloud-mail
 # https://github.com/s12ryt/mail-curl
 # 可选值: "imap" / "freemail" / "cloudflare_temp_email" / "cloudmail" / "mail_curl"
 email_api_mode: "cloudflare_temp_email"
@@ -119,6 +119,8 @@ cpa_mode:
   remove_dead_accounts: false
   # CPA 仓库巡检的间隔时间，默认每60分钟巡检一次
   check_interval_minutes: 60
+  #并发线程数配置，默认 10 线程
+  threads: 10
 
 # 常规量产模式专属配置
 normal_mode:
