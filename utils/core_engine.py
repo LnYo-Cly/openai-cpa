@@ -1085,6 +1085,7 @@ class RegEngine:
     def start_normal(self, args):
         if self.is_running():
             return
+        self._force_stopped = False
         self.thread_stop_event.clear()
         args.check_stop = lambda: self.thread_stop_event.is_set()
         self.current_thread = threading.Thread(
@@ -1097,6 +1098,8 @@ class RegEngine:
     def start_cpa(self, args):
         if self.is_running():
             return
+        self._force_stopped = False
+        cfg.GLOBAL_STOP = False
         self.thread_stop_event.clear()
         self.current_thread = threading.Thread(
             target=self._run_cpa_in_thread, args=(args,), daemon=True
@@ -1106,6 +1109,8 @@ class RegEngine:
     def start_sub2api(self, args):
         if self.is_running():
             return
+        self._force_stopped = False
+        cfg.GLOBAL_STOP = False
         self.thread_stop_event.clear()
         self.current_thread = threading.Thread(
             target=self._run_sub2api_in_thread, args=(args,), daemon=True
@@ -1135,6 +1140,7 @@ class RegEngine:
 
     def stop(self):
         self._force_stopped = True
+        cfg.GLOBAL_STOP = True
         self.thread_stop_event.set()
         if self.loop and self.async_stop_event:
             self.loop.call_soon_threadsafe(self.async_stop_event.set)
