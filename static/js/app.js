@@ -157,6 +157,10 @@ createApp({
             try {
                 const res = await this.authFetch('/api/config');
                 this.config = await res.json();
+				
+				if (!this.config.sub_domain_level) {
+                    this.config.sub_domain_level = 1;
+                }
                 if(this.config.clash_proxy_pool && Array.isArray(this.config.clash_proxy_pool.blacklist)) {
                     this.blacklistStr = this.config.clash_proxy_pool.blacklist.join('\n');
                 }
@@ -491,14 +495,15 @@ createApp({
 		async executeGenerateDomainsOnly() {
 			if (!this.config.mail_domains) return this.showToast('请先填写上方的主发信域名池！', 'warning');
 			
-			const count = this.config.sub_domain_count || 10; 
+			const level = this.config.sub_domain_level || 1;
 
 			try {
 				const res = await this.authFetch('/api/config/generate_subdomains', {
 					method: 'POST',
 					body: JSON.stringify({
 						main_domains: this.config.mail_domains,
-						count: count,
+						count: this.config.sub_domain_count || 10,
+						level: level,
 						api_email: this.config.cf_api_email || '',
 						api_key: this.config.cf_api_key || '',
 						sync: false
