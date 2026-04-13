@@ -91,6 +91,13 @@ IMAP_PORT: int = 993
 IMAP_USER: str = ""
 IMAP_PASS: str = ""
 
+LOCAL_MS_ENABLE_FISSION: bool = False
+LOCAL_MS_MASTER_EMAIL: str = ""
+LOCAL_MS_PASSWORD: str = ""
+LOCAL_MS_CLIENT_ID: str = ""
+LOCAL_MS_REFRESH_TOKEN: str = ""
+
+
 FREEMAIL_API_URL: str = ""
 FREEMAIL_API_TOKEN: str = ""
 
@@ -234,6 +241,7 @@ def reload_all_configs():
     global DUCK_USE_PROXY
     global CLUSTER_NODE_NAME, CLUSTER_MASTER_URL, CLUSTER_SECRET
     global REG_MODE
+    global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN
 
     def safe_int(value, default, minimum=None):
         try:
@@ -334,6 +342,13 @@ def reload_all_configs():
     IMAP_USER        = _imap.get("user", "")
     IMAP_PASS        = _imap.get("pass", "")
 
+    _local_microsoft = _c.get("local_microsoft", {})
+    LOCAL_MS_ENABLE_FISSION = bool(_local_microsoft.get("enable_fission", False))
+    LOCAL_MS_MASTER_EMAIL = str(_local_microsoft.get("master_email", "")).strip()
+    LOCAL_MS_CLIENT_ID = str(_local_microsoft.get("client_id", "")).strip()
+    LOCAL_MS_REFRESH_TOKEN = str(_local_microsoft.get("refresh_token", "")).strip()
+
+
     _free            = _c.get("freemail", {})
     FREEMAIL_API_URL = str(_free.get("api_url", "")).strip().rstrip("/")
     FREEMAIL_API_TOKEN = _free.get("api_token", "")
@@ -416,6 +431,7 @@ def reload_all_configs():
     LUCKMAIL_EMAIL_TYPE = str(_luckmail.get("email_type") or "ms_graph").strip()
     LUCKMAIL_VARIANT_MODE = str(_luckmail.get("variant_mode") or "").strip()
     LUCKMAIL_REUSE_PURCHASED = bool(_luckmail.get("reuse_purchased", False))
+
     _raw_tag_id = _luckmail.get("tag_id")
     try:
         LUCKMAIL_TAG_ID = int(_raw_tag_id) if _raw_tag_id else None

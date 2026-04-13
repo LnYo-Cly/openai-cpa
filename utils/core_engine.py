@@ -482,14 +482,18 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
     if getattr(cfg, 'GLOBAL_STOP', False):
         return "stopped"
     global run_stats
-
+    is_dead = False
     if run_ctx:
         if run_ctx.get('pwd_blocked'):
             with _stats_lock: run_stats["pwd_blocked"] += 1
+            is_dead = True
         if run_ctx.get('phone_verify'):
             with _stats_lock: run_stats["phone_verify"] += 1
-
+            is_dead = True
     last_email = mail_service.get_last_email()
+    if is_dead and getattr(cfg, "EMAIL_API_MODE", "") == "local_microsoft" and last_email:
+        db_manager.update_local_mailbox_status(last_email, 3)
+        print(f"[{ts()}] [WARNING] 触发风控(出手机/密码受阻)，已将邮箱标记为死号: {mask_email(last_email)}")
     cur_dom = last_email.split("@")[-1] if last_email and "@" in last_email else None
 
     token_json_str = None
@@ -520,7 +524,8 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
         if (cpa_upload and cfg.SAVE_TO_LOCAL_IN_CPA_MODE) or not cpa_upload:
             if db_manager.save_account_to_db(account_email, password, token_json_str):
                 print(f"[{ts()}] [SUCCESS] 账号密码与 Token 已安全存入: {mask_email(account_email)}")
-
+        if cfg.EMAIL_API_MODE == "local_microsoft":
+            db_manager.update_local_mailbox_status(account_email, 2)
         # CPA 云端上传
         if cpa_upload:
             success, up_msg = upload_to_cpa_integrated(token_data, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)

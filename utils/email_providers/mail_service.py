@@ -20,7 +20,6 @@ from utils.integrations.ai_service import AIService
 from utils.email_providers.gmail_service import get_gmail_otp_via_oauth
 from utils.email_providers.duckmail_service import DuckMailService
 
-
 class ProxyIMAP4_SSL(imaplib.IMAP4_SSL):
     """支持 Socks5 和 HTTP 代理的局部 IMAP 客户端"""
 
@@ -112,8 +111,24 @@ def mask_email(text: str, force_mask: bool = False) -> str:
     if not text:
         return ""
     if "@" in text:
-        prefix, _ = text.split("@", 1)
-        return f"{prefix}@***.***"
+        try:
+            user_part, _ = text.split("@", 1)
+
+            if "+" in user_part:
+                main_acc, alias_suffix = user_part.split("+", 1)
+
+                m_keep = 2 if len(main_acc) > 2 else 1
+                masked_main = main_acc[:m_keep] + "***"
+
+                a_keep = 2 if len(alias_suffix) > 2 else 1
+                masked_alias = alias_suffix[:a_keep] + "***"
+
+                return f"{masked_main}+{masked_alias}@***.***"
+            else:
+                u_keep = 2 if len(user_part) > 2 else 1
+                return f"{user_part[:u_keep]}***@***.***"
+        except:
+            return "******@***.***"
 
     domain_match = re.match(r"^([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?$", text)
     if domain_match:
@@ -321,6 +336,20 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         except Exception as e:
             print(f"[{cfg.ts()}] [ERROR] TempMail.org 流程异常: {e}")
         return None, None
+
+    if mode == "local_microsoft":
+        from utils.email_providers.local_microsoft_service import LocalMicrosoftService
+        ms_service = LocalMicrosoftService(proxies=mail_proxies)
+
+        mailbox_info = ms_service.get_unused_mailbox()
+        if not mailbox_info:
+            print(f"[{cfg.ts()}] [WARNING] 微软邮箱库已耗尽，请前往前端导入更多账号。")
+            return None, None
+
+        email = mailbox_info["email"]
+        set_last_email(email)
+        print(f"[{cfg.ts()}] [INFO] 微软库分配并锁定账号: ({mask_email(email)})")
+        return email, json.dumps(mailbox_info, ensure_ascii=False)
 
     prefix, ai_enabled = _get_ai_data_package()
 
@@ -534,6 +563,42 @@ def _create_imap_conn(proxy_str=None):
         return ProxyIMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, proxy_url=proxy_str, timeout=15)
     return imaplib.IMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, timeout=15)
 
+def _poll_local_ms_for_oai_code_graph(ms_service, target_email: str, mailbox_dict: dict, max_attempts: int) -> str:
+    from datetime import datetime
+    assigned_at = float(mailbox_dict.get("assigned_at") or time.time())
+    tgt = target_email.lower()
+    print(f"[{cfg.ts()}] [SYSTEM] 进入 Graph 轮询器，目标: {mask_email(target_email)}", flush=True)
+
+    for attempt in range(max_attempts):
+        if getattr(cfg, 'GLOBAL_STOP', False): return ""
+
+        messages = ms_service.fetch_openai_messages(mailbox_dict)
+        if not messages:
+            if attempt % 2 == 0:
+                print(f"[{cfg.ts()}] [INFO] 尝试第 {attempt + 1} 次: 未发现任何 OpenAI 邮件", flush=True)
+        else:
+            for msg in messages:
+                subject = msg.get('subject', '')
+                sender = msg.get('from', {}).get('emailAddress', {}).get('address', '')
+                recipients = [r.get('emailAddress', {}).get('address', '').lower() for r in msg.get('toRecipients', [])]
+                raw_date = msg.get('receivedDateTime', '').replace('Z', '+00:00')
+                try:
+                    received_ts = datetime.fromisoformat(raw_date).timestamp()
+                    if received_ts < assigned_at - 600:
+                        continue
+                except:
+                    continue
+
+                body_content = msg.get('body', {}).get('content', '')
+                if any(tgt in r for r in recipients) or tgt in body_content.lower():
+                    code = _extract_otp_code(f"{subject}\n{body_content}")
+                    if code:
+                        print(f"\n[{cfg.ts()}] [SUCCESS] 提取成功: {code}", flush=True)
+                        return code
+
+        time.sleep(5)
+    return ""
+
 
 def get_oai_code(
         email: str,
@@ -568,6 +633,28 @@ def get_oai_code(
         except Exception as e:
             print(f"\n[{cfg.ts()}] [ERROR] IMAP 初始登录失败: {e}")
             mail_conn = None
+
+    local_ms_account = None
+    if mode == "local_microsoft":
+        try:
+            parsed_jwt = json.loads(jwt or "{}")
+            local_ms_account = parsed_jwt if isinstance(parsed_jwt, dict) else None
+        except:
+            pass
+
+        if local_ms_account:
+            local_ms_account["email"] = str(local_ms_account.get("email") or email).strip().lower()
+            from utils.email_providers.local_microsoft_service import LocalMicrosoftService
+            ms_service = LocalMicrosoftService(proxies=mail_proxies)
+            return _poll_local_ms_for_oai_code_graph(
+                ms_service=ms_service,
+                target_email=email,
+                mailbox_dict=local_ms_account,
+                max_attempts=max_attempts
+            )
+        else:
+            print(f"\n[{cfg.ts()}] [ERROR] 缺少微软邮箱凭据，无法收信。")
+
 
     for attempt in range(max_attempts):
         if getattr(cfg, 'GLOBAL_STOP', False): return ""

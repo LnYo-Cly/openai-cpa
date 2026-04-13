@@ -9,18 +9,19 @@ import threading
 import sys
 import subprocess
 import yaml
+import urllib.parse
 import httpx
 from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from cloudflare import Cloudflare
 from utils import core_engine, db_manager
 from utils.config import reload_all_configs
 from utils.integrations.sub2api_client import Sub2APIClient
 from utils.integrations.tg_notifier import send_tg_msg_async
 from utils.email_providers.gmail_oauth_handler import GmailOAuthHandler
-
+from curl_cffi import requests as cffi_requests
 from global_state import VALID_TOKENS, CLUSTER_NODES, NODE_COMMANDS, cluster_lock, log_history, engine, verify_token, worker_status
 import utils.config as cfg
 
@@ -85,6 +86,23 @@ class ExtResultReq(BaseModel):
     expected_state: Optional[str] = ""
     error_type: Optional[str] = "failed"
 
+class ImportMailboxReq(BaseModel):
+    raw_text: str
+
+class DeleteMailboxReq(BaseModel):
+    ids: list[Any]
+
+class OutlookAuthUrlReq(BaseModel):
+    client_id: str
+
+class OutlookExchangeReq(BaseModel):
+    email: str
+    client_id: str
+    code_or_url: str
+
+class UpdateMailboxStatusReq(BaseModel):
+    emails: list[str]
+    status: int
 # ==========================================
 # 辅助函数
 # ==========================================
@@ -302,6 +320,15 @@ async def get_config(token: str = Depends(verify_token)):
     if isinstance(config_data.get("sub2api_mode"), dict):
         config_data["sub2api_mode"].pop("min_remaining_weekly_percent", None)
     config_data["web_password"] = config_data.get("web_password", "admin")
+    if "local_microsoft" not in config_data:
+        config_data["local_microsoft"] = {
+            "enable_fission": False,
+            "master_email": "",
+            "client_id": "",
+            "refresh_token": ""
+        }
+
+
     return config_data
 
 
@@ -948,11 +975,15 @@ def ext_submit_result(req: ExtResultReq, token: str = Depends(verify_token)):
         return {"status": "success", "message": "战利品已入库"}
     else:
         core_engine.run_stats['failed'] = core_engine.run_stats.get('failed', 0) + 1
+        is_dead_account = False
         if req.error_type == 'phone_verify':
             core_engine.run_stats['phone_verify'] = core_engine.run_stats.get('phone_verify', 0) + 1
+            is_dead_account = True
         elif req.error_type == 'pwd_blocked':
             core_engine.run_stats['pwd_blocked'] = core_engine.run_stats.get('pwd_blocked', 0) + 1
-
+        if is_dead_account and getattr(cfg, "EMAIL_API_MODE", "") == "local_microsoft" and req.email:
+            db_manager.update_local_mailbox_status(req.email, 3)
+            print(f"[{cfg.ts()}] [WARNING] 插件上报邮箱不可用，已将邮箱标记为死号: {req.email}")
         return {"status": "success", "message": "异常统计已录入看板"}
 
 
@@ -985,3 +1016,119 @@ def ext_reset_stats(token: str = Depends(verify_token)):
         "target": getattr(core_engine.cfg, 'NORMAL_TARGET_COUNT', 0)
     })
     return {"status": "success"}
+
+
+@router.get("/api/mailboxes")
+async def get_mailboxes(page: int = Query(1), page_size: int = Query(50), token: str = Depends(verify_token)):
+    result = db_manager.get_local_mailboxes_page(page, page_size)
+    return {"status": "success", "data": result["data"], "total": result["total"], "page": page, "page_size": page_size}
+
+
+@router.post("/api/mailboxes/import")
+async def import_mailboxes(req: ImportMailboxReq, token: str = Depends(verify_token)):
+    if not req.raw_text: return {"status": "error", "message": "内容为空"}
+
+    parsed_mailboxes = []
+    lines = req.raw_text.strip().split("\n")
+    for line in lines:
+        text = line.strip()
+        if not text or text.startswith("#"): continue
+        parts = [p.strip() for p in text.split("----")]
+        if len(parts) >= 2 and "@" in parts[0]:
+            parsed_mailboxes.append({
+                "email": parts[0].lower(),
+                "password": parts[1],
+                "client_id": parts[2] if len(parts) >= 3 else "",
+                "refresh_token": parts[3] if len(parts) >= 4 else ""
+            })
+
+    if not parsed_mailboxes: return {"status": "error", "message": "未能识别出有效数据"}
+    count = db_manager.import_local_mailboxes(parsed_mailboxes)
+    return {"status": "success", "count": count}
+
+
+@router.post("/api/mailboxes/delete")
+async def delete_mailboxes(req: DeleteMailboxReq, token: str = Depends(verify_token)):
+    if not req.ids: return {"status": "error", "message": "未收到任何要删除的ID"}
+    if db_manager.delete_local_mailboxes(req.ids):
+        return {"status": "success", "message": "删除成功"}
+    return {"status": "error", "message": "删除操作失败"}
+
+
+@router.post("/api/mailboxes/oauth_url")
+async def get_outlook_oauth_url(req: OutlookAuthUrlReq, token: str = Depends(verify_token)):
+    if not req.client_id:
+        return {"status": "error", "message": "缺少 Client ID"}
+
+    redirect_uri = "http://localhost"
+    scope_str = urllib.parse.quote("offline_access https://graph.microsoft.com/Mail.Read")
+    auth_url = (
+        f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        f"?client_id={req.client_id}"
+        f"&response_type=code"
+        f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
+        f"&response_mode=query"
+        f"&scope={scope_str}"
+    )
+    return {"status": "success", "url": auth_url}
+
+
+@router.post("/api/mailboxes/oauth_exchange")
+async def exchange_outlook_oauth_code(req: OutlookExchangeReq, token: str = Depends(verify_token)):
+    try:
+        auth_code = req.code_or_url.strip()
+        if "http" in auth_code or "code=" in auth_code:
+            parsed_url = urllib.parse.urlparse(auth_code)
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            extracted = query_params.get("code", [None])[0]
+            if extracted:
+                auth_code = extracted
+            else:
+                return {"status": "error", "message": "无法从网址中提取 code 参数，请确保复制了完整的网址。"}
+
+        token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+        payload = {
+            "client_id": req.client_id,
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": "http://localhost"
+        }
+
+        proxy_url = getattr(cfg, 'DEFAULT_PROXY', None)
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+        response = cffi_requests.post(token_url, data=payload, proxies=proxies, timeout=15, impersonate="chrome110")
+        data = response.json()
+
+        if response.status_code == 200:
+            refresh_token = data.get("refresh_token")
+            import sqlite3
+            from utils.db_manager import DB_PATH
+            with sqlite3.connect(DB_PATH, timeout=10) as conn:
+                conn.execute(
+                    "UPDATE local_mailboxes SET client_id = ?, refresh_token = ?, status = 0 WHERE email = ?",
+                    (req.client_id, refresh_token, req.email)
+                )
+                conn.commit()
+            return {"status": "success", "message": f"授权成功！已为 {req.email} 绑定永久 Token。", "refresh_token": refresh_token}
+        else:
+            return {"status": "error", "message": f"获取失败: {data.get('error_description', data)}"}
+
+    except Exception as e:
+        return {"status": "error", "message": f"处理异常: {str(e)}"}
+
+
+@router.post("/api/mailboxes/update_status")
+async def update_mailboxes_status(req: UpdateMailboxStatusReq, token: str = Depends(verify_token)):
+    if not req.emails:
+        return {"status": "error", "message": "未收到任何邮箱"}
+
+    success_count = 0
+    for email in req.emails:
+        try:
+            db_manager.update_local_mailbox_status(email, req.status)
+            success_count += 1
+        except Exception as e:
+            pass
+
+    return {"status": "success", "message": f"成功将 {success_count} 个邮箱状态重置！"}

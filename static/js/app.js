@@ -13,6 +13,7 @@ createApp({
                 { id: 'console', name: '运行主页', icon: '💻' },
                 { id: 'cluster', name: '集群总控', icon: '🖥️' },
                 { id: 'email', name: '邮箱配置', icon: '📧' },
+                { id: 'mailboxes', name: '微软邮箱库', icon: '📬' },
                 { id: 'accounts', name: '账号库存', icon: '📦' },
                 { id: 'cloud', name: '云端库存', icon: '☁️' },
                 { id: 'sms', name: '手机接码', icon: '📱' },
@@ -77,7 +78,8 @@ createApp({
                 ai_base: true, cluster_url: true, proxy: true, clash_api: true,
                 clash_test: true, tg_token: false, tg_chatid: false, cpa_url: true, sub_url: true,
                 cluster_secret: false, hero_key: false, duck_token: false, duck_cookie: false,
-                luckmail: false
+                luckmail: false,
+                master_rt: false
             },
 
             toasts: [],
@@ -106,6 +108,23 @@ createApp({
             currentCloudDetail: null,
             nowTimestamp: Math.floor(Date.now() / 1000),
             clusterNodes: {},
+            mailboxes: [],
+            selectedMailboxes: [],
+            mailboxPage: 1,
+            mailboxPageSize: 10,
+            totalMailboxes: 0,
+            showImportMailboxModal: false,
+            importMailboxText: '',
+            isImportingMailbox: false,
+            outlookAuth: {
+                showModal: false,
+                mailbox: null,
+                currentClientId: '',
+                authUrl: '',
+                pastedUrl: '',
+                isGenerating: false,
+                isLoading: false
+            },
         };
     },
     mounted() {
@@ -131,6 +150,9 @@ createApp({
         },
         cloudTotalPages() {
             return Math.ceil(this.cloudTotal / this.cloudPageSize) || 1;
+        },
+        mailboxTotalPages() {
+            return Math.ceil(this.totalMailboxes / this.mailboxPageSize) || 1;
         }
     },
     methods: {
@@ -253,6 +275,14 @@ createApp({
                 if (!this.config.tg_bot) {
                     this.config.tg_bot = { enable: false, token: '', chat_id: '' };
                 }
+                if (!this.config.local_microsoft) {
+                    this.config.local_microsoft = {
+                        enable_fission: false,
+                        master_email: '',
+                        client_id: '',
+                        refresh_token: ''
+                    };
+                }
                 if (!this.config.reg_mode) {
                         this.config.reg_mode = 'protocol';
                     }
@@ -367,6 +397,9 @@ createApp({
                 this.initClusterWebSocket();
             } else {
                 if (this.clusterWs) this.clusterWs.close();
+            }
+            if (tabId === 'mailboxes') {
+                this.fetchMailboxes();
             }
         },
         async exportSelectedAccounts() {
@@ -1681,6 +1714,221 @@ createApp({
                 this.isExtConnected = false;
                 window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
                 console.log("🛑 [总控] 已进入协议模式，切断插件链路。");
+            }
+        },
+        async fetchMailboxes(isManual = false) {
+            if (isManual) this.mailboxPage = 1;
+            try {
+                const res = await this.authFetch(`/api/mailboxes?page=${this.mailboxPage}&page_size=${this.mailboxPageSize}`);
+                const data = await res.json();
+                if(data.status === 'success') {
+                    this.mailboxes = data.data;
+                    this.totalMailboxes = data.total || this.mailboxes.length;
+                    this.selectedMailboxes = [];
+                    if (isManual) this.showToast("邮箱库已刷新！", "success");
+                }
+            } catch (e) {
+                console.error("获取邮箱库失败:", e);
+            }
+        },
+        changeMailboxPage(newPage) {
+            if (newPage < 1 || newPage > this.mailboxTotalPages) return;
+            this.mailboxPage = newPage;
+            this.fetchMailboxes();
+        },
+        changeMailboxPageSize() {
+            this.mailboxPage = 1;
+            this.fetchMailboxes();
+        },
+        toggleAllMailboxes(event) {
+            if (event.target.checked) this.selectedMailboxes = [...this.mailboxes];
+            else this.selectedMailboxes = [];
+        },
+        async submitImportMailboxes() {
+            if (!this.importMailboxText.trim()) return this.showToast("请输入内容", "warning");
+            this.isImportingMailbox = true;
+            try {
+                const res = await this.authFetch('/api/mailboxes/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ raw_text: this.importMailboxText })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(`成功导入 ${data.count} 个邮箱！`, "success");
+                    this.showImportMailboxModal = false;
+                    this.importMailboxText = '';
+                    this.fetchMailboxes(true);
+                } else {
+                    this.showToast("导入失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("导入请求失败", "error");
+            } finally {
+                this.isImportingMailbox = false;
+            }
+        },
+        async deleteSelectedMailboxes() {
+            if (this.selectedMailboxes.length === 0) return;
+            const confirmed = await this.customConfirm(`确定要删除选中的 ${this.selectedMailboxes.length} 个邮箱吗？`);
+            if (!confirmed) return;
+
+            const idsToDelete = this.selectedMailboxes.map(m => m.id || m.email);
+            try {
+                const res = await this.authFetch('/api/mailboxes/delete', {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: idsToDelete })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast("删除成功", "success");
+                    this.fetchMailboxes();
+                } else {
+                    this.showToast("删除失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("请求异常", "error");
+            }
+        },
+        openOutlookAuthModal(mailbox) {
+            const cid = mailbox.client_id || this.config?.local_microsoft?.client_id;
+            if (!cid) {
+                this.showToast("🚫 请先在左侧【邮箱配置-微软邮箱库】面板中填写全局的 Client ID！", "warning");
+                return;
+            }
+            this.outlookAuth.mailbox = mailbox;
+            this.outlookAuth.currentClientId = cid;
+            this.outlookAuth.authUrl = '';
+            this.outlookAuth.pastedUrl = '';
+            this.outlookAuth.showModal = true;
+        },
+
+        async generateOutlookAuthUrl() {
+            this.outlookAuth.isGenerating = true;
+            try {
+                const res = await this.authFetch('/api/mailboxes/oauth_url', {
+                    method: 'POST',
+                    body: JSON.stringify({ client_id: this.config.local_microsoft.client_id })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.outlookAuth.authUrl = data.url;
+                } else {
+                    this.showToast("生成失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("网络请求异常", "error");
+            } finally {
+                this.outlookAuth.isGenerating = false;
+            }
+        },
+
+        async submitOutlookAuthCode() {
+            this.outlookAuth.isLoading = true;
+            try {
+                const res = await this.authFetch('/api/mailboxes/oauth_exchange', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: this.outlookAuth.mailbox.email,
+                        client_id: this.outlookAuth.currentClientId,
+                        code_or_url: this.outlookAuth.pastedUrl
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message, "success");
+                    this.outlookAuth.showModal = false;
+                    if (this.outlookAuth.mailbox.isFission && data.refresh_token) {
+                        this.config.local_microsoft.refresh_token = data.refresh_token;
+                        await this.saveConfig();
+                        this.showToast("✅ Token 已自动填入并保存！", "success");
+                    } else {
+                        this.fetchMailboxes();
+                    }
+                } else {
+                    this.showToast("换取失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("网络请求异常", "error");
+            } finally {
+                this.outlookAuth.isLoading = false;
+            }
+        },
+        openFissionAuthModal() {
+            if (!this.config.local_microsoft.client_id) {
+                this.showToast("🚫 请先填写全局 Client ID！", "warning");
+                return;
+            }
+            if (!this.config.local_microsoft.master_email) {
+                this.showToast("🚫 请先填写裂变主邮箱账号！", "warning");
+                return;
+            }
+
+            this.outlookAuth.mailbox = {
+                email: this.config.local_microsoft.master_email,
+                isFission: true
+            };
+            this.outlookAuth.currentClientId = this.config.local_microsoft.client_id;
+            this.outlookAuth.authUrl = '';
+            this.outlookAuth.pastedUrl = '';
+            this.outlookAuth.showModal = true;
+        },
+        exportSelectedMailboxesToTxt() {
+            if (this.selectedMailboxes.length === 0) {
+                this.showToast("请先勾选需要导出的邮箱", "warning");
+                return;
+            }
+            const textContent = this.selectedMailboxes
+                .map(m => {
+                    const pwd = m.password || '';
+                    const cid = m.client_id || '';
+                    const rt = m.refresh_token || '';
+                    return `${m.email}----${pwd}----${cid}----${rt}`;
+                })
+                .join('\n');
+
+            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            link.download = `microsoft_mailboxes_${dateStr}.txt`;
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            this.showToast(`🎉 成功导出 ${this.selectedMailboxes.length} 个邮箱到 TXT`, 'success');
+            this.selectedMailboxes = [];
+        },
+        async recoverSelectedMailboxes() {
+            if (this.selectedMailboxes.length === 0) {
+                this.showToast("请先勾选需要恢复的邮箱", "warning");
+                return;
+            }
+
+            const confirmed = await this.customConfirm(`确定要将选中的 ${this.selectedMailboxes.length} 个邮箱状态重置为【正常/闲置】吗？\n(可用于解除死号误标)`);
+            if (!confirmed) return;
+
+            const emailsToRecover = this.selectedMailboxes.map(m => m.email);
+
+            try {
+                const res = await this.authFetch('/api/mailboxes/update_status', {
+                    method: 'POST',
+                    body: JSON.stringify({ emails: emailsToRecover, status: 0 })
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    this.showToast(data.message, "success");
+                    this.selectedMailboxes = [];
+                    this.fetchMailboxes();
+                } else {
+                    this.showToast("恢复失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("请求异常", "error");
             }
         },
     }

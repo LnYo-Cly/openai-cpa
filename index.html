@@ -490,6 +490,114 @@
                             </div>
                         </div>
 
+                        <div v-show="currentTab === 'mailboxes'" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
+
+                            <div v-if="showImportMailboxModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                                <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col">
+                                    <h3 class="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><span>📥</span> 批量导入邮箱</h3>
+                                    <p class="text-xs text-slate-500 mb-3 font-bold bg-slate-50 p-2 rounded border border-slate-100">
+                                        支持格式 (每行一个): <br>
+                                        <code class="text-sky-600">email----password</code> <br>
+                                        <code class="text-sky-600">email----password----client_id----refresh_token</code>
+                                    </p>
+                                    <textarea v-model="importMailboxText" class="w-full h-64 appearance-none bg-slate-50 border border-slate-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-xs leading-relaxed placeholder:text-slate-300 mb-4" placeholder="在此粘贴数据..."></textarea>
+                                    <div class="flex justify-end gap-3">
+                                        <button @click="showImportMailboxModal = false" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">取消</button>
+                                        <button @click="submitImportMailboxes" :disabled="isImportingMailbox" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md flex items-center gap-2 transition-all disabled:opacity-50">
+                                            <span v-if="isImportingMailbox" class="animate-spin">🔄</span>
+                                            确认导入
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="px-5 md:px-8 py-5 md:py-6 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-50/50">
+                                <div><h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">微软邮箱资源库</h2></div>
+                                <div class="flex flex-wrap gap-2 md:gap-3 items-center">
+                                    <span class="text-sm md:text-base font-black text-sky-600 bg-sky-50 px-3 py-1 rounded-lg">已选 ({{ selectedMailboxes.length }})</span>
+                                    <button @click="showImportMailboxModal = true" class="text-xs md:text-sm bg-sky-600 text-white px-4 md:px-5 py-2 rounded-xl hover:bg-sky-700 active:scale-95 transition-all shadow-md font-bold flex items-center gap-2">
+                                        <span>📥</span> 导入数据
+                                    </button>
+                                    <button @click="deleteSelectedMailboxes" :disabled="selectedMailboxes.length === 0" class="text-xs md:text-sm bg-rose-600 text-white px-4 md:px-5 py-2 rounded-xl hover:bg-rose-700 active:scale-95 transition-all shadow-md disabled:opacity-50 font-bold flex items-center gap-2">
+                                        <span>🗑️</span> 删除选中
+                                    </button>
+                                    <button @click="exportSelectedMailboxesToTxt" class="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                                        <span>📄 导出 TXT</span>
+                                    </button>
+
+                                    <button @click="recoverSelectedMailboxes" class="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold shadow-md hover:bg-amber-600 transition-colors flex items-center gap-2">
+                                        <span>♻️ 恢复为正常状态</span>
+                                    </button>
+                                    <button @click="fetchMailboxes(true)" class="text-xs md:text-sm bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 active:scale-95 transition-all shadow-sm font-bold">
+                                        🔄
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto w-full min-h-[400px]">
+                                <table class="min-w-full divide-y divide-slate-100">
+                                    <thead class="bg-slate-50/80">
+                                        <tr>
+                                            <th class="px-5 md:px-8 py-4 text-left w-12"><input type="checkbox" @change="toggleAllMailboxes" :checked="selectedMailboxes.length === mailboxes.length && mailboxes.length > 0" class="form-checkbox w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"></th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest w-16">#</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">邮箱账号</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">鉴权类型</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">状态</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">导入时间</th>
+                                            <th class="px-5 md:px-8 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-slate-50">
+                                        <tr v-if="mailboxes.length === 0">
+                                            <td colspan="6" class="px-6 py-16 text-center text-slate-400 font-medium bg-slate-50/30">暂无邮箱数据，请点击右上角导入</td>
+                                        </tr>
+                                        <tr v-for="(mb, index) in mailboxes" :key="index" class="hover:bg-slate-50 transition duration-200">
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap"><input type="checkbox" :value="mb" v-model="selectedMailboxes" class="form-checkbox w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"></td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm text-slate-400 font-mono font-medium">{{ index + 1 }}</td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{{ mb.email }}</td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap">
+                                                <span v-if="mb.refresh_token" class="px-2 py-1 text-[10px] font-black bg-indigo-50 text-indigo-600 rounded border border-indigo-100">OAuth</span>
+                                                <span v-else class="px-2 py-1 text-[10px] font-black bg-slate-100 text-slate-600 rounded border border-slate-200">密码</span>
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap">
+                                                <span v-if="mb.status === 0" class="px-2.5 py-1 text-[10px] font-black bg-emerald-50 text-emerald-600 rounded-md border border-emerald-200">✨ 未使用</span>
+                                                <span v-else-if="mb.status === 1" class="px-2.5 py-1 text-[10px] font-black bg-amber-50 text-amber-600 rounded-md border border-amber-200">✅ 已注册 (被占用)</span>
+                                                <span v-else-if="mb.status === 2" class="px-2.5 py-1 text-[10px] font-black bg-blue-50 text-blue-600 rounded-md border border-blue-200">🏆 已出凭证</span>
+                                                <span v-else class="px-2.5 py-1 text-[10px] font-black bg-rose-50 text-rose-600 rounded-md border border-rose-200">❌ 失效/死号</span>
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm text-slate-500 font-mono">{{ formatTime(mb.created_at) }}</td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-center">
+                                                <button v-if="!mb.refresh_token"
+                                                        @click="openOutlookAuthModal(mb)"
+                                                        class="inline-flex items-center px-3 py-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-300 rounded-lg text-xs font-bold transition-colors shadow-sm active:scale-95">
+                                                    <span>🔑 去授权</span>
+                                                </button>
+                                                <span v-else class="text-xs font-bold text-emerald-500 flex items-center justify-center gap-1">
+                                                    <span>✅</span> 已授权
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="px-5 md:px-8 py-4 border-t border-slate-100 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div class="text-sm text-slate-500 font-bold flex flex-wrap items-center gap-2">
+                                    <span>共 <span class="text-sky-600 text-base font-black">{{ totalMailboxes }}</span> 个邮箱，</span>
+                                    <span>第 <span class="text-slate-800">{{ mailboxPage }}</span>/{{ mailboxTotalPages }} 页</span>
+                                    <select v-model.number="mailboxPageSize" @change="changeMailboxPageSize" class="bg-white border border-slate-200 text-slate-700 py-1.5 px-3 rounded-xl shadow-sm focus:outline-none ml-2 font-bold">
+                                        <option :value="10">10 条/页</option>
+                                        <option :value="50">50 条/页</option>
+                                        <option :value="200">200 条/页</option>
+                                    </select>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="changeMailboxPage(mailboxPage - 1)" :disabled="mailboxPage <= 1" class="px-4 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">上一页</button>
+                                    <button @click="changeMailboxPage(mailboxPage + 1)" :disabled="mailboxPage >= mailboxTotalPages" class="px-4 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">下一页</button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div v-show="currentTab === 'email'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60">
                                 <h3 class="text-lg md:text-xl font-black text-blue-600 mb-5 flex items-center gap-2 tracking-tight"><span>📧</span> 基础发信设置</h3>
@@ -497,6 +605,7 @@
                                 <select v-model="config.email_api_mode" @change="if(!['freemail', 'imap', 'cloudmail', 'cloudflare_temp_email'].includes(config.email_api_mode)) config.enable_sub_domains = false;" class="w-full appearance-none bg-slate-50 border-2 border-slate-200 text-blue-700 font-black rounded-xl py-3 px-4 focus:outline-none focus:ring-0 focus:border-blue-500 transition-colors shadow-sm cursor-pointer pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%232563eb%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px_12px] bg-[right_14px_center] bg-no-repeat">
                                     <option value="cloudflare_temp_email">cloudflare_temp_email (CF 临时邮箱)</option>
                                     <option value="imap">imap (直连收件箱)</option>
+                                    <option value="local_microsoft">本地微软邮箱库</option>
                                     <option value="Gmail_OAuth">Gmail_OAuth</option>
                                     <option value="freemail">freemail</option>
                                     <option value="cloudmail">cloudmail</option>
@@ -728,6 +837,59 @@
                                         <a href="https://myaccount.google.com/apppasswords" class="text-blue-600 hover:text-blue-700 hover:underline flex items-center justify-center gap-1.5 text-sm" target="_blank"><span>🔗</span> 创建谷歌专属密码</a>
                                     </div>
                                 </div>
+
+                                <div v-if="config.email_api_mode === 'local_microsoft' && config.local_microsoft" class="animate-fade-in space-y-4">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-black text-sky-800 bg-sky-100 px-3 py-1.5 rounded-md border border-sky-200 shadow-sm uppercase tracking-wider">当前模式</span>
+                                            <span class="text-sm font-black text-slate-700">本地微软邮箱库 (graph)</span>
+                                        </div>
+
+                                        <label class="relative inline-flex items-center cursor-pointer group">
+                                            <span class="mr-3 text-xs font-black text-indigo-600 uppercase tracking-widest">开启无限裂变</span>
+                                            <input type="checkbox" v-model="config.local_microsoft.enable_fission" class="sr-only peer">
+                                            <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-indigo-600 shadow-inner transition-all"></div>
+                                        </label>
+                                    </div>
+
+                                    <transition name="fade">
+                                        <div v-if="!config.local_microsoft.enable_fission" class="bg-sky-50 border border-sky-200 text-sky-800 p-4 rounded-xl mb-4 font-bold text-sm shadow-sm flex items-center gap-2">
+                                            <span class="text-xl">📬</span>
+                                            <div><b>微软邮箱库：</b>系统将从“微软邮箱库”提取账号。<br><span class="text-xs text-sky-600">※ 兼容账号密码格式导入，无Client ID需要在下方填写Client ID，无Refresh Token可点击左侧微软邮箱库“去授权”。</span></div>
+                                        </div>
+                                        <div v-else class="bg-indigo-50 border border-indigo-200 text-indigo-800 p-4 rounded-xl mb-4 font-bold text-sm shadow-sm flex items-center gap-2">
+                                            <span class="text-xl">🚀</span>
+                                            <div><b>无限裂变模式：</b>系统将利用下方主号，自动生成无尽别名进行注册。</div>
+                                        </div>
+                                    </transition>
+
+                                    <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-1.5 uppercase tracking-wider">全局 Client ID (graph应用ID)</label>
+                                        <input type="text" v-model="config.local_microsoft.client_id" class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 rounded-lg py-2.5 px-3 shadow-inner font-mono text-sm" placeholder="如果导入的账号自带ID则优先用自带的，否则用此全局兜底">
+                                    </div>
+
+                                    <div v-if="config.local_microsoft.enable_fission" class="space-y-4 pt-4 border-t-2 border-dashed border-slate-100 animate-fade-in">
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-1.5 uppercase tracking-wider">裂变主邮箱账号</label>
+                                            <input type="text" v-model="config.local_microsoft.master_email" class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-2.5 px-3 shadow-sm font-mono text-sm" placeholder="例如：example@outlook.com">
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between items-end mb-1.5">
+                                                <label class="block text-slate-700 text-xs font-extrabold uppercase tracking-wider">主邮箱 Refresh Token</label>
+                                                <button @click="openFissionAuthModal" class="text-[11px] font-black text-indigo-700 hover:text-white bg-indigo-100 hover:bg-indigo-600 px-2.5 py-1 rounded-md shadow-sm border border-indigo-200 transition-all active:scale-95">
+                                                    🔑 一键获取
+                                                </button>
+                                            </div>
+                                            <div class="relative">
+                                                <input :type="showPwd.master_rt ? 'text' : 'password'" v-model="config.local_microsoft.refresh_token" class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-2.5 px-3 pr-10 shadow-sm font-mono text-sm">
+                                                <button @click="showPwd.master_rt = !showPwd.master_rt" class="absolute right-3 top-1/2 -translate-y-1/2 text-lg text-slate-400 hover:text-indigo-600 transition-transform">
+                                                    {{ showPwd.master_rt ? '👁️' : '🙈' }}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div v-if="config.email_api_mode === 'Gmail_OAuth'" class="mt-8 border-t-2 border-dashed border-slate-200 pt-8 animate-fade-in">
                                     <div class="flex items-center gap-3 mb-8">
                                         <span class="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 text-white rounded-xl shadow-md text-sm font-black">?</span>
@@ -2002,6 +2164,68 @@
                 </div>
             </main>
         </div>
+     <div v-if="outlookAuth && outlookAuth.showModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200">
+        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
+                <span>🔑</span> 为账号授权 (OAuth 2.0)
+            </h3>
+            <button @click="outlookAuth.showModal = false" class="text-slate-400 hover:text-rose-500 focus:outline-none transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                <span class="text-xs font-bold text-indigo-700 uppercase tracking-wider">正在授权账号</span>
+                <span class="text-base font-mono font-black text-indigo-900">{{ outlookAuth.mailbox?.email }}</span>
+            </div>
+
+            <div class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">1</div>
+                    <span class="text-sm font-bold text-slate-800">获取并在浏览器中打开授权链接</span>
+                </div>
+                <div v-if="!outlookAuth.authUrl">
+                    <button @click="generateOutlookAuthUrl" :disabled="outlookAuth.isGenerating" class="w-full py-3 bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-[0.98] disabled:opacity-50 flex justify-center items-center gap-2">
+                        <span v-if="outlookAuth.isGenerating" class="animate-spin">🔄</span>
+                        {{ outlookAuth.isGenerating ? '生成中...' : '👉 点击生成专属授权链接' }}
+                    </button>
+                </div>
+                <div v-else class="relative animate-fade-in">
+                    <textarea readonly class="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-600 focus:outline-none resize-none shadow-inner">{{ outlookAuth.authUrl }}</textarea>
+                    <a :href="outlookAuth.authUrl" target="_blank" class="absolute bottom-3 right-3 px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-md flex items-center gap-1">
+                        在浏览器中打开 ↗
+                    </a>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start gap-2 ml-8 shadow-sm">
+                    <span class="text-amber-500 mt-0.5">💡</span>
+                    <p class="text-[11px] text-amber-800 font-medium leading-relaxed">
+                        请确保在浏览器中登录的是上方指定的邮箱账号。授权后浏览器会跳转到一个<span class="text-rose-600 font-bold">无法访问的错误页面</span>，这是正常的！
+                    </p>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">2</div>
+                    <span class="text-sm font-bold text-slate-800">粘贴回传网址换取 Token</span>
+                </div>
+                <div class="ml-8">
+                    <input type="text" v-model="outlookAuth.pastedUrl" placeholder="请将跳转后浏览器地址栏的网址完整粘贴到这里" class="w-full bg-white border-2 border-slate-200 text-slate-800 rounded-xl py-3 px-4 focus:outline-none focus:ring-0 focus:border-indigo-500 text-sm font-mono shadow-sm transition-colors">
+                </div>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+            <button @click="outlookAuth.showModal = false" class="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-100 transition-colors shadow-sm active:scale-95">取消</button>
+            <button @click="submitOutlookAuthCode" :disabled="outlookAuth.isLoading || !outlookAuth.pastedUrl" class="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 active:scale-95">
+                <span v-if="outlookAuth.isLoading" class="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+                确认换取并保存 Token
+            </button>
+        </div>
+    </div>
+</div>
     </div>
     <script src="/static/js/app.js?v=__VER__"></script>
 </body>
