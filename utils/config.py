@@ -195,6 +195,9 @@ NORMAL_TARGET_COUNT: int = 0
 
 _clash_enable: bool = False
 _clash_pool_mode: bool = False
+CLASH_CLUSTER_COUNT: int = 5
+CLASH_SUB_URL: str = ""
+
 WARP_PROXY_LIST: list = []
 PROXY_QUEUE: queue.Queue = queue.Queue()
 
@@ -231,6 +234,7 @@ def reload_all_configs():
     global CPA_THREADS, CHECK_INTERVAL_MINUTES, ENABLE_TOKEN_REVIVE
     global NORMAL_SLEEP_MIN, NORMAL_SLEEP_MAX, NORMAL_TARGET_COUNT
     global _clash_enable, _clash_pool_mode, WARP_PROXY_LIST, PROXY_QUEUE
+    global CLASH_CLUSTER_COUNT, CLASH_SUB_URL
     global ENABLE_SUB2API_MODE, SUB2API_URL, SUB2API_KEY
     global SUB2API_MIN_THRESHOLD, SUB2API_BATCH_COUNT, SUB2API_CHECK_INTERVAL, SUB2API_THREADS, SUB2API_TEST_MODEL
     global SUB2API_SAVE_TO_LOCAL
@@ -432,6 +436,8 @@ def reload_all_configs():
     _clash_conf      = _c.get("clash_proxy_pool", {})
     _clash_enable    = _clash_conf.get("enable", False)
     _clash_pool_mode = _clash_conf.get("pool_mode", False)
+    CLASH_CLUSTER_COUNT = int(_clash_conf.get("cluster_count") or 5)
+    CLASH_SUB_URL = str(_clash_conf.get("sub_url") or "").strip()
     WARP_PROXY_LIST  = _c.get("warp_proxy_list", [])
 
     with PROXY_QUEUE.mutex:

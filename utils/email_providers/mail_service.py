@@ -768,7 +768,7 @@ def _poll_local_ms_for_oai_code_graph(ms_service, target_email: str, mailbox_dic
             return ""
         if not messages:
             if attempt % 2 == 0:
-                print(f"[{cfg.ts()}] [INFO] 第 {attempt + 1} 次轮询: 未发现任何邮件", flush=True)
+                print(f"[{cfg.ts()}] [INFO] {mask_email(tgt)} 第 {attempt + 1} 次轮询: 未发现任何邮件", flush=True)
         else:
             for msg in messages:
                 msg_id = msg.get('id')
