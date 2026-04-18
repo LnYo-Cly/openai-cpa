@@ -393,8 +393,8 @@ def update_pool_fission_result(email: str, is_blocked: bool, is_raw: bool):
         pass
 
     try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
             if not is_blocked:
                 execute_sql(c, "UPDATE local_mailboxes SET retry_master = 0, fission_fail_count = 0 WHERE email = ?", (email,))
             else:
