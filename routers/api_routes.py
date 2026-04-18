@@ -1226,6 +1226,20 @@ def parse_sub2api_proxy(proxy_url: str):
         return proxy_dict
     except:
         return None
+
+
+@router.get("/api/sub2api/proxies")
+async def get_sub2api_proxies(token: str = Depends(verify_token)):
+    if not getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False):
+        return {"status": "error", "message": "Sub2API 模式未开启"}
+    client = Sub2APIClient(api_url=getattr(core_engine.cfg, 'SUB2API_URL', ''),
+                           api_key=getattr(core_engine.cfg, 'SUB2API_KEY', ''))
+    ok, data = client.get_all_proxies()
+    if ok:
+        return {"status": "success", "data": data}
+    return {"status": "error", "message": str(data)}
+
+
 @router.post("/api/accounts/export_all")
 async def export_all_accounts(token: str = Depends(verify_token)):
     data = db_manager.get_all_accounts_raw()

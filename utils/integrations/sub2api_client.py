@@ -221,6 +221,37 @@ class Sub2APIClient:
         logger.info("Fetched %s Sub2API accounts across paginated results", len(all_items))
         return True, all_items
 
+    def get_proxies(self, page: int = 1, page_size: int = 100) -> Tuple[bool, Any]:
+        url = f"{self.api_url}/api/v1/admin/proxies"
+        params = {"page": page, "page_size": page_size}
+        try:
+            response = cffi_requests.get(url, headers=self.headers, params=params, **self.request_kwargs)
+            return self._handle_response(response)
+        except Exception as exc:
+            logger.error("Get Sub2API proxies failed: %s", exc)
+            return False, str(exc)
+
+    def get_all_proxies(self, page_size: int = 100) -> Tuple[bool, Any]:
+        all_items: List[dict] = []
+        page = 1
+        while True:
+            ok, data = self.get_proxies(page=page, page_size=page_size)
+            if not ok:
+                if page == 1:
+                    return False, data
+                break
+            inner = data.get("data", {}) if isinstance(data, dict) else {}
+            items = inner.get("items", [])
+            if not items:
+                break
+            all_items.extend(items)
+            total = inner.get("total", 0)
+            if len(all_items) >= total:
+                break
+            page += 1
+        logger.info("Fetched %s Sub2API proxies", len(all_items))
+        return True, all_items
+
     def add_account(self, token_data: Dict[str, Any]) -> Tuple[bool, str]:
         settings = self._get_push_settings()
         refresh_token = token_data.get("refresh_token", "")

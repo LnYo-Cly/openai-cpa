@@ -325,25 +325,31 @@ def get_and_lock_unused_local_mailbox() -> dict:
 
 
 def get_mailbox_for_pool_fission() -> dict:
-    """带重试优先级的并发取号"""
+    """带重试优先级的并发取号，限制每个邮箱最大分裂次数"""
+    max_fission = 6
+    try:
+        from utils.config import LOCAL_MS_MAX_FISSION_COUNT
+        max_fission = LOCAL_MS_MAX_FISSION_COUNT
+    except Exception:
+        pass
     try:
         with get_db_conn(as_dict=True) as conn:
             c = get_cursor(conn, as_dict=True)
             if DB_TYPE == "mysql":
                 execute_sql(c, "START TRANSACTION")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1 FOR UPDATE")
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND fission_count < %s LIMIT 1 FOR UPDATE", (max_fission,))
             else:
                 execute_sql(c, "BEGIN EXCLUSIVE")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1")
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND fission_count < ? LIMIT 1", (max_fission,))
 
             row = c.fetchone()
 
             if not row:
                 if DB_TYPE == "mysql":
                     execute_sql(c,
-                                "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1 FOR UPDATE")
+                                "SELECT * FROM local_mailboxes WHERE status = 0 AND fission_count < %s ORDER BY fission_count ASC LIMIT 1 FOR UPDATE", (max_fission,))
                 else:
-                    execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1")
+                    execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND fission_count < ? ORDER BY fission_count ASC LIMIT 1", (max_fission,))
                 row = c.fetchone()
 
             if row:

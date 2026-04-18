@@ -93,6 +93,8 @@ createApp({
             confirmModal: { show: false, message: '', resolve: null },
             updateInfo: { hasUpdate: false, version: '', url: '', changelog: '' },
             sub2apiGroups: [],
+            sub2apiProxies: [],
+            selectedSub2apiProxyId: '',
             gmailOAuth: {
                 authUrl: '',
                 pastedCode: '',
@@ -397,6 +399,10 @@ createApp({
                 if (this.config.cluster_node_name === undefined) this.config.cluster_node_name = '';
                 if (this.config.cluster_master_url === undefined) this.config.cluster_master_url = '';
                 if (this.config.cluster_secret === undefined) this.config.cluster_secret = 'wenfxl666';
+                // 自动获取 Sub2API 代理列表
+                if (this.config.sub2api_mode && this.config.sub2api_mode.enable && this.config.sub2api_mode.api_url && this.config.sub2api_mode.api_key) {
+                    this.fetchSub2apiProxies();
+                }
             } catch (e) {}
         },
         async saveConfig() {
@@ -1196,6 +1202,46 @@ createApp({
             if (index >= 0) ids.splice(index, 1);
             else ids.push(value);
             this.config.sub2api_mode.account_group_ids = ids.join(',');
+        },
+        async fetchSub2apiProxies() {
+            if (!this.config || !this.config.sub2api_mode) return;
+            if (!this.config.sub2api_mode.api_url || !this.config.sub2api_mode.api_key) {
+                this.showToast('Please save the Sub2API URL and API key first.', 'warning');
+                return;
+            }
+            try {
+                const res = await this.authFetch('/api/sub2api/proxies');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const raw = data.data;
+                    let proxies = [];
+                    if (Array.isArray(raw)) proxies = raw;
+                    else if (raw && Array.isArray(raw.list)) proxies = raw.list;
+                    else if (raw && Array.isArray(raw.data)) proxies = raw.data;
+                    this.sub2apiProxies = proxies;
+                    // 回显当前配置中的 proxy_id
+                    if (this.config && this.config.sub2api_mode && this.config.sub2api_mode.account_proxy_id) {
+                        this.selectedSub2apiProxyId = String(this.config.sub2api_mode.account_proxy_id);
+                    }
+                    if (proxies.length === 0) {
+                        this.showToast('Sub2API 中没有代理', 'warning');
+                    } else {
+                        this.showToast(`获取到 ${proxies.length} 个代理`, 'success');
+                    }
+                } else {
+                    this.showToast(data.message || '获取代理列表失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('获取代理失败: ' + e.message, 'error');
+            }
+        },
+        onSub2apiProxySelect() {
+            if (!this.config || !this.config.sub2api_mode) return;
+            if (this.selectedSub2apiProxyId) {
+                this.config.sub2api_mode.account_proxy_id = parseInt(this.selectedSub2apiProxyId);
+                this.config.sub2api_mode.default_proxy = '';
+                this.showToast(`已选择代理 ID: ${this.selectedSub2apiProxyId}`, 'success');
+            }
         },
         async startManualCheck() {
             if(this.isRunning) {

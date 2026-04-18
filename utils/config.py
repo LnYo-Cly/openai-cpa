@@ -95,6 +95,7 @@ IMAP_PASS: str = ""
 LOCAL_MS_ENABLE_FISSION: bool = False
 LOCAL_MS_POOL_FISSION: bool = False
 LOCAL_MS_FISSION_DEAD_THRESHOLD: int = 60
+LOCAL_MS_MAX_FISSION_COUNT: int = 6
 LOCAL_MS_MASTER_EMAIL: str = ""
 LOCAL_MS_PASSWORD: str = ""
 LOCAL_MS_CLIENT_ID: str = ""
@@ -145,6 +146,8 @@ SUB2API_REMOVE_ON_LIMIT_REACHED: bool = True
 SUB2API_REMOVE_DEAD_ACCOUNTS: bool = True
 SUB2API_ENABLE_TOKEN_REVIVE: bool = False
 SUB2API_AUTO_CHECK: bool = True
+SUB2API_SKIP_CHECK_ON_START: bool = False
+SUB2API_UPDATE_PROXY_BEFORE_CHECK: bool = False
 SUB2API_ACCOUNT_CONCURRENCY: int = 10
 SUB2API_ACCOUNT_LOAD_FACTOR: int = 10
 SUB2API_ACCOUNT_PRIORITY: int = 1
@@ -241,7 +244,7 @@ def reload_all_configs(new_config_dict=None):
     global HERO_SMS_AUTO_PICK_COUNTRY, HERO_SMS_REUSE_PHONE, HERO_SMS_MAX_PRICE, HERO_SMS_VERIFY_ON_REGISTER
     global HERO_SMS_MIN_BALANCE, HERO_SMS_MAX_TRIES, HERO_SMS_POLL_TIMEOUT_SEC
     global AI_API_BASE, AI_API_KEY, AI_MODEL, AI_ENABLE_PROFILE
-    global CPA_AUTO_CHECK, SUB2API_AUTO_CHECK
+    global CPA_AUTO_CHECK, SUB2API_AUTO_CHECK, SUB2API_SKIP_CHECK_ON_START, SUB2API_UPDATE_PROXY_BEFORE_CHECK
     global TG_BOT
     global TEMPORAM_COOKIE
     global TMAILOR_CURRENT_TOKEN
@@ -252,7 +255,7 @@ def reload_all_configs(new_config_dict=None):
     global GMAIL_ALIAS_BASE_EMAIL
     global CLUSTER_NODE_NAME, CLUSTER_MASTER_URL, CLUSTER_SECRET
     global REG_MODE
-    global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION, LOCAL_MS_FISSION_DEAD_THRESHOLD
+    global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION, LOCAL_MS_FISSION_DEAD_THRESHOLD, LOCAL_MS_MAX_FISSION_COUNT
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
     global DB_TYPE, MYSQL_CFG
     global MAX_LOG_LINES
@@ -368,6 +371,7 @@ def reload_all_configs(new_config_dict=None):
     LOCAL_MS_ENABLE_FISSION = bool(_local_microsoft.get("enable_fission", False))
     LOCAL_MS_POOL_FISSION = bool(_local_microsoft.get("pool_fission", False))
     LOCAL_MS_FISSION_DEAD_THRESHOLD = safe_int(_local_microsoft.get("fission_dead_threshold", 60), 60, minimum=1)
+    LOCAL_MS_MAX_FISSION_COUNT = safe_int(_local_microsoft.get("max_fission_count", 6), 6, minimum=1)
     LOCAL_MS_MASTER_EMAIL = str(_local_microsoft.get("master_email", "")).strip()
     LOCAL_MS_CLIENT_ID = str(_local_microsoft.get("client_id", "")).strip()
     LOCAL_MS_REFRESH_TOKEN = str(_local_microsoft.get("refresh_token", "")).strip()
@@ -440,6 +444,8 @@ def reload_all_configs(new_config_dict=None):
     SUB2API_REMOVE_DEAD_ACCOUNTS = _sub2api.get("remove_dead_accounts", True)
     SUB2API_ENABLE_TOKEN_REVIVE = _sub2api.get("enable_token_revive", False)
     SUB2API_AUTO_CHECK = _sub2api.get("auto_check", True)
+    SUB2API_SKIP_CHECK_ON_START = bool(_sub2api.get("skip_check_on_start", False))
+    SUB2API_UPDATE_PROXY_BEFORE_CHECK = bool(_sub2api.get("update_proxy_before_check", False))
     SUB2API_ACCOUNT_CONCURRENCY = safe_int(_sub2api.get("account_concurrency", 10), 10, minimum=1)
     SUB2API_ACCOUNT_LOAD_FACTOR = safe_int(_sub2api.get("account_load_factor", 10), 10, minimum=1)
     SUB2API_ACCOUNT_PRIORITY = safe_int(_sub2api.get("account_priority", 1), 1, minimum=1)

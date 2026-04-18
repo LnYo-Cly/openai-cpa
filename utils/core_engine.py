@@ -782,6 +782,20 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
     if hasattr(args, 'check_stop') and args.check_stop(): return False
     name = item.get("name", "unknown")
     account_id = item.get("id")
+
+    # 测活前同步代理配置（需开启开关）
+    if cfg.SUB2API_UPDATE_PROXY_BEFORE_CHECK and account_id:
+        try:
+            if cfg.SUB2API_ACCOUNT_PROXY_ID:
+                client.update_account(account_id, {"proxy_id": cfg.SUB2API_ACCOUNT_PROXY_ID})
+            elif cfg.SUB2API_DEFAULT_PROXY:
+                from routers.api_routes import parse_sub2api_proxy
+                proxy_obj = parse_sub2api_proxy(cfg.SUB2API_DEFAULT_PROXY)
+                if proxy_obj and "proxy_key" in proxy_obj:
+                    client.update_account(account_id, {"proxy_key": proxy_obj["proxy_key"]})
+        except Exception:
+            pass
+
     result, reason = client.test_account(account_id)
 
     if result == "ok":
@@ -1120,10 +1134,25 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event):
     loop = asyncio.get_running_loop()
     client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY)
 
+    first_loop = True
     while not async_stop_event.is_set() and not cfg.POOL_EXHAUSTED:
 
         try:
-            if cfg.SUB2API_AUTO_CHECK:
+            # 启动时跳过测活
+            if first_loop and cfg.SUB2API_SKIP_CHECK_ON_START:
+                print(f"\n[{ts()}] [INFO] 启动时跳过测活已开启，直接读取库存数量...")
+                success, account_list = client.get_all_accounts()
+                if not success:
+                    print(f"[{ts()}] [ERROR] 获取 Sub2API 全量库存失败: {account_list}")
+                    try: await asyncio.wait_for(async_stop_event.wait(), timeout=60)
+                    except asyncio.TimeoutError: pass
+                    first_loop = False
+                    continue
+                total_files = len(account_list)
+                valid_count = total_files
+                print(f"[{ts()}] [INFO] 当前云端总数: {total_files} (启动跳过测活，默认全部视为有效)")
+                first_loop = False
+            elif cfg.SUB2API_AUTO_CHECK:
                 print(f"\n[{ts()}] [INFO] 开始执行 Sub2API 仓库例行巡检与测活...")
                 success, account_list = client.get_all_accounts()
                 if not success:
@@ -1176,6 +1205,15 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event):
 
                     if status == "success":
                         token_dict = json.loads(result[0])
+                        # 附加代理配置
+                        if cfg.SUB2API_DEFAULT_PROXY:
+                            try:
+                                from routers.api_routes import parse_sub2api_proxy
+                                proxy_obj = parse_sub2api_proxy(cfg.SUB2API_DEFAULT_PROXY)
+                                if proxy_obj:
+                                    token_dict["sub2api_proxy"] = proxy_obj
+                            except Exception:
+                                pass
                         if hasattr(client, "add_account"):
                             ok, msg = client.add_account(token_dict)
                             if ok: print(f"[{ts()}] [SUCCESS] Sub2API 补货入库成功")
