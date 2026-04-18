@@ -24,7 +24,7 @@ from utils.email_providers.gmail_oauth_handler import GmailOAuthHandler
 from curl_cffi import requests as cffi_requests
 from global_state import VALID_TOKENS, CLUSTER_NODES, NODE_COMMANDS, cluster_lock, log_history, engine, verify_token, worker_status
 import utils.config as cfg
-
+import utils.integrations.clash_manager as clash_manager
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -106,15 +106,6 @@ class UpdateMailboxStatusReq(BaseModel):
 # ==========================================
 # 辅助函数
 # ==========================================
-def get_web_password():
-    try:
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                c = yaml.safe_load(f) or {}
-                return str(c.get("web_password", "admin")).strip()
-    except Exception:
-        pass
-    return "admin"
 
 def parse_cpa_usage_to_details(raw_usage: dict) -> dict:
     details = {"is_cpa": True}
@@ -188,7 +179,8 @@ async def get_dashboard():
 
 @router.post("/api/login")
 async def login(data: LoginData):
-    if data.password == get_web_password():
+    current_password = getattr(core_engine.cfg, "WEB_PASSWORD", "admin")
+    if data.password == current_password:
         token = secrets.token_hex(16)
         VALID_TOKENS.add(token)
         return {"status": "success", "token": token}
@@ -319,24 +311,46 @@ async def restart_system(token: str = Depends(verify_token)):
     except Exception as e:
         return {"status": "error", "message": f"重启异常: {str(e)}"}
 
+def _sanitize_local_microsoft_config(local_ms: Any) -> dict:
+    data = dict(local_ms) if isinstance(local_ms, dict) else {}
+    data.setdefault("enable_fission", False)
+    data.setdefault("pool_fission", False)
+    data.setdefault("master_email", "")
+    data.setdefault("client_id", "")
+    data.setdefault("refresh_token", "")
+
+    mode = str(data.get("suffix_mode", "fixed") or "fixed").strip().lower()
+    if mode not in {"fixed", "range", "mystic"}:
+        mode = "fixed"
+
+    try:
+        min_len = int(data.get("suffix_len_min", 8) or 8)
+    except Exception:
+        min_len = 8
+    try:
+        max_len = int(data.get("suffix_len_max", min_len) or min_len)
+    except Exception:
+        max_len = min_len
+
+    min_len = max(8, min(32, min_len))
+    max_len = max(8, min(32, max_len))
+    if max_len < min_len:
+        max_len = min_len
+
+    data["suffix_mode"] = mode
+    data["suffix_len_min"] = min_len
+    data["suffix_len_max"] = max_len
+    return data
+
+
 @router.get("/api/config")
 async def get_config(token: str = Depends(verify_token)):
-    config_data = {}
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config_data = yaml.safe_load(f) or {}
+    config_data = getattr(core_engine.cfg, '_c', {}).copy()
+
     if isinstance(config_data.get("sub2api_mode"), dict):
         config_data["sub2api_mode"].pop("min_remaining_weekly_percent", None)
-    config_data["web_password"] = config_data.get("web_password", "admin")
-    if "local_microsoft" not in config_data:
-        config_data["local_microsoft"] = {
-            "enable_fission": False,
-            "master_email": "",
-            "client_id": "",
-            "refresh_token": ""
-        }
-
-
+    config_data["web_password"] = getattr(core_engine.cfg, "WEB_PASSWORD", config_data.get("web_password", "admin"))
+    config_data["local_microsoft"] = _sanitize_local_microsoft_config(config_data.get("local_microsoft"))
     return config_data
 
 
@@ -345,14 +359,10 @@ async def save_config(new_config: dict, token: str = Depends(verify_token)):
     try:
         if isinstance(new_config.get("sub2api_mode"), dict):
             new_config["sub2api_mode"].pop("min_remaining_weekly_percent", None)
-        with core_engine.cfg.CONFIG_FILE_LOCK:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                yaml.dump(new_config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
-        try:
-            reload_all_configs()
-        except Exception:
-            pass
-        return {"status": "success", "message": "✅ 配置已成功保存！"}
+        new_config["local_microsoft"] = _sanitize_local_microsoft_config(new_config.get("local_microsoft"))
+        reload_all_configs(new_config_dict=new_config)
+
+        return {"status": "success", "message": "✅ 配置已成功保存并同步至云端！"}
     except Exception as e:
         return {"status": "error", "message": f"❌ 保存失败: {str(e)}"}
 
@@ -495,6 +505,9 @@ def account_action(data: dict, token: str = Depends(verify_token)):
         elif action == "push_sub2api":
             if not getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False): return {"status": "error",
                                                                                    "message": "🚫 推送失败：未开启 Sub2API 模式！"}
+            proxy_obj = parse_sub2api_proxy(cfg.SUB2API_DEFAULT_PROXY)
+            if proxy_obj:
+                token_data["sub2api_proxy"] = proxy_obj
             client = Sub2APIClient(api_url=getattr(core_engine.cfg, 'SUB2API_URL', ''),
                                    api_key=getattr(core_engine.cfg, 'SUB2API_KEY', ''))
             success, resp = client.add_account(token_data)
@@ -512,9 +525,10 @@ async def export_sub2api_accounts(req: ExportReq, token: str = Depends(verify_to
         if not tokens: return {"status": "error", "message": "未提取到Token"}
 
         sub2api_settings = getattr(core_engine.cfg, '_c', {}).get("sub2api_mode", {})
+        proxy_obj = parse_sub2api_proxy(cfg.SUB2API_DEFAULT_PROXY)
         accounts_list = []
         for td in tokens:
-            accounts_list.append({
+            acc = {
                 "name": str(td.get("email", "unknown"))[:64],
                 "platform": "openai", "type": "oauth",
                 "credentials": {"refresh_token": td.get("refresh_token", "")},
@@ -522,9 +536,12 @@ async def export_sub2api_accounts(req: ExportReq, token: str = Depends(verify_to
                 "priority": int(sub2api_settings.get("account_priority", 1)),
                 "rate_multiplier": float(sub2api_settings.get("account_rate_multiplier", 1.0)),
                 "extra": {"load_factor": int(sub2api_settings.get("account_load_factor", 10))}
-            })
+            }
+            if proxy_obj:
+                acc["proxy_key"] = proxy_obj["proxy_key"]
+            accounts_list.append(acc)
         return {"status": "success",
-                "data": {"exported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "proxies": [],
+                "data": {"exported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "proxies": [proxy_obj] if proxy_obj else [],
                          "accounts": accounts_list}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1117,13 +1134,17 @@ async def exchange_outlook_oauth_code(req: OutlookExchangeReq, token: str = Depe
         if response.status_code == 200:
             refresh_token = data.get("refresh_token")
             import sqlite3
-            from utils.db_manager import DB_PATH
-            with sqlite3.connect(DB_PATH, timeout=10) as conn:
-                conn.execute(
-                    "UPDATE local_mailboxes SET client_id = ?, refresh_token = ?, status = 0 WHERE email = ?",
-                    (req.client_id, refresh_token, req.email)
-                )
-                conn.commit()
+            from utils.db_manager import get_db_conn, get_cursor, execute_sql
+            try:
+                with get_db_conn() as conn:
+                    c = get_cursor(conn)
+                    execute_sql(c,
+                                "UPDATE local_mailboxes SET client_id = ?, refresh_token = ?, status = 0 WHERE email = ?",
+                                (req.client_id, refresh_token, req.email)
+                                )
+            except Exception as e:
+                print(f"[ERROR] 数据库更新 OAuth Token 失败: {e}")
+
             return {"status": "success", "message": f"授权成功！已为 {req.email} 绑定永久 Token。", "refresh_token": refresh_token}
         else:
             return {"status": "error", "message": f"获取失败: {data.get('error_description', data)}"}
@@ -1148,8 +1169,6 @@ async def update_mailboxes_status(req: UpdateMailboxStatusReq, token: str = Depe
 
     return {"status": "success", "message": f"成功将 {success_count} 个邮箱状态重置！"}
 
-import utils.integrations.clash_manager as clash_manager
-
 class ClashDeployReq(BaseModel):
     count: int
 
@@ -1173,3 +1192,58 @@ async def post_clash_deploy(req: ClashDeployReq, token: str = Depends(verify_tok
 async def post_clash_update(req: ClashUpdateReq, token: str = Depends(verify_token)):
     success, msg = clash_manager.patch_and_update(req.sub_url, req.target)
     return {"status": "success" if success else "error", "message": msg}
+
+
+def parse_sub2api_proxy(proxy_url: str):
+    """提取代理URL为Sub2API所需格式"""
+    if not proxy_url:
+        return None
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(proxy_url)
+        protocol = parsed.scheme
+        host = parsed.hostname
+        port = parsed.port
+        username = parsed.username or ""
+        password = parsed.password or ""
+
+        if not protocol or not host or not port:
+            return None
+
+        proxy_key = f"{protocol}|{host}|{port}|{username}|{password}"
+        proxy_dict = {
+            "proxy_key": proxy_key,
+            "name": "openai-cpa",
+            "protocol": protocol,
+            "host": host,
+            "port": port,
+            "status": "active"
+        }
+        if username and password:
+            proxy_dict["username"] = username
+            proxy_dict["password"] = password
+
+        return proxy_dict
+    except:
+        return None
+@router.post("/api/accounts/export_all")
+async def export_all_accounts(token: str = Depends(verify_token)):
+    data = db_manager.get_all_accounts_raw()
+    return {"status": "success", "data": data}
+
+@router.post("/api/accounts/clear_all")
+async def clear_all_accounts_api(token: str = Depends(verify_token)):
+    if db_manager.clear_all_accounts():
+        return {"status": "success", "message": "账号库已全部清空"}
+    return {"status": "error", "message": "清空失败"}
+
+@router.post("/api/mailboxes/export_all")
+async def export_all_mailboxes(token: str = Depends(verify_token)):
+    data = db_manager.get_all_mailboxes_raw()
+    return {"status": "success", "data": data}
+
+@router.post("/api/mailboxes/clear_all")
+async def clear_all_mailboxes_api(token: str = Depends(verify_token)):
+    if db_manager.clear_all_mailboxes():
+        return {"status": "success", "message": "邮箱库已全部清空"}
+    return {"status": "error", "message": "清空失败"}

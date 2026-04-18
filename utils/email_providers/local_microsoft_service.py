@@ -2,7 +2,6 @@ import json
 import random
 import string
 import time
-import uuid
 import threading
 import imaplib
 import base64
@@ -22,24 +21,90 @@ class MailboxAbuseModeError(RuntimeError):
 
 
 class LocalMicrosoftService:
+    _MYSTIC_NAMES = [
+        "leo", "nova", "kai", "luna", "milo", "iris", "axel", "zara"
+    ]
+    _MYSTIC_NOUNS = [
+        "fox", "river", "comet", "lotus", "cloud", "ember", "aurora", "tiger"
+    ]
+
     def __init__(self, proxies: Optional[Dict[str, str]] = None):
         self.proxies = proxies
         self.token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
         self.graph_base_url = "https://graph.microsoft.com/v1.0/me"
 
-    def generate_suffix_v2(self):
-        return uuid.uuid4().hex[:8]
+    def _resolve_suffix_mode(self) -> str:
+        mode = str(getattr(cfg, "LOCAL_MS_SUFFIX_MODE", "fixed") or "fixed").strip().lower()
+        if mode not in {"fixed", "range", "mystic"}:
+            return "fixed"
+        return mode
+
+    def _resolve_suffix_bounds(self, user_part: str) -> tuple[int, int]:
+        try:
+            min_len = int(getattr(cfg, "LOCAL_MS_SUFFIX_LEN_MIN", 8) or 8)
+        except Exception:
+            min_len = 8
+        try:
+            max_len = int(getattr(cfg, "LOCAL_MS_SUFFIX_LEN_MAX", min_len) or min_len)
+        except Exception:
+            max_len = min_len
+
+        min_len = max(8, min(32, min_len))
+        max_len = max(8, min(32, max_len))
+        if max_len < min_len:
+            max_len = min_len
+
+        # RFC local-part max length is 64, include plus separator itself.
+        user_len = len(str(user_part or ""))
+        available = 64 - user_len - 1
+        if available <= 0:
+            return 0, 0
+
+        min_len = max(1, min(min_len, available))
+        max_len = max(min_len, min(max_len, available))
+        return min_len, max_len
+
+    def _random_hex(self, length: int) -> str:
+        return "".join(random.choices("0123456789abcdef", k=max(1, int(length))))
+
+    def _build_mystic_seed(self) -> str:
+        name = random.choice(self._MYSTIC_NAMES)
+        noun = random.choice(self._MYSTIC_NOUNS)
+        mmdd = f"{random.randint(1, 12):02d}{random.randint(1, 28):02d}"
+        yyyy = str(random.randint(1990, 2012))
+        return random.choice([
+            f"{name}{noun}{mmdd}",
+            f"{noun}{name}{mmdd}",
+            f"{name}{mmdd}{noun}",
+            f"{name}{noun}{yyyy}",
+        ]).lower()
+
+    def generate_suffix_v2(self, user_part: str = ""):
+        mode = self._resolve_suffix_mode()
+        min_len, max_len = self._resolve_suffix_bounds(user_part)
+        if max_len <= 0:
+            return ""
+        target_len = min_len if mode == "fixed" else random.randint(min_len, max_len)
+
+        if mode == "mystic":
+            suffix = "".join(ch for ch in self._build_mystic_seed() if ch.isalnum())
+            if len(suffix) < target_len:
+                suffix += "".join(random.choices(string.ascii_lowercase + string.digits, k=target_len - len(suffix)))
+            return suffix[:target_len]
+
+        return self._random_hex(target_len)
 
     def get_unused_mailbox(self) -> Optional[dict]:
         """核心逻辑"""
         if getattr(cfg, "LOCAL_MS_ENABLE_FISSION", False):
             master_email = getattr(cfg, "LOCAL_MS_MASTER_EMAIL", "").strip()
             if master_email and "@" in master_email:
-                random_suffix = self.generate_suffix_v2()
                 user_part, domain_part = master_email.split("@", 1)
+                random_suffix = self.generate_suffix_v2(user_part=user_part)
+                target_email = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
                 return {
                     "id": "manual_config",
-                    "email": f"{user_part}+{random_suffix}@{domain_part}",
+                    "email": target_email,
                     "master_email": master_email,
                     "is_raw_trial": False,
                     "client_id": getattr(cfg, "LOCAL_MS_CLIENT_ID", ""),
@@ -58,9 +123,9 @@ class LocalMicrosoftService:
                         target_email = master_email
                         db_manager.clear_retry_master_status(master_email)
                     else:
-                        random_suffix = self.generate_suffix_v2()
                         user_part, domain_part = master_email.split("@", 1)
-                        target_email = f"{user_part}+{random_suffix}@{domain_part}"
+                        random_suffix = self.generate_suffix_v2(user_part=user_part)
+                        target_email = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
 
                     return {
                         "id": mailbox_data["id"],
@@ -182,7 +247,7 @@ class LocalMicrosoftService:
             print(f"[{cfg.ts()}] [DEBUG-GRAPH] 扫信模块严重错误: {e}", flush=True)
         return all_msgs
 
-    def _fetch_via_imap(self, mailbox: dict) -> List[Dict[str, Any]]:
+    def _fetch_via_imap(self, mailbox: dict, headers_only: bool = False) -> List[Dict[str, Any]]:
         all_msgs = []
         login_email = mailbox.get("master_email") or mailbox.get("email")
         target_email = mailbox.get("email").lower()
@@ -215,12 +280,15 @@ class LocalMicrosoftService:
                 status, _ = imap.select(folder, readonly=True)
                 if status != 'OK': continue
 
-                _, search_data = imap.search(None, "ALL")
+                status, search_data = imap.search(None, 'FROM', '"openai.com"')
+                if status != 'OK' or not search_data[0]: continue
+
                 uids = search_data[0].split()
                 if not uids: continue
 
                 for uid in reversed(uids[-10:]):
-                    _, raw = imap.fetch(uid, "(RFC822)")
+                    fetch_query = "(RFC822.HEADER)" if headers_only else "(RFC822)"
+                    _, raw = imap.fetch(uid, fetch_query)
                     if not raw or not raw[0]: continue
 
                     msg = email_lib.message_from_bytes(raw[0][1])
@@ -239,15 +307,17 @@ class LocalMicrosoftService:
                                 subject_raw or "无主题")
 
                     body = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/html":
-                                body = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8",
-                                                                            errors="replace")
-                                break
-                    else:
-                        body = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8",
-                                                                   errors="replace")
+
+                    if not headers_only:
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                if part.get_content_type() == "text/html":
+                                    body = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8",
+                                                                                errors="replace")
+                                    break
+                        else:
+                            body = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8",
+                                                                       errors="replace")
 
                     all_msgs.append({
                         "id": f"imap_{uid.decode()}",
@@ -263,3 +333,47 @@ class LocalMicrosoftService:
             pass
 
         return all_msgs
+
+    def get_snapshot_ids(self, mailbox: dict, target_email: str) -> set:
+        snapshot = set()
+        tgt = target_email.lower().strip()
+        from utils.email_providers.mail_service import mask_email
+        print(f"[{cfg.ts()}] [INFO] 🛰️ 正在为目标 {mask_email(tgt)} 执行历史邮件封存...")
+
+        try:
+            access_token = self._exchange_refresh_token(mailbox)
+            current_type = mailbox.get('token_type', 'unknown')
+
+            if current_type == 'graph_full':
+                url = f"{self.graph_base_url}/messages"
+                params = {
+                    "$select": "id,toRecipients,subject",
+                    "$filter": "contains(from/emailAddress/address, 'openai.com')",
+                    "$top": 15
+                }
+                headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+                resp = cffi_requests.get(url, params=params, headers=headers, proxies=self.proxies, timeout=10,
+                                         impersonate="chrome110")
+
+                if resp.status_code == 200:
+                    raw_value = resp.json().get("value", [])
+                    for m in raw_value:
+                        recs = [r.get('emailAddress', {}).get('address', '').lower() for r in m.get('toRecipients', [])]
+                        if tgt in recs:
+                            snapshot.add(m.get('id'))
+                else:
+                    current_type = 'outlook_legacy'
+
+            if current_type in ['outlook_legacy', 'legacy_imap']:
+                messages = self._fetch_via_imap(mailbox, headers_only=True)
+
+                for m in messages:
+                    recs = [r.get('emailAddress', {}).get('address', '').lower() for r in m.get('toRecipients', [])]
+                    if tgt in recs:
+                        snapshot.add(m.get('id'))
+
+        except Exception as e:
+            print(f"[{cfg.ts()}] [DEBUG] 💥 发生严重错误: {str(e)}")
+
+        return snapshot

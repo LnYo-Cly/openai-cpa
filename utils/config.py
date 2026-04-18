@@ -13,8 +13,11 @@ CONFIG_FILE_LOCK = threading.Lock()
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(CURRENT_DIR)
 CONFIG_PATH = os.path.join(BASE_DIR, "data", "config.yaml")
+
+
 def ts() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
 
 def format_docker_url(url: str) -> str:
     if not url or not isinstance(url, str):
@@ -24,10 +27,9 @@ def format_docker_url(url: str) -> str:
         url = url.replace("localhost", "host.docker.internal")
     return url
 
+
 def deep_update_config(default_dict, user_dict):
-    """
-    递归检查配置文件
-    """
+    """递归检查配置文件"""
     updated = False
     for key, value in default_dict.items():
         if key not in user_dict:
@@ -38,8 +40,8 @@ def deep_update_config(default_dict, user_dict):
                 updated = True
     return updated
 
+
 def init_config():
-    # 配置文件路径放到data 目录下
     config_dir = os.path.join(BASE_DIR, "data")
     config_path = os.path.join(config_dir, "config.yaml")
     template_path = os.path.join(BASE_DIR, "config.example.yaml")
@@ -79,18 +81,17 @@ def init_config():
     return user_config
 
 _c: dict = {}
+WEB_PASSWORD: str = "admin"
 ENABLE_SUB_DOMAINS: bool = False
 SUB_DOMAIN_COUNT: int = 10
 EMAIL_API_MODE: str = ""
 MAIL_DOMAINS: str = ""
 GPTMAIL_BASE: str = ""
 ADMIN_AUTH: str = ""
-
 IMAP_SERVER: str = ""
 IMAP_PORT: int = 993
 IMAP_USER: str = ""
 IMAP_PASS: str = ""
-
 LOCAL_MS_ENABLE_FISSION: bool = False
 LOCAL_MS_POOL_FISSION: bool = False
 LOCAL_MS_FISSION_DEAD_THRESHOLD: int = 60
@@ -98,29 +99,24 @@ LOCAL_MS_MASTER_EMAIL: str = ""
 LOCAL_MS_PASSWORD: str = ""
 LOCAL_MS_CLIENT_ID: str = ""
 LOCAL_MS_REFRESH_TOKEN: str = ""
-
-
+LOCAL_MS_SUFFIX_MODE: str = "fixed"
+LOCAL_MS_SUFFIX_LEN_MIN: int = 8
+LOCAL_MS_SUFFIX_LEN_MAX: int = 8
 FREEMAIL_API_URL: str = ""
 FREEMAIL_API_TOKEN: str = ""
-
 CM_API_URL: str = ""
 CM_ADMIN_EMAIL: str = ""
 CM_ADMIN_PASS: str = ""
-
 MC_API_BASE: str = ""
 MC_KEY: str = ""
-
 DEFAULT_PROXY: str = ""
-
 ENABLE_MULTI_THREAD_REG: bool = False
 REG_THREADS: int = 3
 MAX_OTP_RETRIES: int = 5
 USE_PROXY_FOR_EMAIL: bool = False
 ENABLE_EMAIL_MASKING: bool = True
-
 LOGIN_DELAY_MIN: int = 20
 LOGIN_DELAY_MAX: int = 45
-
 ENABLE_CPA_MODE: bool = False
 SAVE_TO_LOCAL_IN_CPA_MODE: bool = True
 CPA_API_URL: str = ""
@@ -156,13 +152,13 @@ SUB2API_ACCOUNT_RATE_MULTIPLIER: float = 1.0
 SUB2API_ACCOUNT_GROUP_IDS: list = []
 SUB2API_ACCOUNT_PROXY_ID: int = 0
 SUB2API_ENABLE_WS_MODE: bool = True
+SUB2API_DEFAULT_PROXY: str = ""
 
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
 LUCKMAIL_VARIANT_MODE: str = ""
 LUCKMAIL_REUSE_PURCHASED: bool = False
 LUCKMAIL_TAG_ID: Optional[int] = None
-
 DUCKMAIL_API_URL: str = "https://api.duckmail.com"
 DUCKMAIL_DOMAIN: str = ""
 DUCKMAIL_MODE: str = "custom_api"
@@ -172,6 +168,7 @@ DUCK_OFFICIAL_API_BASE: str = "https://quack.duckduckgo.com"
 DUCKMAIL_FORWARD_MODE: str = "Gmail_OAuth"
 DUCKMAIL_FORWARD_EMAIL: str = ""
 DUCK_USE_PROXY: bool = True
+
 
 GMAIL_ALIAS_BASE_EMAIL: str = ""
 
@@ -187,26 +184,21 @@ HERO_SMS_MAX_PRICE: float = 2.0
 HERO_SMS_MIN_BALANCE: float = 2.0
 HERO_SMS_MAX_TRIES: int = 3
 HERO_SMS_POLL_TIMEOUT_SEC: int = 120
-
-
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
 NORMAL_TARGET_COUNT: int = 0
-
+MAX_LOG_LINES: int = 500
 _clash_enable: bool = False
 _clash_pool_mode: bool = False
 CLASH_CLUSTER_COUNT: int = 5
 CLASH_SUB_URL: str = ""
-
 WARP_PROXY_LIST: list = []
 PROXY_QUEUE: queue.Queue = queue.Queue()
-
 AI_API_BASE: str = ""
 AI_API_KEY: str = ""
 AI_MODEL: str = "gpt-3.5-turbo"
 AI_ENABLE_PROFILE: bool = False
 TG_BOT: dict = {"enable": False, "token": "", "chat_id": ""}
-
 CLUSTER_NODE_NAME: str = ""
 CLUSTER_MASTER_URL: str = ""
 CLUSTER_SECRET: str = "wenfxl666"
@@ -214,9 +206,12 @@ TEMPORAM_COOKIE: str = ""
 FVIA_TOKEN: str = ""
 TMAILOR_CURRENT_TOKEN: str = ""
 REG_MODE: str = "protocol"
+DB_TYPE: str = "sqlite"
+MYSQL_CFG: dict = {}
 
-def reload_all_configs():
+def reload_all_configs(new_config_dict=None):
     global _c
+    global WEB_PASSWORD
     global EMAIL_API_MODE, MAIL_DOMAINS, GPTMAIL_BASE, ADMIN_AUTH
     global ENABLE_SUB_DOMAINS, SUB_DOMAIN_COUNT
     global IMAP_SERVER, IMAP_PORT, IMAP_USER, IMAP_PASS
@@ -224,7 +219,7 @@ def reload_all_configs():
     global CM_API_URL, CM_ADMIN_EMAIL, CM_ADMIN_PASS
     global MC_API_BASE, MC_KEY
     global DEFAULT_PROXY
-    global SUB_DOMAIN_LEVEL,RANDOM_SUB_DOMAIN_LEVEL
+    global SUB_DOMAIN_LEVEL, RANDOM_SUB_DOMAIN_LEVEL
     global ENABLE_MULTI_THREAD_REG, REG_THREADS, MAX_OTP_RETRIES
     global USE_PROXY_FOR_EMAIL, ENABLE_EMAIL_MASKING
     global LOGIN_DELAY_MIN, LOGIN_DELAY_MAX
@@ -239,9 +234,9 @@ def reload_all_configs():
     global SUB2API_MIN_THRESHOLD, SUB2API_BATCH_COUNT, SUB2API_CHECK_INTERVAL, SUB2API_THREADS, SUB2API_TEST_MODEL
     global SUB2API_SAVE_TO_LOCAL
     global SUB2API_REMOVE_ON_LIMIT_REACHED, SUB2API_REMOVE_DEAD_ACCOUNTS, SUB2API_ENABLE_TOKEN_REVIVE
-    global SUB2API_ACCOUNT_CONCURRENCY, SUB2API_ACCOUNT_LOAD_FACTOR, SUB2API_ACCOUNT_PRIORITY
+    global SUB2API_ACCOUNT_CONCURRENCY, SUB2API_ACCOUNT_LOAD_FACTOR, SUB2API_ACCOUNT_PRIORITY, SUB2API_DEFAULT_PROXY
     global SUB2API_ACCOUNT_RATE_MULTIPLIER, SUB2API_ACCOUNT_GROUP_IDS, SUB2API_ACCOUNT_PROXY_ID, SUB2API_ENABLE_WS_MODE
-    global LUCKMAIL_API_KEY,LUCKMAIL_PREFERRED_DOMAIN,LUCKMAIL_EMAIL_TYPE,LUCKMAIL_VARIANT_MODE,LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
+    global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
     global HERO_SMS_ENABLED, HERO_SMS_API_KEY, HERO_SMS_BASE_URL, HERO_SMS_COUNTRY, HERO_SMS_SERVICE
     global HERO_SMS_AUTO_PICK_COUNTRY, HERO_SMS_REUSE_PHONE, HERO_SMS_MAX_PRICE, HERO_SMS_VERIFY_ON_REGISTER
     global HERO_SMS_MIN_BALANCE, HERO_SMS_MAX_TRIES, HERO_SMS_POLL_TIMEOUT_SEC
@@ -258,6 +253,60 @@ def reload_all_configs():
     global CLUSTER_NODE_NAME, CLUSTER_MASTER_URL, CLUSTER_SECRET
     global REG_MODE
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION, LOCAL_MS_FISSION_DEAD_THRESHOLD
+    global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
+    global DB_TYPE, MYSQL_CFG
+    global MAX_LOG_LINES
+
+    base_yaml_config = init_config()
+
+    _db_conf = base_yaml_config.get("database", {})
+    _mysql_conf = _db_conf.get("mysql", {})
+
+    DB_TYPE = os.getenv("DB_TYPE", str(_db_conf.get("type", "sqlite"))).strip().lower()
+
+    MYSQL_CFG = {
+        "host": os.getenv("DB_HOST", _mysql_conf.get("host", "127.0.0.1")),
+        "port": int(os.getenv("DB_PORT", _mysql_conf.get("port", 3306))),
+        "user": os.getenv("DB_USER", _mysql_conf.get("user", "root")),
+        "password": os.getenv("DB_PASS", _mysql_conf.get("password", "")),
+        "db_name": os.getenv("DB_NAME", _mysql_conf.get("db_name", "wenfxl_manager"))
+    }
+
+    base_yaml_config["database"] = {"type": DB_TYPE, "mysql": MYSQL_CFG}
+    is_cloud_db = (DB_TYPE == "mysql")
+    db_ready = False
+    if is_cloud_db:
+        try:
+            from utils.db_manager import get_sys_kv, set_sys_kv
+            db_ready = True
+        except Exception as e:
+            print(f"[{ts()}] [WARNING] 无法连接到云端数据库，退回本地 YAML 模式: {e}")
+
+    if new_config_dict is not None:
+        _c = new_config_dict
+        try:
+            with CONFIG_FILE_LOCK:
+                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                    yaml.dump(new_config_dict, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        except Exception:
+            pass
+
+        if is_cloud_db and db_ready:
+            try:
+                set_sys_kv("global_app_config", new_config_dict)
+            except Exception:
+                pass
+    else:
+        if is_cloud_db and db_ready:
+            db_config = get_sys_kv("global_app_config")
+            if db_config:
+                deep_update_config(base_yaml_config, db_config)
+                _c = db_config
+            else:
+                _c = base_yaml_config
+                set_sys_kv("global_app_config", _c)
+        else:
+            _c = base_yaml_config
 
     def safe_int(value, default, minimum=None):
         try:
@@ -302,61 +351,18 @@ def reload_all_configs():
                 group_ids.append(int(text))
         return group_ids
 
-    def safe_int(value, default, minimum=None):
-        try:
-            parsed = int(str(value).strip())
-        except (TypeError, ValueError):
-            parsed = default
-        if minimum is not None:
-            return max(minimum, parsed)
-        return parsed
+    WEB_PASSWORD = str(_c.get("web_password", "admin")).strip()
 
-    def safe_float(value, default, minimum=None):
-        try:
-            parsed = float(str(value).strip())
-        except (TypeError, ValueError):
-            parsed = default
-        if minimum is not None:
-            return max(minimum, parsed)
-        return parsed
+    EMAIL_API_MODE = _c.get("email_api_mode", "cloudflare_temp_email")
+    MAIL_DOMAINS = _c.get("mail_domains", "")
+    GPTMAIL_BASE = str(_c.get("gptmail_base", "")).strip().rstrip("/")
+    ADMIN_AUTH = _c.get("admin_auth", "")
 
-    def safe_bool(value, default=False):
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        text = str(value).strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-        return default
-
-    def parse_group_ids(raw_value):
-        if isinstance(raw_value, list):
-            raw_items = raw_value
-        else:
-            raw_items = str(raw_value or "").split(",")
-
-        group_ids = []
-        for item in raw_items:
-            text = str(item).strip()
-            if text.isdigit():
-                group_ids.append(int(text))
-        return group_ids
-
-    _c = init_config()
-
-    EMAIL_API_MODE   = _c.get("email_api_mode", "cloudflare_temp_email")
-    MAIL_DOMAINS     = _c.get("mail_domains", "")
-    GPTMAIL_BASE     = str(_c.get("gptmail_base", "")).strip().rstrip("/")
-    ADMIN_AUTH       = _c.get("admin_auth", "")
-
-    _imap            = _c.get("imap", {})
-    IMAP_SERVER      = _imap.get("server", "imap.gmail.com")
-    IMAP_PORT        = _imap.get("port", 993)
-    IMAP_USER        = _imap.get("user", "")
-    IMAP_PASS        = _imap.get("pass", "")
+    _imap = _c.get("imap", {})
+    IMAP_SERVER = _imap.get("server", "imap.gmail.com")
+    IMAP_PORT = _imap.get("port", 993)
+    IMAP_USER = _imap.get("user", "")
+    IMAP_PASS = _imap.get("pass", "")
 
     _local_microsoft = _c.get("local_microsoft", {})
     LOCAL_MS_ENABLE_FISSION = bool(_local_microsoft.get("enable_fission", False))
@@ -365,56 +371,70 @@ def reload_all_configs():
     LOCAL_MS_MASTER_EMAIL = str(_local_microsoft.get("master_email", "")).strip()
     LOCAL_MS_CLIENT_ID = str(_local_microsoft.get("client_id", "")).strip()
     LOCAL_MS_REFRESH_TOKEN = str(_local_microsoft.get("refresh_token", "")).strip()
+    LOCAL_MS_SUFFIX_MODE = str(_local_microsoft.get("suffix_mode", "fixed")).strip().lower()
+    if LOCAL_MS_SUFFIX_MODE not in {"fixed", "range", "mystic"}:
+        LOCAL_MS_SUFFIX_MODE = "fixed"
+    try:
+        LOCAL_MS_SUFFIX_LEN_MIN = int(_local_microsoft.get("suffix_len_min", 8) or 8)
+    except Exception:
+        LOCAL_MS_SUFFIX_LEN_MIN = 8
+    try:
+        LOCAL_MS_SUFFIX_LEN_MAX = int(_local_microsoft.get("suffix_len_max", LOCAL_MS_SUFFIX_LEN_MIN) or LOCAL_MS_SUFFIX_LEN_MIN)
+    except Exception:
+        LOCAL_MS_SUFFIX_LEN_MAX = LOCAL_MS_SUFFIX_LEN_MIN
+    LOCAL_MS_SUFFIX_LEN_MIN = max(8, min(32, LOCAL_MS_SUFFIX_LEN_MIN))
+    LOCAL_MS_SUFFIX_LEN_MAX = max(8, min(32, LOCAL_MS_SUFFIX_LEN_MAX))
+    if LOCAL_MS_SUFFIX_LEN_MAX < LOCAL_MS_SUFFIX_LEN_MIN:
+        LOCAL_MS_SUFFIX_LEN_MAX = LOCAL_MS_SUFFIX_LEN_MIN
 
-
-    _free            = _c.get("freemail", {})
+    _free = _c.get("freemail", {})
     FREEMAIL_API_URL = str(_free.get("api_url", "")).strip().rstrip("/")
     FREEMAIL_API_TOKEN = _free.get("api_token", "")
-  
-    _cm              = _c.get("cloudmail", {})
-    CM_API_URL       = str(_cm.get("api_url", "")).strip().rstrip("/")
-    CM_ADMIN_EMAIL   = _cm.get("admin_email", "")
-    CM_ADMIN_PASS    = _cm.get("admin_password", "")
 
-    _mc              = _c.get("mail_curl", {})
-    MC_API_BASE      = str(_mc.get("api_base", "")).strip().rstrip("/")
-    MC_KEY           = _mc.get("key", "")
+    _cm = _c.get("cloudmail", {})
+    CM_API_URL = str(_cm.get("api_url", "")).strip().rstrip("/")
+    CM_ADMIN_EMAIL = _cm.get("admin_email", "")
+    CM_ADMIN_PASS = _cm.get("admin_password", "")
 
-    DEFAULT_PROXY    = format_docker_url(_c.get("default_proxy", ""))
+    _mc = _c.get("mail_curl", {})
+    MC_API_BASE = str(_mc.get("api_base", "")).strip().rstrip("/")
+    MC_KEY = _mc.get("key", "")
+
+    DEFAULT_PROXY = format_docker_url(_c.get("default_proxy", ""))
 
     ENABLE_MULTI_THREAD_REG = _c.get("enable_multi_thread_reg", False)
-    REG_THREADS      = _c.get("reg_threads", 3)
-    MAX_OTP_RETRIES  = _c.get("max_otp_retries", 5)
-    USE_PROXY_FOR_EMAIL     = _c.get("use_proxy_for_email", False)
-    ENABLE_EMAIL_MASKING    = _c.get("enable_email_masking", True)
+    REG_THREADS = _c.get("reg_threads", 3)
+    MAX_OTP_RETRIES = _c.get("max_otp_retries", 5)
+    USE_PROXY_FOR_EMAIL = _c.get("use_proxy_for_email", False)
+    ENABLE_EMAIL_MASKING = _c.get("enable_email_masking", True)
 
-    LOGIN_DELAY_MIN  = _c.get("login_delay_min", 20)
-    LOGIN_DELAY_MAX  = _c.get("login_delay_max", 45)
+    LOGIN_DELAY_MIN = _c.get("login_delay_min", 20)
+    LOGIN_DELAY_MAX = _c.get("login_delay_max", 45)
 
-    _cpa             = _c.get("cpa_mode", {})
-    ENABLE_CPA_MODE  = _cpa.get("enable", False)
+    _cpa = _c.get("cpa_mode", {})
+    ENABLE_CPA_MODE = _cpa.get("enable", False)
     SAVE_TO_LOCAL_IN_CPA_MODE = _cpa.get("save_to_local", True)
-    CPA_API_URL      = format_docker_url(str(_cpa.get("api_url", "")).strip()).rstrip("/")
-    CPA_API_TOKEN    = _cpa.get("api_token", "")
-    MIN_ACCOUNTS_THRESHOLD  = _cpa.get("min_accounts_threshold", 30)
-    BATCH_REG_COUNT  = _cpa.get("batch_reg_count", 1)
+    CPA_API_URL = format_docker_url(str(_cpa.get("api_url", "")).strip()).rstrip("/")
+    CPA_API_TOKEN = _cpa.get("api_token", "")
+    MIN_ACCOUNTS_THRESHOLD = _cpa.get("min_accounts_threshold", 30)
+    BATCH_REG_COUNT = _cpa.get("batch_reg_count", 1)
     MIN_REMAINING_WEEKLY_PERCENT = _cpa.get("min_remaining_weekly_percent", 80)
     REMOVE_ON_LIMIT_REACHED = _cpa.get("remove_on_limit_reached", False)
-    REMOVE_DEAD_ACCOUNTS    = _cpa.get("remove_dead_accounts", False)
-    CPA_THREADS      = _cpa.get("threads", 10)
-    CHECK_INTERVAL_MINUTES  = _cpa.get("check_interval_minutes", 60)
-    ENABLE_TOKEN_REVIVE     = _cpa.get("enable_token_revive", False)
+    REMOVE_DEAD_ACCOUNTS = _cpa.get("remove_dead_accounts", False)
+    CPA_THREADS = _cpa.get("threads", 10)
+    CHECK_INTERVAL_MINUTES = _cpa.get("check_interval_minutes", 60)
+    ENABLE_TOKEN_REVIVE = _cpa.get("enable_token_revive", False)
     CPA_AUTO_CHECK = _cpa.get("auto_check", True)
 
     _sub2api = _c.get("sub2api_mode", {})
     ENABLE_SUB2API_MODE = _sub2api.get("enable", False)
-    SUB2API_URL         = format_docker_url(str(_sub2api.get("api_url", "")).strip()).rstrip("/")
-    SUB2API_KEY         = _sub2api.get("api_key", "")
+    SUB2API_URL = format_docker_url(str(_sub2api.get("api_url", "")).strip()).rstrip("/")
+    SUB2API_KEY = _sub2api.get("api_key", "")
     SUB2API_MIN_THRESHOLD = _sub2api.get("min_accounts_threshold", 70)
-    SUB2API_TEST_MODEL  = _sub2api.get("test_model", "")
+    SUB2API_TEST_MODEL = _sub2api.get("test_model", "")
     SUB2API_BATCH_COUNT = _sub2api.get("batch_reg_count", 2)
     SUB2API_CHECK_INTERVAL = _sub2api.get("check_interval_minutes", 60)
-    SUB2API_THREADS     = _sub2api.get("threads", 10)
+    SUB2API_THREADS = _sub2api.get("threads", 10)
     SUB2API_SAVE_TO_LOCAL = _sub2api.get("save_to_local", True)
     SUB2API_REMOVE_ON_LIMIT_REACHED = _sub2api.get("remove_on_limit_reached", True)
     SUB2API_REMOVE_DEAD_ACCOUNTS = _sub2api.get("remove_dead_accounts", True)
@@ -427,18 +447,18 @@ def reload_all_configs():
     SUB2API_ACCOUNT_GROUP_IDS = parse_group_ids(_sub2api.get("account_group_ids", ""))
     SUB2API_ACCOUNT_PROXY_ID = safe_int(_sub2api.get("account_proxy_id", 0), 0, minimum=0)
     SUB2API_ENABLE_WS_MODE = safe_bool(_sub2api.get("enable_ws_mode", True), default=True)
-
-    _normal          = _c.get("normal_mode", {})
+    SUB2API_DEFAULT_PROXY = _sub2api.get("default_proxy", "")
+    _normal = _c.get("normal_mode", {})
     NORMAL_SLEEP_MIN = _normal.get("sleep_min", 5)
     NORMAL_SLEEP_MAX = _normal.get("sleep_max", 30)
     NORMAL_TARGET_COUNT = _normal.get("target_count", 0)
 
-    _clash_conf      = _c.get("clash_proxy_pool", {})
-    _clash_enable    = _clash_conf.get("enable", False)
+    _clash_conf = _c.get("clash_proxy_pool", {})
+    _clash_enable = _clash_conf.get("enable", False)
     _clash_pool_mode = _clash_conf.get("pool_mode", False)
     CLASH_CLUSTER_COUNT = int(_clash_conf.get("cluster_count") or 5)
     CLASH_SUB_URL = str(_clash_conf.get("sub_url") or "").strip()
-    WARP_PROXY_LIST  = _c.get("warp_proxy_list", [])
+    WARP_PROXY_LIST = _c.get("warp_proxy_list", [])
 
     with PROXY_QUEUE.mutex:
         PROXY_QUEUE.queue.clear()
@@ -447,7 +467,8 @@ def reload_all_configs():
             PROXY_QUEUE.put(p)
     else:
         PROXY_QUEUE.put(DEFAULT_PROXY if DEFAULT_PROXY else None)
-    _luckmail        = _c.get("luckmail", {})
+
+    _luckmail = _c.get("luckmail", {})
     LUCKMAIL_API_KEY = _luckmail.get("api_key", "")
     LUCKMAIL_PREFERRED_DOMAIN = _luckmail.get("preferred_domain", "")
     LUCKMAIL_EMAIL_TYPE = str(_luckmail.get("email_type") or "ms_graph").strip()
@@ -467,7 +488,8 @@ def reload_all_configs():
     _hero_sms_conf = _c.get("hero_sms", {})
     HERO_SMS_ENABLED = _hero_sms_conf.get("enabled", False)
     HERO_SMS_API_KEY = _hero_sms_conf.get("api_key", "")
-    HERO_SMS_BASE_URL = str(_hero_sms_conf.get("base_url", "https://hero-sms.com/stubs/handler_api.php")).strip().rstrip("/")
+    HERO_SMS_BASE_URL = str(
+        _hero_sms_conf.get("base_url", "https://hero-sms.com/stubs/handler_api.php")).strip().rstrip("/")
     HERO_SMS_COUNTRY = _hero_sms_conf.get("country", "US")
     HERO_SMS_SERVICE = _hero_sms_conf.get("service", "dr")
     HERO_SMS_AUTO_PICK_COUNTRY = _hero_sms_conf.get("auto_pick_country", False)
@@ -493,7 +515,6 @@ def reload_all_configs():
         HERO_SMS_POLL_TIMEOUT_SEC = int(_hero_sms_conf.get("poll_timeout_sec", 120))
     except:
         HERO_SMS_POLL_TIMEOUT_SEC = 120
-
 
     _ai = _c.get("ai_service", {})
     AI_API_BASE = str(_ai.get("api_base", "https://api.openai.com/v1")).strip().rstrip("/")
@@ -542,6 +563,9 @@ def reload_all_configs():
 
     _fvia = _c.get("fvia", {})
     FVIA_TOKEN = str(_fvia.get("token") or "").strip()
+
+    MAX_LOG_LINES = safe_int(_c.get("max_log_lines", 500), 500, minimum=50)
+
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

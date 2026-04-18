@@ -55,6 +55,9 @@ local_microsoft:
   master_email: ""
   client_id: ""
   refresh_token: ""
+  suffix_mode: "fixed"
+  suffix_len_min: 8
+  suffix_len_max: 8
   pool_fission: false
 
 # [模式 "freemail" 专属]
@@ -236,6 +239,7 @@ sub2api_mode:
   account_group_ids: ""
   enable_ws_mode: true
   test_model: "gpt-5.2"
+  default_proxy: ""
 
 hero_sms:
   enabled: false
@@ -267,13 +271,23 @@ tg_bot:
   mask_email: false
   mask_password: false
 
+# 数据库适配，默认为本地sqlite
+database:
+  type: "sqlite"  # 可选值: "sqlite" 或 "mysql"
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: ""
+    db_name: "wenfxl_manager"
+
 # WEB端密码
 web_password: admin
 #CF账号
 cf_api_email: 
 #CF KEY
 cf_api_key:
-
+max_log_lines: "500"
 #集群总控
 cluster_node_name: "NODE-1"
 cluster_master_url: ""
