@@ -102,7 +102,6 @@ def init_db():
         try:
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN fission_count INTEGER DEFAULT 0;')
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN retry_master INTEGER DEFAULT 0;')
-            execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN fission_fail_count INTEGER DEFAULT 0;')
         except Exception:
             pass
     print(f"[{ts()}] [系统] 数据库模块初始化完成 (引擎: {DB_TYPE.upper()})")
@@ -325,31 +324,25 @@ def get_and_lock_unused_local_mailbox() -> dict:
 
 
 def get_mailbox_for_pool_fission() -> dict:
-    """带重试优先级的并发取号，限制每个邮箱最大分裂次数"""
-    max_fission = 6
-    try:
-        from utils.config import LOCAL_MS_MAX_FISSION_COUNT
-        max_fission = LOCAL_MS_MAX_FISSION_COUNT
-    except Exception:
-        pass
+    """带重试优先级的并发取号"""
     try:
         with get_db_conn(as_dict=True) as conn:
             c = get_cursor(conn, as_dict=True)
             if DB_TYPE == "mysql":
                 execute_sql(c, "START TRANSACTION")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND fission_count < %s LIMIT 1 FOR UPDATE", (max_fission,))
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1 FOR UPDATE")
             else:
                 execute_sql(c, "BEGIN EXCLUSIVE")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND fission_count < ? LIMIT 1", (max_fission,))
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1")
 
             row = c.fetchone()
 
             if not row:
                 if DB_TYPE == "mysql":
                     execute_sql(c,
-                                "SELECT * FROM local_mailboxes WHERE status = 0 AND fission_count < %s ORDER BY fission_count ASC LIMIT 1 FOR UPDATE", (max_fission,))
+                                "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1 FOR UPDATE")
                 else:
-                    execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND fission_count < ? ORDER BY fission_count ASC LIMIT 1", (max_fission,))
+                    execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1")
                 row = c.fetchone()
 
             if row:
@@ -380,33 +373,16 @@ def update_local_mailbox_refresh_token(email: str, new_rt: str):
 
 
 def update_pool_fission_result(email: str, is_blocked: bool, is_raw: bool):
-    """
-    处理库分裂结果：
-    is_blocked=True  -> 连续失败计数+1，达到阈值才标记死号
-    is_blocked=False -> 成功，清零连续失败计数
-    """
-    threshold = 60
-    try:
-        from utils.config import LOCAL_MS_FISSION_DEAD_THRESHOLD
-        threshold = LOCAL_MS_FISSION_DEAD_THRESHOLD
-    except Exception:
-        pass
-
     try:
         with get_db_conn(as_dict=True) as conn:
             c = get_cursor(conn, as_dict=True)
             if not is_blocked:
-                execute_sql(c, "UPDATE local_mailboxes SET retry_master = 0, fission_fail_count = 0 WHERE email = ?", (email,))
+                execute_sql(c, "UPDATE local_mailboxes SET retry_master = 0 WHERE email = ?", (email,))
             else:
-                execute_sql(c, "UPDATE local_mailboxes SET fission_fail_count = fission_fail_count + 1 WHERE email = ?", (email,))
-                row = execute_sql(c, "SELECT fission_fail_count FROM local_mailboxes WHERE email = ?", (email,)).fetchone()
-                fail_count = row['fission_fail_count'] if row else 0
-
-                if fail_count >= threshold:
-                    execute_sql(c, "UPDATE local_mailboxes SET status = 3, retry_master = 0, fission_fail_count = 0 WHERE email = ?", (email,))
-                    print(f"[{ts()}] [WARNING] {email} 连续失败 {fail_count} 次已达阈值 {threshold}，标记为死号")
-                else:
+                if not is_raw:
                     execute_sql(c, "UPDATE local_mailboxes SET retry_master = 1 WHERE email = ?", (email,))
+                else:
+                    execute_sql(c, "UPDATE local_mailboxes SET status = 3, retry_master = 0 WHERE email = ?", (email,))
 
     except Exception as e:
         print(f"[{ts()}] [DB_ERROR] 结果更新失败: {e}")

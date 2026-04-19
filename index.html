@@ -2263,9 +2263,58 @@
                                             <label class="block text-[11px] text-purple-600 font-black mb-2 uppercase tracking-wider">单次补发量</label>
                                             <input type="number" v-model.number="config.sub2api_mode.batch_reg_count" class="w-full appearance-none bg-purple-50 border-none text-purple-700 font-black text-xl md:text-2xl rounded-lg py-2 px-3 focus:outline-none focus:ring-0 transition-colors text-center shadow-inner">
                                         </div>
-                                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors">
-                                            <label class="block text-[11px] text-slate-500 font-black mb-2 uppercase tracking-wider">巡检间隔(分)</label>
-                                            <input type="number" v-model.number="config.sub2api_mode.check_interval_minutes" class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-bold rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                        <div class="col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors" v-if="config.sub2api_mode.auto_check">
+                                            <label class="block text-[11px] text-slate-500 font-black mb-3 uppercase tracking-wider">Cron 巡检计划</label>
+                                            <div class="mb-3">
+                                                <input type="text" v-model="config.sub2api_mode.check_cron" @input="onCronExprInput"
+                                                    class="w-full appearance-none bg-slate-50 border border-purple-200 text-slate-700 font-mono font-bold text-sm rounded-lg py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center"
+                                                    placeholder="*/30 * * * *">
+                                                <p class="text-[10px] text-slate-400 mt-1.5 text-center">格式: 分 时 日 月 周 (标准5字段 Cron 表达式)</p>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 mb-3">
+                                                <button v-for="p in cronPresets" :key="p.expr" @click="selectCronPreset(p)"
+                                                    class="px-3 py-1.5 text-xs font-black rounded-lg border-2 transition-all active:scale-95"
+                                                    :class="config.sub2api_mode.check_cron === p.expr ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/30' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'">
+                                                    {{ p.label }}
+                                                </button>
+                                            </div>
+                                            <div class="grid grid-cols-5 gap-2">
+                                                <div>
+                                                    <label class="block text-[10px] text-slate-500 font-black mb-1 text-center">分</label>
+                                                    <select v-model="cronFields.minute" @change="onCronFieldChange"
+                                                        class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-mono text-xs font-bold rounded-lg py-2 px-1 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                                        <option v-for="o in cronMinuteOptions" :key="o" :value="o">{{ o }}</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[10px] text-slate-500 font-black mb-1 text-center">时</label>
+                                                    <select v-model="cronFields.hour" @change="onCronFieldChange"
+                                                        class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-mono text-xs font-bold rounded-lg py-2 px-1 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                                        <option v-for="o in cronHourOptions" :key="o" :value="o">{{ o }}</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[10px] text-slate-500 font-black mb-1 text-center">日</label>
+                                                    <select v-model="cronFields.day" @change="onCronFieldChange"
+                                                        class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-mono text-xs font-bold rounded-lg py-2 px-1 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                                        <option v-for="o in cronDayOptions" :key="o" :value="o">{{ o }}</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[10px] text-slate-500 font-black mb-1 text-center">月</label>
+                                                    <select v-model="cronFields.month" @change="onCronFieldChange"
+                                                        class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-mono text-xs font-bold rounded-lg py-2 px-1 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                                        <option v-for="o in cronMonthOptions" :key="o" :value="o">{{ o }}</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[10px] text-slate-500 font-black mb-1 text-center">周</label>
+                                                    <select v-model="cronFields.weekday" @change="onCronFieldChange"
+                                                        class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-mono text-xs font-bold rounded-lg py-2 px-1 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-center">
+                                                        <option v-for="o in cronWeekdayOptions" :key="o" :value="o">{{ o }}</option>
+                                                    </select>
+                                                </div>
+                                            </div>
                                         </div>
                                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors">
                                             <label class="block text-[11px] text-slate-500 font-black mb-2 uppercase tracking-wider">测活并发数</label>
@@ -2399,6 +2448,57 @@
                                             </label>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                            <!-- Check History Table -->
+                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-indigo-500 bg-gradient-to-br from-indigo-50/20 to-white" v-if="config && config.sub2api_mode && config.sub2api_mode.enable">
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 border-b border-slate-100 pb-4">
+                                    <div>
+                                        <h3 class="text-lg md:text-xl font-black text-indigo-700 tracking-tight">测活历史记录</h3>
+                                        <p class="text-xs text-slate-400 mt-1">最近 {{ checkHistory.length }} 条测活记录</p>
+                                    </div>
+                                    <button @click="fetchCheckHistory" :disabled="isLoadingCheckHistory"
+                                        class="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5">
+                                        <span :class="{'animate-spin': isLoadingCheckHistory}">刷新</span>
+                                    </button>
+                                </div>
+                                <div v-if="checkHistory.length === 0" class="text-center py-10">
+                                    <p class="text-slate-400 text-sm font-medium">暂无测活记录，首次测活后将在此显示</p>
+                                </div>
+                                <div v-else class="overflow-x-auto">
+                                    <table class="w-full text-xs md:text-sm">
+                                        <thead>
+                                            <tr class="border-b-2 border-slate-100">
+                                                <th class="text-left py-3 px-2 text-slate-500 font-black uppercase tracking-wider">时间</th>
+                                                <th class="text-center py-3 px-2 text-slate-500 font-black uppercase tracking-wider">触发</th>
+                                                <th class="text-center py-3 px-2 text-slate-500 font-black uppercase tracking-wider">总数</th>
+                                                <th class="text-center py-3 px-2 text-emerald-600 font-black uppercase tracking-wider">健康</th>
+                                                <th class="text-center py-3 px-2 text-blue-600 font-black uppercase tracking-wider">复活</th>
+                                                <th class="text-center py-3 px-2 text-amber-600 font-black uppercase tracking-wider">限流</th>
+                                                <th class="text-center py-3 px-2 text-rose-600 font-black uppercase tracking-wider">禁用</th>
+                                                <th class="text-center py-3 px-2 text-red-700 font-black uppercase tracking-wider">删除</th>
+                                                <th class="text-center py-3 px-2 text-slate-500 font-black uppercase tracking-wider">耗时</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="rec in checkHistory" :key="rec.id" class="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
+                                                <td class="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap">{{ rec.check_time }}</td>
+                                                <td class="py-2.5 px-2 text-center">
+                                                    <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider"
+                                                        :class="rec.trigger === 'manual' ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-600'">
+                                                        {{ rec.trigger === 'manual' ? '手动' : '自动' }}
+                                                    </span>
+                                                </td>
+                                                <td class="py-2.5 px-2 text-center font-black text-slate-800">{{ rec.total }}</td>
+                                                <td class="py-2.5 px-2 text-center font-black text-emerald-600">{{ rec.healthy }}</td>
+                                                <td class="py-2.5 px-2 text-center font-black text-blue-600">{{ rec.revived }}</td>
+                                                <td class="py-2.5 px-2 text-center font-black text-amber-600">{{ rec.rate_limited }}</td>
+                                                <td class="py-2.5 px-2 text-center font-black text-rose-600">{{ rec.disabled }}</td>
+                                                <td class="py-2.5 px-2 text-center font-black text-red-700">{{ rec.deleted }}</td>
+                                                <td class="py-2.5 px-2 text-center text-slate-500 font-mono">{{ rec.duration_seconds }}s</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>

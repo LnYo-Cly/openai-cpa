@@ -1240,6 +1240,14 @@ async def get_sub2api_proxies(token: str = Depends(verify_token)):
     return {"status": "error", "message": str(data)}
 
 
+@router.get("/api/sub2api/check_history")
+async def get_sub2api_check_history(token: str = Depends(verify_token)):
+    from utils.core_engine import _check_history, _check_history_lock
+    with _check_history_lock:
+        history = list(reversed(_check_history))
+    return {"status": "success", "data": history, "total": len(history)}
+
+
 @router.post("/api/accounts/export_all")
 async def export_all_accounts(token: str = Depends(verify_token)):
     data = db_manager.get_all_accounts_raw()

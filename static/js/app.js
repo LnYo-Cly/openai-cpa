@@ -95,6 +95,22 @@ createApp({
             sub2apiGroups: [],
             sub2apiProxies: [],
             selectedSub2apiProxyId: '',
+            checkHistory: [],
+            isLoadingCheckHistory: false,
+            cronPresets: [
+                { label: '每30分钟', expr: '*/30 * * * *' },
+                { label: '每1小时', expr: '0 * * * *' },
+                { label: '每2小时', expr: '0 */2 * * *' },
+                { label: '每6小时', expr: '0 */6 * * *' },
+                { label: '每12小时', expr: '0 */12 * * *' },
+                { label: '每天0点', expr: '0 0 * * *' },
+            ],
+            cronFields: { minute: '*/30', hour: '*', day: '*', month: '*', weekday: '*' },
+            cronMinuteOptions: ['*', '*/5', '*/10', '*/15', '*/30', '0', '15', '30', '45'],
+            cronHourOptions: ['*', '*/2', '*/3', '*/4', '*/6', '*/8', '*/12', '0', '6', '12', '18'],
+            cronDayOptions: ['*', '1', '2', '3', '5', '10', '15', '20', '25'],
+            cronMonthOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+            cronWeekdayOptions: ['*', '0', '1', '2', '3', '4', '5', '6'],
             gmailOAuth: {
                 authUrl: '',
                 pastedCode: '',
@@ -402,6 +418,15 @@ createApp({
                 // 自动获取 Sub2API 代理列表
                 if (this.config.sub2api_mode && this.config.sub2api_mode.enable && this.config.sub2api_mode.api_url && this.config.sub2api_mode.api_key) {
                     this.fetchSub2apiProxies();
+                }
+                // Cron 默认值
+                if (this.config.sub2api_mode) {
+                    if (!this.config.sub2api_mode.check_cron) {
+                        const interval = this.config.sub2api_mode.check_interval_minutes || 60;
+                        this.config.sub2api_mode.check_cron = `*/${interval} * * * *`;
+                    }
+                    this.parseCronToFields(this.config.sub2api_mode.check_cron);
+                    this.fetchCheckHistory();
                 }
             } catch (e) {}
         },
@@ -1257,12 +1282,52 @@ createApp({
                 if(data.code === 200) {
                     this.showToast(data.message, 'success');
                     this.pollStats();
+                    setTimeout(() => this.fetchCheckHistory(), 10000);
                 } else {
                     this.showToast(data.message || '启动测活失败', 'error');
                 }
             } catch (err) {
                 this.showToast('网络请求异常', 'error');
             }
+        },
+        async fetchCheckHistory() {
+            this.isLoadingCheckHistory = true;
+            try {
+                const res = await this.authFetch('/api/sub2api/check_history');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.checkHistory = data.data;
+                }
+            } catch (e) {
+                console.error('Fetch check history failed:', e);
+            } finally {
+                this.isLoadingCheckHistory = false;
+            }
+        },
+        assembleCron() {
+            const f = this.cronFields;
+            this.config.sub2api_mode.check_cron = `${f.minute} ${f.hour} ${f.day} ${f.month} ${f.weekday}`;
+        },
+        parseCronToFields(expr) {
+            if (!expr || typeof expr !== 'string') return;
+            const parts = expr.trim().split(/\s+/);
+            if (parts.length === 5) {
+                this.cronFields.minute = parts[0];
+                this.cronFields.hour = parts[1];
+                this.cronFields.day = parts[2];
+                this.cronFields.month = parts[3];
+                this.cronFields.weekday = parts[4];
+            }
+        },
+        selectCronPreset(preset) {
+            this.config.sub2api_mode.check_cron = preset.expr;
+            this.parseCronToFields(preset.expr);
+        },
+        onCronFieldChange() {
+            this.assembleCron();
+        },
+        onCronExprInput() {
+            this.parseCronToFields(this.config.sub2api_mode.check_cron);
         },
         async checkUpdate(isManual = false) {
             try {
