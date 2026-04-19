@@ -1408,6 +1408,12 @@ class RegEngine:
         if self.loop and self.async_stop_event:
             self.loop.call_soon_threadsafe(self.async_stop_event.set)
 
+        try:
+            from utils.email_providers.postman_center import global_postman_fleet
+            global_postman_fleet.clear_fleet()
+        except Exception:
+            pass
+
     def is_running(self) -> bool:
         if self._force_stopped:
             return False

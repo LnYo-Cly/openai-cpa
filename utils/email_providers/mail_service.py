@@ -19,6 +19,7 @@ from utils import config as cfg
 from utils.integrations.ai_service import AIService
 from utils.email_providers.gmail_service import get_gmail_otp_via_oauth
 from utils.email_providers.duckmail_service import DuckMailService
+from utils.email_providers.postman_center import global_postman_fleet, wait_for_code
 
 class ProxyIMAP4_SSL(imaplib.IMAP4_SSL):
     """支持 Socks5 和 HTTP 代理的局部 IMAP 客户端"""
@@ -47,7 +48,7 @@ class ProxyIMAP4_SSL(imaplib.IMAP4_SSL):
 luckmail_lock = threading.Lock()
 
 _CM_TOKEN_CACHE: Optional[str] = None
-MS_SNAPSHOT_STORAGE = {}
+
 _thread_data = threading.local()
 _orig_sleep = time.sleep
 LOCAL_USED_PIDS = set()
@@ -533,6 +534,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         email = mailbox_info["email"]
         set_last_email(email)
         print(f"[{cfg.ts()}] [INFO] 微软库分配并锁定账号: ({mask_email(email)})")
+        global_postman_fleet.add_mailbox_listener(ms_service, mailbox_info)
         return email, json.dumps(mailbox_info, ensure_ascii=False)
 
     prefix, ai_enabled = _get_ai_data_package()
@@ -747,60 +749,6 @@ def _create_imap_conn(proxy_str=None):
         return ProxyIMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, proxy_url=proxy_str, timeout=15)
     return imaplib.IMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, timeout=15)
 
-
-def _poll_local_ms_for_oai_code_graph(ms_service, target_email: str, mailbox_dict: dict, max_attempts: int,
-                                      excluded_ids: set = None) -> str:
-    excluded_ids = excluded_ids or set()
-    tgt = target_email.lower().strip()
-    processed_msg_ids = set()
-
-    print(f"[{cfg.ts()}] [INFO] 靶向轮询器启动 | 目标: {mask_email(tgt)} | 已屏蔽历史邮件: {len(excluded_ids)}", flush=True)
-
-    for attempt in range(max_attempts):
-        if getattr(cfg, 'GLOBAL_STOP', False): return ""
-        messages = ms_service.fetch_openai_messages(mailbox_dict)
-
-        if messages:
-            for msg in messages:
-                msg_id = msg.get('id')
-                if msg_id in excluded_ids or msg_id in processed_msg_ids:
-                    continue
-
-                sender = str(msg.get('from', {}).get('emailAddress', {}).get('address', '')).lower()
-                if "openai.com" not in sender:
-                    continue
-                recipients = [str(r.get('emailAddress', {}).get('address', '')).lower().strip()
-                              for r in msg.get('toRecipients', [])]
-                body_content = msg.get('body', {}).get('content', '')
-                subject = msg.get('subject', '').lower()
-
-                is_hit = (tgt in recipients) or (f"to: {tgt}" in body_content.lower()) or (tgt in body_content.lower())
-
-                if is_hit:
-                    code = _extract_otp_code(f"{subject}\n{body_content}")
-                    if code:
-                        print(f"\n[{cfg.ts()}] [SUCCESS] 🎯 捕获专属验证码: {code} -> {mask_email(tgt)}", flush=True)
-                        return code
-
-                processed_msg_ids.add(msg_id)
-
-        time.sleep(2)
-    return ""
-
-
-def record_ms_snapshot(email: str, jwt: str, proxies: Any = None):
-    try:
-        from utils.email_providers.local_microsoft_service import LocalMicrosoftService
-        parsed_jwt = json.loads(jwt or "{}")
-        mbox = parsed_jwt if isinstance(parsed_jwt, dict) else {}
-        mbox["email"] = email
-        ms = LocalMicrosoftService(proxies=proxies)
-        snapshot = ms.get_snapshot_ids(mbox, email)
-
-        MS_SNAPSHOT_STORAGE[email.lower()] = snapshot
-    except Exception as e:
-        pass
-
 def get_oai_code(
         email: str,
         jwt: str = "",
@@ -844,18 +792,8 @@ def get_oai_code(
             pass
 
         if local_ms_account:
-            local_ms_account["email"] = str(local_ms_account.get("email") or email).strip()
-            from utils.email_providers.local_microsoft_service import LocalMicrosoftService
-            ms_service = LocalMicrosoftService(proxies=mail_proxies)
-            excluded = MS_SNAPSHOT_STORAGE.pop(email.lower(), set())
-
-            return _poll_local_ms_for_oai_code_graph(
-                ms_service=ms_service,
-                target_email=email,
-                mailbox_dict=local_ms_account,
-                max_attempts=max_attempts,
-                excluded_ids=excluded
-            )
+            timeout = max_attempts * 3
+            return wait_for_code(email, timeout=timeout)
         else:
             print(f"\n[{cfg.ts()}] [ERROR] 缺少微软邮箱凭据，无法收信。")
             return ""
