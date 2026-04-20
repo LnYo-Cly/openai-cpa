@@ -873,7 +873,9 @@ async def cluster_view_ws(websocket: WebSocket, token: str = Query(None)):
             now = time.time()
             with cluster_lock:
                 CLUSTER_NODES = {k: v for k, v in CLUSTER_NODES.items() if now - v["last_seen"] < 20}
-                await websocket.send_json({"status": "success", "nodes": CLUSTER_NODES})
+                nodes_snapshot = CLUSTER_NODES.copy()
+            await websocket.send_json({"status": "success", "nodes": nodes_snapshot})
+
             await asyncio.sleep(0.5)
     except Exception:
         pass
