@@ -133,6 +133,12 @@ createApp({
             cronDayOptions: ['*', '1', '2', '3', '5', '10', '15', '20', '25'],
             cronMonthOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
             cronWeekdayOptions: ['*', '0', '1', '2', '3', '4', '5', '6'],
+            checkFilterOptions: [
+                { value: 'all', label: '全部账号' },
+                { value: 'active', label: '仅正常' },
+                { value: 'inactive', label: '仅停用' },
+                { value: 'rate_limited', label: '仅限流' },
+            ],
             gmailOAuth: {
                 authUrl: '',
                 pastedCode: '',
@@ -438,6 +444,9 @@ createApp({
                 }
                 if (this.config.sub2api_mode.enable_ws_mode === undefined) {
                     this.config.sub2api_mode.enable_ws_mode = true;
+                }
+                if (this.config.sub2api_mode.check_filter === undefined) {
+                    this.config.sub2api_mode.check_filter = 'all';
                 }
                 if(this.config.clash_proxy_pool && Array.isArray(this.config.clash_proxy_pool.blacklist)) {
                     this.blacklistStr = this.config.clash_proxy_pool.blacklist.join('\n');

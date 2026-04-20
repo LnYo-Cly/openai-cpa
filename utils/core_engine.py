@@ -82,6 +82,31 @@ def _aggregate_check_results(results: list, trigger: str, start_time: float) -> 
     return record
 
 
+def _filter_accounts_by_status(accounts: list, filter_type: str) -> list:
+    """根据 Sub2API 账号状态过滤测活列表"""
+    if filter_type == "all" or not filter_type:
+        return accounts
+
+    filtered = []
+    for acc in accounts:
+        status = acc.get("status", "")
+        disabled = acc.get("disabled", False)
+
+        if filter_type == "active":
+            if status == "active" and not disabled:
+                filtered.append(acc)
+        elif filter_type == "inactive":
+            if status == "inactive" or disabled:
+                filtered.append(acc)
+        elif filter_type == "rate_limited":
+            # 限流账号: status=active 但 extra 中有 rate limit 标记
+            extra = str(acc.get("extra", "") or "")
+            if "rate" in extra.lower() or "429" in extra:
+                filtered.append(acc)
+
+    return filtered
+
+
 def _calc_cron_wait_seconds() -> float:
     try:
         from croniter import croniter
@@ -1100,6 +1125,12 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
         print(f"[{ts()}] [ERROR] 获取 Sub2API 全量库存失败: {account_list}")
         return 0, 0
 
+    _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
+    if _check_filter != 'all':
+        before = len(account_list)
+        account_list = _filter_accounts_by_status(account_list, _check_filter)
+        print(f"[{ts()}] [INFO] 测活过滤 [{_check_filter}]: {before} → {len(account_list)} 个账号")
+
     total_files = len(account_list)
 
     if executor is not None:
@@ -1313,6 +1344,12 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     try: await asyncio.wait_for(async_stop_event.wait(), timeout=60)
                     except asyncio.TimeoutError: pass
                     continue
+
+                _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
+                if _check_filter != 'all':
+                    before = len(account_list)
+                    account_list = _filter_accounts_by_status(account_list, _check_filter)
+                    print(f"[{ts()}] [INFO] 测活过滤 [{_check_filter}]: {before} → {len(account_list)} 个账号")
 
                 total_files = len(account_list)
 

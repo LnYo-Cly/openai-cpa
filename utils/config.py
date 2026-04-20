@@ -260,6 +260,7 @@ SUB2API_ENABLE_WS_MODE: bool = True
 SUB2API_DEFAULT_PROXY: str = ""
 SUB2API_DEFAULT_PROXY_POOL: list = []
 SUB2API_RETAIN_REG_ONLY: bool = False
+SUB2API_CHECK_FILTER: str = "all"
 
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
@@ -400,6 +401,7 @@ def reload_all_configs(new_config_dict=None):
     global DB_TYPE, MYSQL_CFG
     global MAX_LOG_LINES
     global CPA_RETAIN_REG_ONLY, SUB2API_RETAIN_REG_ONLY, RETAIN_REG_ONLY
+    global SUB2API_CHECK_FILTER
 
     base_yaml_config = init_config()
 
@@ -599,6 +601,9 @@ def reload_all_configs(new_config_dict=None):
     SUB2API_ACCOUNT_PROXY_ID = safe_int(_sub2api.get("account_proxy_id", 0), 0, minimum=0)
     SUB2API_ENABLE_WS_MODE = safe_bool(_sub2api.get("enable_ws_mode", True), default=True)
     SUB2API_RETAIN_REG_ONLY = safe_bool(_sub2api.get("retain_reg_only", False))
+    SUB2API_CHECK_FILTER = str(_sub2api.get("check_filter", "all")).strip().lower()
+    if SUB2API_CHECK_FILTER not in ("all", "active", "inactive", "rate_limited"):
+        SUB2API_CHECK_FILTER = "all"
 
     raw_sub2api_default_proxy = _sub2api.get("default_proxy", "")
 
