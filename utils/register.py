@@ -1337,51 +1337,45 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
         gc.collect()
 
 def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, dict]:
-    """刷新 OAuth Token，使用标准 requests 避免 curl_cffi 的 SOCKS5 TLS 兼容问题"""
-    import requests as std_requests
+    """刷新 OAuth Token，使用 httpx 解决 curl_cffi/requests 的 SOCKS5 TLS 兼容问题"""
+    import httpx
 
     if not refresh_token:
         return False, {"error": "无 refresh_token"}
     try:
-        # 确保使用 socks5h:// 让代理解析 DNS
-        _proxies = None
+        proxy_url = None
         if proxies:
-            _proxies = {}
-            for k, v in proxies.items():
-                if v and isinstance(v, str) and v.startswith("socks5://"):
-                    _proxies[k] = "socks5h://" + v[9:]
-                else:
-                    _proxies[k] = v
+            proxy_url = proxies.get("https") or proxies.get("http")
+            if proxy_url and proxy_url.startswith("socks5://"):
+                proxy_url = "socks5://" + proxy_url[9:]  # httpx 用 socks5://
 
-        resp = std_requests.post(
-            TOKEN_URL,
-            data={
-                "client_id": CLIENT_ID,
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "redirect_uri": DEFAULT_REDIRECT_URI,
-            },
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            },
-            proxies=_proxies,
-            verify=False,
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            now = int(time.time())
-            expires_in = _to_int(data.get("expires_in", 3600))
-            return True, {
-                "access_token": data.get("access_token"),
-                "refresh_token": data.get("refresh_token", refresh_token),
-                "id_token": data.get("id_token"),
-                "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-                "expired": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                         time.gmtime(now + max(expires_in, 0))),
-            }
-        return False, {"error": f"HTTP {resp.status_code}"}
+        with httpx.Client(proxy=proxy_url, verify=False, timeout=30) as client:
+            resp = client.post(
+                TOKEN_URL,
+                data={
+                    "client_id": CLIENT_ID,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "redirect_uri": DEFAULT_REDIRECT_URI,
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                now = int(time.time())
+                expires_in = _to_int(data.get("expires_in", 3600))
+                return True, {
+                    "access_token": data.get("access_token"),
+                    "refresh_token": data.get("refresh_token", refresh_token),
+                    "id_token": data.get("id_token"),
+                    "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                    "expired": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                             time.gmtime(now + max(expires_in, 0))),
+                }
+            return False, {"error": f"HTTP {resp.status_code}"}
     except Exception as e:
         return False, {"error": str(e)}
