@@ -951,8 +951,12 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
         return _handle_sub2api_dead_account(item, client, is_disabled=False)
 
     print(f"[{ts()}] [INFO] {mask_email(name)} 尝试刷新 Token...")
-    proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
-    ok, new_tokens = refresh_oauth_token(refresh_token_val, proxies=proxies)
+    # Token 刷新目标为 auth0.openai.org，优先直连以避免本地代理 TLS 兼容问题
+    ok, new_tokens = refresh_oauth_token(refresh_token_val, proxies=None)
+    if not ok and args.proxy:
+        print(f"[{ts()}] [INFO] {mask_email(name)} 直连刷新失败，尝试通过代理刷新...")
+        proxies = {"http": args.proxy, "https": args.proxy}
+        ok, new_tokens = refresh_oauth_token(refresh_token_val, proxies=proxies)
 
     if not ok:
         err_info = new_tokens.get('error', '未知') if isinstance(new_tokens, dict) else str(new_tokens)
