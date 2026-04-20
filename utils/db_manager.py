@@ -2,17 +2,14 @@ import sqlite3
 import pymysql
 import json
 import os
-from datetime import datetime
 from typing import Any
-
 from utils.config import DB_TYPE, MYSQL_CFG
+from utils import config as cfg
 
 os.makedirs("data", exist_ok=True)
 DB_PATH = "data/data.db"
 
 
-def ts() -> str:
-    return datetime.now().strftime("%H:%M:%S")
 class get_db_conn:
     """抹平 SQLite 和 MySQL 连接差异"""
     def __init__(self, as_dict=False):
@@ -104,7 +101,7 @@ def init_db():
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN retry_master INTEGER DEFAULT 0;')
         except Exception:
             pass
-    print(f"[{ts()}] [系统] 数据库模块初始化完成 (引擎: {DB_TYPE.upper()})")
+    print(f"[{cfg.ts()}] [系统] 数据库模块初始化完成 (引擎: {DB_TYPE.upper()})")
 
 
 def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
@@ -117,7 +114,7 @@ def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
             ''', (email, password, token_json_str))
             return True
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 数据库保存失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 数据库保存失败: {e}")
         return False
 
 
@@ -130,7 +127,7 @@ def get_all_accounts() -> list:
             # MySQL 默认游标返回的也是元组，兼容原版切片逻辑
             return [{"email": r[0], "password": r[1], "created_at": r[2]} for r in rows]
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 获取账号列表失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 获取账号列表失败: {e}")
         return []
 
 
@@ -144,7 +141,7 @@ def get_token_by_email(email: str) -> dict:
                 return json.loads(row[0])
             return None
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 读取 Token 失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 读取 Token 失败: {e}")
         return None
 
 
@@ -178,7 +175,7 @@ def delete_accounts_by_emails(emails: list) -> bool:
             execute_sql(c, f"DELETE FROM accounts WHERE email IN ({placeholders})", tuple(emails))
             return True
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 数据库批量删除账号异常: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 数据库批量删除账号异常: {e}")
         return False
 
 
@@ -210,7 +207,7 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0") -
             ]
             return {"total": total, "data": data}
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 分页获取账号列表失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 分页获取账号列表失败: {e}")
         return {"total": 0, "data": []}
 
 
@@ -221,7 +218,7 @@ def set_sys_kv(key: str, value: Any):
             c = get_cursor(conn)
             execute_sql(c, "INSERT OR REPLACE INTO system_kv (`key`, value) VALUES (?, ?)", (key, val_str))
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 系统配置保存失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 系统配置保存失败: {e}")
 
 
 def get_sys_kv(key: str, default=None):
@@ -245,7 +242,7 @@ def get_all_accounts_with_token(limit: int = 10000) -> list:
             rows = c.fetchall()
             return [{"email": r[0], "password": r[1], "token_data": r[2]} for r in rows]
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 提取完整账号数据失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 提取完整账号数据失败: {e}")
         return []
 
 
@@ -265,7 +262,7 @@ def import_local_mailboxes(mailboxes_data: list) -> int:
                 except:
                     pass
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 导入邮箱库失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 导入邮箱库失败: {e}")
     return count
 
 
@@ -325,7 +322,7 @@ def get_and_lock_unused_local_mailbox() -> dict:
                 return dict(row)
             return None
     except Exception as e:
-        print(f"[{ts()}] [ERROR] 提取本地邮箱失败: {e}")
+        print(f"[{cfg.ts()}] [ERROR] 提取本地邮箱失败: {e}")
         return None
 
 
@@ -356,7 +353,7 @@ def get_mailbox_for_pool_fission() -> dict:
                 return dict(row)
             return None
     except Exception as e:
-        print(f"[{ts()}] [DB_ERROR] 提取失败: {e}")
+        print(f"[{cfg.ts()}] [DB_ERROR] 提取失败: {e}")
         return None
 
 
@@ -390,7 +387,7 @@ def update_pool_fission_result(email: str, is_blocked: bool, is_raw: bool):
                     execute_sql(c, "UPDATE local_mailboxes SET status = 3, retry_master = 0 WHERE email = ?", (email,))
 
     except Exception as e:
-        print(f"[{ts()}] [DB_ERROR] 结果更新失败: {e}")
+        print(f"[{cfg.ts()}] [DB_ERROR] 结果更新失败: {e}")
 
 def clear_retry_master_status(email: str):
     try:
@@ -419,7 +416,7 @@ def check_account_exists(email: str) -> bool:
             execute_sql(c, "SELECT 1 FROM accounts WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))", (email,))
             return c.fetchone() is not None
     except Exception as e:
-        print(f"[{ts()}] [DB_ERROR] 查重失败: {e}")
+        print(f"[{cfg.ts()}] [DB_ERROR] 查重失败: {e}")
         return False
 
 def clear_all_accounts() -> bool:

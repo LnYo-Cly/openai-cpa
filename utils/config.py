@@ -6,7 +6,7 @@ import random
 import string
 import shutil
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from utils.proxy_manager import reload_proxy_config
 from utils.integrations.sub2api_proxy import get_valid_sub2api_proxy_urls
@@ -18,7 +18,8 @@ CONFIG_PATH = os.path.join(BASE_DIR, "data", "config.yaml")
 
 
 def ts() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+    tz_utc_8 = timezone(timedelta(hours=8))
+    return datetime.now(tz_utc_8).strftime("%H:%M:%S")
 
 
 def format_docker_url(url: str) -> str:

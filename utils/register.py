@@ -1202,118 +1202,78 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
 
                             next_url = str(code2_resp.json().get("continue_url") or "").strip()
                             resp, current_url = _follow_redirect_chain_local(s_log, next_url, proxies)
-
-                    if "code=" in current_url and "state=" in current_url:
-                        return submit_callback_url(
-                            callback_url=current_url,
-                            code_verifier=oauth_log.code_verifier,
-                            redirect_uri=oauth_log.redirect_uri,
-                            expected_state=oauth_log.state,
-                            proxies=proxies,
-                        ), password
-
-                    if current_url.endswith("/consent") or current_url.endswith("/workspace"):
-                        auth_cookie2 = s_log.cookies.get("oai-client-auth-session") or ""
-                        workspaces2 = _parse_workspace_from_auth_cookie(auth_cookie2)
-                        if workspaces2:
-                            select_resp = _post_with_retry(
-                                s_log,
-                                "https://auth.openai.com/api/accounts/workspace/select",
-                                headers=_oai_headers(s_log.cookies.get("oai-did") or "", {
-                                    "Referer": current_url, "content-type": "application/json"
-                                }),
-                                json_body={"workspace_id": str(workspaces2[0].get("id"))},
+                    while True:
+                        if "code=" in current_url:
+                            return submit_callback_url(
+                                callback_url=current_url,
+                                code_verifier=oauth_log.code_verifier,
+                                redirect_uri=oauth_log.redirect_uri,
+                                expected_state=oauth_log.state,
                                 proxies=proxies,
+                            ), password
+                        elif current_url.endswith("/about-you"):
+                            user_info = generate_random_user_info()
+                            print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）初始化账户信息 "
+                                  f"(昵称: {user_info['name']}, 生日: {user_info['birthdate']})...")
+
+                            sentinel_create = generate_payload(did=did, flow="create_account", proxy=proxy,
+                                                               user_agent=current_ua, impersonate="chrome110",
+                                                               ctx=log_ctx)
+                            create_headers = _oai_headers(did, {
+                                "Referer": "https://auth.openai.com/about-you",
+                                "content-type": "application/json",
+                            })
+                            if sentinel_create:
+                                create_headers["openai-sentinel-token"] = sentinel_create
+
+                            create_account_resp = _post_with_retry(
+                                s_log, "https://auth.openai.com/api/accounts/create_account",
+                                headers=create_headers, json_body=user_info, proxies=proxies,
                             )
-                            final_url = (
-                                _extract_next_url(select_resp.json())
-                                if select_resp.status_code == 200 else ""
-                            )
-                            _, final_loc = _follow_redirect_chain_local(s_log, final_url, proxies)
-                            if "code=" in final_loc:
-                                return submit_callback_url(
-                                    callback_url=final_loc,
-                                    expected_state=oauth_log.state,
-                                    code_verifier=oauth_log.code_verifier,
-                                    proxies=proxies,
-                                ), password
-                    if "/add-phone" in current_url:
-                        if oauth_attempt == 0:
+                            current_url = str(create_account_resp.json().get("continue_url") or "").strip()
                             continue
-                        else:
-                            print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） OAuth链路触发风控，进入 HeroSMS 手机号验证流程...")
-                            ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
-                                session=s_log,
-                                proxies=proxies,
-                                hint_url=current_url
-                            )
-
-                            if ok and next_url_or_reason:
-                                print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） 手机验证成功，继续 OAuth 链路: {next_url_or_reason}")
-
-                                if next_url_or_reason.endswith("/about-you"):
-                                    user_info = generate_random_user_info()
-                                    print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）初始化账户信息 "
-                                          f"(昵称: {user_info['name']}, 生日: {user_info['birthdate']})...")
-
-                                    sentinel_create = generate_payload(did=did, flow="create_account", proxy=proxy,
-                                                                       user_agent=current_ua,
-                                                                       impersonate="chrome110", ctx=log_ctx)
-                                    create_headers = _oai_headers(did, {
-                                        "Referer": "https://auth.openai.com/about-you",
-                                        "content-type": "application/json",
-                                    })
-
-                                    if sentinel_create:
-                                        create_headers["openai-sentinel-token"] = sentinel_create
-
-                                    create_account_resp = _post_with_retry(
-                                        s_log,
-                                        "https://auth.openai.com/api/accounts/create_account",
-                                        headers=create_headers,
-                                        json_body=user_info, proxies=proxies,
-                                    )
-                                    next_url_or_reason = str(create_account_resp.json().get("continue_url") or "").strip()
-
-                                if "code=" in next_url_or_reason:
-                                    return submit_callback_url(
-                                        callback_url=next_url_or_reason,
-                                        expected_state=oauth_log.state,
-                                        code_verifier=oauth_log.code_verifier,
-                                        proxies=proxies,
-                                    ), password
-
-                                if next_url_or_reason.endswith("/consent") or next_url_or_reason.endswith("/workspace"):
-                                    auth_cookie2 = s_log.cookies.get("oai-client-auth-session") or ""
-                                    workspaces2 = _parse_workspace_from_auth_cookie(auth_cookie2)
-                                    if workspaces2:
-                                        select_resp = _post_with_retry(
-                                            s_log,
-                                            "https://auth.openai.com/api/accounts/workspace/select",
-                                            headers=_oai_headers(s_log.cookies.get("oai-did") or "", {
-                                                "Referer": next_url_or_reason, "content-type": "application/json"
-                                            }),
-                                            json_body={"workspace_id": str(workspaces2[0].get("id"))},
-                                            proxies=proxies,
-                                        )
-                                        final_url = (
-                                            _extract_next_url(select_resp.json())
-                                            if select_resp.status_code == 200 else ""
-                                        )
-                                        _, final_loc = _follow_redirect_chain_local(s_log, final_url, proxies)
-                                        if "code=" in final_loc:
-                                            return submit_callback_url(
-                                                callback_url=final_loc,
-                                                expected_state=oauth_log.state,
-                                                code_verifier=oauth_log.code_verifier,
-                                                proxies=proxies,
-                                            ), password
-                                current_url = next_url_or_reason
+                        if current_url.endswith("/consent") or current_url.endswith("/workspace"):
+                            auth_cookie2 = s_log.cookies.get("oai-client-auth-session") or ""
+                            workspaces2 = _parse_workspace_from_auth_cookie(auth_cookie2)
+                            if workspaces2:
+                                select_resp = _post_with_retry(
+                                    s_log,
+                                    "https://auth.openai.com/api/accounts/workspace/select",
+                                    headers=_oai_headers(s_log.cookies.get("oai-did") or "", {
+                                        "Referer": current_url, "content-type": "application/json"
+                                    }),
+                                    json_body={"workspace_id": str(workspaces2[0].get("id"))},
+                                    proxies=proxies,
+                                )
+                                final_url = (
+                                    _extract_next_url(select_resp.json())
+                                    if select_resp.status_code == 200 else ""
+                                )
+                                _, final_loc = _follow_redirect_chain_local(s_log, final_url, proxies)
+                                current_url = final_loc
+                                continue
                             else:
-                                print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） {next_url_or_reason}")
+                                break
+                        elif "/add-phone" in current_url:
+                            if oauth_attempt == 0:
+                                break
+                            else:
+                                print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） OAuth链路触发风控，进入 HeroSMS 手机号验证...")
+                                ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
+                                    session=s_log, proxies=proxies, hint_url=current_url
+                                )
+
+                                if ok and next_url_or_reason:
+                                    print(
+                                        f"[{cfg.ts()}] [INFO] （{mask_email(email)}） 手机验证成功，继续链路: {next_url_or_reason}")
+                                    current_url = next_url_or_reason
+                                    continue
+                                else:
+                                    print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） {next_url_or_reason}")
+                                    current_url = next_url_or_reason if next_url_or_reason else current_url
+                                    break
+                        else:
                             break
-                    else:
-                        break
 
                 if run_ctx is not None: run_ctx['phone_verify'] = True
                 print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） OAuth 授权链路追踪失败！当前死在网页: {current_url}")

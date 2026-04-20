@@ -644,7 +644,7 @@
                                     <option value="imap">imap (直连收件箱)</option>
                                     <option value="local_microsoft">本地微软邮箱库</option>
                                     <option value="gmail_fission">Gmail OAuth裂变</option>
-                                    <option value="Gmail_OAuth">Gmail_OAuth授权</option>
+                                    <option value="Gmail_OAuth">Gmail_OAuth授权(cf转发gmail直接选此模式收件)</option>
                                     <option value="freemail">freemail</option>
                                     <option value="cloudmail">cloudmail</option>
                                     <option value="mail_curl">mail_curl</option>
@@ -718,7 +718,7 @@
                                             <h4 class="text-sm font-black text-blue-800 tracking-wide">多级域名泛解析模式</h4>
                                             <p class="text-xs text-slate-500 mt-1 font-medium">开启后将自动使用指定域名层级。</p>
                                             <p class="text-[11px] text-slate-400 mt-1">第一次使用请填写好上方发信域名池后点击下方推送按钮，如果加入新主域也要点推送，推送只需要一次永久生效</p>
-                                            <p v-if="!['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail'].includes(config.email_api_mode)" class="text-[11px] font-bold text-rose-600 mt-3 bg-rose-50 px-3 py-2 rounded-lg inline-block border border-rose-100 shadow-sm flex items-center gap-1.5">
+                                            <p v-if="!['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail', 'Gmail_OAuth'].includes(config.email_api_mode)" class="text-[11px] font-bold text-rose-600 mt-3 bg-rose-50 px-3 py-2 rounded-lg inline-block border border-rose-100 shadow-sm flex items-center gap-1.5">
                                                 <span>⚠️</span> 当前模式不支持此功能！仅限 cloudflare_temp_email, freemail, imap, cloudmail。
                                             </p>
                                         </div>
@@ -972,7 +972,7 @@
                                             <div class="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center text-xl shadow-sm">G</div>
                                             <div>
                                                 <h3 class="text-base font-bold text-slate-800">Gmail OAuth 裂变控制</h3>
-                                                <p class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">必须先在左侧选择Gmail OAuth授权完毕后在回到此功能使用</p>
+                                                <span class="text-[11px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded mt-1 inline-block border border-rose-100">⚠️ 必须先在左侧API 模式选择Gmail_OAuth授权完毕后在回到此功能使用！</span>
                                             </div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">

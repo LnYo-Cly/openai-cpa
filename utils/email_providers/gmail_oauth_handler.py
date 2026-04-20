@@ -94,6 +94,12 @@ class GmailOAuthHandler:
         if not os.path.exists(token_path):
             return None
 
+        proxy_url = proxy
+        if isinstance(proxy, dict):
+            proxy_url = proxy.get('https') or proxy.get('http')
+
+        GmailOAuthHandler._set_proxy(proxy_url)
+
         try:
             creds = Credentials.from_authorized_user_file(token_path, GmailOAuthHandler.SCOPES)
 
@@ -102,8 +108,30 @@ class GmailOAuthHandler:
                 with open(token_path, 'w') as f:
                     f.write(creds.to_json())
 
-            GmailOAuthHandler._apply_socks_proxy(proxy)
-            return build('gmail', 'v1', credentials=creds, static_discovery=False)
+            custom_http = None
+            if proxy_url and isinstance(proxy_url, str):
+                parsed = urllib.parse.urlparse(proxy_url)
+                scheme = parsed.scheme.lower()
+                p_type = socks.PROXY_TYPE_HTTP if 'http' in scheme else socks.PROXY_TYPE_SOCKS5
+
+                proxy_info = httplib2.ProxyInfo(
+                    proxy_type=p_type,
+                    proxy_host=parsed.hostname,
+                    proxy_port=parsed.port,
+                    proxy_user=parsed.username,
+                    proxy_pass=parsed.password
+                )
+                custom_http = httplib2.Http(proxy_info=proxy_info, timeout=15)
+
+            if custom_http:
+                try:
+                    import google_auth_httplib2
+                    authorized_http = google_auth_httplib2.AuthorizedHttp(creds, http=custom_http)
+                    return build('gmail', 'v1', http=authorized_http, static_discovery=False)
+                except ImportError:
+                    return build('gmail', 'v1', credentials=creds, static_discovery=False)
+            else:
+                return build('gmail', 'v1', credentials=creds, static_discovery=False)
 
         except Exception as e:
             from utils import config as cfg

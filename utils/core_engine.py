@@ -1070,7 +1070,8 @@ def normal_main_loop(args, stop_event: threading.Event, executor=None):
 
                 if status == "success":
                     success_count += 1
-            global_postman_fleet.clear_fleet()
+            if cfg.EMAIL_API_MODE in ["local_microsoft", "gmail_fission"]:
+                global_postman_fleet.clear_fleet()
 
         except Exception as e:
             print(f"[{ts()}] [ERROR] 发生未捕获全局异常: {e}")
@@ -1295,7 +1296,8 @@ async def cpa_main_loop(args, async_stop_event: asyncio.Event, executor=None):
                         elif status == "retry_403":
                             await asyncio.sleep(10)
                         await asyncio.sleep(5)
-                    global_postman_fleet.clear_fleet()
+                    if cfg.EMAIL_API_MODE in ["local_microsoft", "gmail_fission"]:
+                        global_postman_fleet.clear_fleet()
                 print(f"[{ts()}] [SUCCESS] 本轮补货完成！累计入库: {success_in_this_cycle} 个。")
             else:
                 print(f"[{ts()}] [INFO] 仓库存量充足，无需补发。")
@@ -1507,8 +1509,8 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
 
                         try: await asyncio.wait_for(async_stop_event.wait(), timeout=5)
                         except asyncio.TimeoutError: pass
-
-                    global_postman_fleet.clear_fleet()
+                    if cfg.EMAIL_API_MODE in ["local_microsoft", "gmail_fission"]:
+                        global_postman_fleet.clear_fleet()
                 print(f"[{ts()}] [SUCCESS] 本轮补货完成！累计入库 Sub2API: {success_in_this_cycle} 个。")
             else:
                 print(f"[{ts()}] [INFO] 仓库存量充足，无需补发。")
@@ -1671,12 +1673,12 @@ class RegEngine:
             self.loop.call_soon_threadsafe(self.async_stop_event.set)
 
         self._shutdown_executor()
-
-        try:
-            from utils.email_providers.postman_center import global_postman_fleet
-            global_postman_fleet.clear_fleet()
-        except Exception:
-            pass
+        if cfg.EMAIL_API_MODE in ["local_microsoft", "gmail_fission"]:
+            try:
+                from utils.email_providers.postman_center import global_postman_fleet
+                global_postman_fleet.clear_fleet()
+            except Exception:
+                pass
 
     def is_running(self) -> bool:
         if self._force_stopped:
