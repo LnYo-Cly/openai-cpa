@@ -838,7 +838,7 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                 if cfg.ENABLE_CPA_MODE:
                     should_retain = cfg.SAVE_TO_LOCAL_IN_CPA_MODE and cfg.CPA_RETAIN_REG_ONLY
                     mode_label = "CPA模式"
-                elif cfg.SUB2API_MODE_ENABLE:
+                elif cfg.ENABLE_SUB2API_MODE:
                     should_retain = cfg.SUB2API_SAVE_TO_LOCAL and cfg.SUB2API_RETAIN_REG_ONLY
                     mode_label = "Sub2API模式"
                 else:
