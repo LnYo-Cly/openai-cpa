@@ -1337,10 +1337,13 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
         gc.collect()
 
 def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, dict]:
+    """刷新 OAuth Token，使用标准 requests 库避免 curl_cffi 的 SOCKS5 TLS 兼容问题"""
+    import requests as std_requests
+
     if not refresh_token:
         return False, {"error": "无 refresh_token"}
     try:
-        resp = requests.post(
+        resp = std_requests.post(
             TOKEN_URL,
             data={
                 "client_id": CLIENT_ID,
@@ -1351,11 +1354,10 @@ def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, 
             headers={
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             },
             proxies=proxies,
-            verify=_ssl_verify(),
             timeout=30,
-            impersonate="chrome110",
         )
         if resp.status_code == 200:
             data = resp.json()
