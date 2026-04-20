@@ -400,11 +400,11 @@ def _extract_cliproxy_failure_reason(
     return None
 
 
-_token_refresh_lock = threading.Lock()
+_token_refresh_semaphore = threading.Semaphore(3)
 
 def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, dict]:
-    """刷新获取新的 access_token 等凭证（串行化避免并发压垮代理）"""
-    with _token_refresh_lock:
+    """刷新获取新的 access_token 等凭证（限制并发避免压垮代理）"""
+    with _token_refresh_semaphore:
         return _refresh_oauth_token(refresh_token, proxies=proxies)
 
 
