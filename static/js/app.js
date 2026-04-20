@@ -77,6 +77,7 @@ createApp({
             rawProxyListStr: "",
             accounts: [],
             selectedAccounts: [],
+            hideRegisterOnlyAccounts: false,
 			currentPage: 1,
             pageSize: 10,
             totalAccounts: 0,
@@ -184,6 +185,10 @@ createApp({
 	computed: {
         totalPages() {
             return Math.ceil(this.totalAccounts / this.pageSize) || 1;
+        },
+        filteredAccounts() {
+            if (!this.hideRegisterOnlyAccounts) return this.accounts;
+            return this.accounts.filter(acc => acc && acc.status !== '仅注册成功');
         },
         cloudTotalPages() {
             return Math.ceil(this.cloudTotal / this.cloudPageSize) || 1;
@@ -686,8 +691,13 @@ createApp({
 			}
         },
         toggleAll(event) {
-            if (event.target.checked) this.selectedAccounts = [...this.accounts];
+            if (event.target.checked) this.selectedAccounts = [...this.filteredAccounts];
             else this.selectedAccounts = [];
+        },
+        toggleHideRegisterOnlyAccounts() {
+            this.hideRegisterOnlyAccounts = !this.hideRegisterOnlyAccounts;
+            if (!this.selectedAccounts.length) return;
+            this.selectedAccounts = this.selectedAccounts.filter(acc => this.filteredAccounts.includes(acc));
         },
 
 		async toggleSystem() {
