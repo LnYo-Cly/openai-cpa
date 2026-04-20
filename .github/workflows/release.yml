@@ -16,19 +16,26 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: 打包项目文件
+      - name:
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          [ "$TAG_NAME" == "$GITHUB_REF" ] && TAG_NAME="latest"
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            TAG_NAME="latest"
+          fi
+
           ZIP_NAME="Wenfxl-Codex-Manager-${TAG_NAME}.zip"
 
           zip -r $ZIP_NAME . \
-            -x "*.git*" -x "*.github*" -x "*__pycache__*" \
-            -x "data/*" -x "config.yaml" -x "*.env" \
-            -x "venv/*" -x ".idea/*" -x ".vscode/*"
+            -x "*.git*" \
+            -x "*.github*" \
+            -x "*__pycache__*" \
+            -x "data/*" \
+            -x "config.yaml" \
+            -x "*.env" \
+            -x "venv/*" \
+            -x ".idea/*" \
+            -x ".vscode/*"
 
           echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_ENV
 
@@ -36,12 +43,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ZIP_FILE }}
-          name: "Wenfxl Codex Manager ${{ github.ref_name }}"
-          body: |
-            欢迎使用最新版本！详细变更请见下方日志。
-
-            ---
-            📦 **资源文件**: `${{ env.ZIP_FILE }}`
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
