@@ -939,7 +939,9 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
             if account_id:
                 client.delete_account(account_id)
             return "quota_deleted"
-        print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，暂不计入有效库存，Sub2API 自动管理")
+        print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，禁用账号交由 Sub2API 自动恢复")
+        if account_id:
+            client.set_account_status(account_id, disabled=True)
         return "quota_limited"
 
     print(f"[{ts()}] [ERROR] Sub2API测活: {mask_email(name)} 测活失败 ({reason})")
