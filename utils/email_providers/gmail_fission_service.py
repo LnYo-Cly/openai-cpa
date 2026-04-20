@@ -178,7 +178,8 @@ class GmailFissionService:
                 custom_http = httplib2.Http(proxy_info=proxy_info)
 
             if custom_http:
-                authed_http = creds.authorize(custom_http)
+                import google_auth_httplib2
+                authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=custom_http)
                 service = build('gmail', 'v1', http=authed_http, static_discovery=False)
             else:
                 service = build('gmail', 'v1', credentials=creds, static_discovery=False)
