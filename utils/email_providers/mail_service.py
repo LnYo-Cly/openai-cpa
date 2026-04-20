@@ -537,6 +537,22 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         global_postman_fleet.add_mailbox_listener(ms_service, mailbox_info)
         return email, json.dumps(mailbox_info, ensure_ascii=False)
 
+    if mode == "gmail_fission":
+        from utils.email_providers.gmail_fission_service import GmailFissionService
+        gmail_service = GmailFissionService(proxies=mail_proxies)
+        mailbox_info = gmail_service.get_unused_mailbox()
+
+        if not mailbox_info:
+            cfg.POOL_EXHAUSTED = True
+            print(f"[{cfg.ts()}] [WARNING] Gmail 裂变池已耗尽或生成重复过多，停止派发。")
+            return None, None
+
+        target_email = mailbox_info["email"]
+        set_last_email(target_email)
+        print(f"[{cfg.ts()}] [INFO] Gmail 库分配并锁定账号: ({mask_email(target_email)})")
+        global_postman_fleet.add_mailbox_listener(gmail_service, mailbox_info)
+        return target_email, json.dumps(mailbox_info, ensure_ascii=False)
+
     prefix, ai_enabled = _get_ai_data_package()
 
     if cfg.ENABLE_SUB_DOMAINS:
@@ -796,6 +812,15 @@ def get_oai_code(
             return wait_for_code(email, timeout=timeout)
         else:
             print(f"\n[{cfg.ts()}] [ERROR] 缺少微软邮箱凭据，无法收信。")
+            return ""
+
+    if mode == "gmail_fission":
+        timeout = max_attempts * 3
+        code = wait_for_code(email, timeout=timeout)
+        if code:
+            return code
+        else:
+            print(f"[{cfg.ts()}] [ERROR] ({mask_email(email)}) 邮递员等待超时，未收到验证码。")
             return ""
 
     for attempt in range(max_attempts):

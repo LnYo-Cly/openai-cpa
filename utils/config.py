@@ -322,6 +322,14 @@ MYSQL_CFG: dict = {}
 _sub2api_proxy_rotation_lock = threading.Lock()
 _sub2api_proxy_rotation_index = 0
 
+GMAIL_OAUTH_MASTER_EMAIL: str = ""
+GMAIL_OAUTH_FISSION_ENABLE: bool = False
+GMAIL_OAUTH_FISSION_MODE: str = "suffix"
+GMAIL_OAUTH_SUFFIX_MODE: str = "fixed"
+GMAIL_OAUTH_SUFFIX_LEN_MIN: int = 8
+GMAIL_OAUTH_SUFFIX_LEN_MAX: int = 8
+
+
 
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
@@ -402,6 +410,8 @@ def reload_all_configs(new_config_dict=None):
     global MAX_LOG_LINES
     global CPA_RETAIN_REG_ONLY, SUB2API_RETAIN_REG_ONLY, RETAIN_REG_ONLY
     global SUB2API_CHECK_FILTER
+    global GMAIL_OAUTH_MASTER_EMAIL, GMAIL_OAUTH_FISSION_ENABLE, GMAIL_OAUTH_FISSION_MODE
+    global GMAIL_OAUTH_SUFFIX_MODE, GMAIL_OAUTH_SUFFIX_LEN_MIN, GMAIL_OAUTH_SUFFIX_LEN_MAX
 
     base_yaml_config = init_config()
 
@@ -745,6 +755,16 @@ def reload_all_configs(new_config_dict=None):
     FVIA_TOKEN = str(_fvia.get("token") or "").strip()
 
     MAX_LOG_LINES = safe_int(_c.get("max_log_lines", 500), 500, minimum=50)
+
+    _gmail = _c.get("gmail_oauth_mode", {})
+    GMAIL_OAUTH_MASTER_EMAIL = str(_gmail.get("master_email", "")).strip()
+    GMAIL_OAUTH_FISSION_ENABLE = safe_bool(_gmail.get("fission_enable", False))
+    GMAIL_OAUTH_FISSION_MODE = str(_gmail.get("fission_mode", "suffix")).strip().lower()
+
+    GMAIL_OAUTH_SUFFIX_MODE = str(_gmail.get("suffix_mode", "fixed")).strip().lower()
+    GMAIL_OAUTH_SUFFIX_LEN_MIN = int(_gmail.get("suffix_len_min", 8))
+    GMAIL_OAUTH_SUFFIX_LEN_MAX = int(_gmail.get("suffix_len_max", 8))
+
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

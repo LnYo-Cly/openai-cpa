@@ -22,7 +22,7 @@ function normalizeBooleanLike(value, defaultValue = false) {
 createApp({
     data() {
         return {
-            appVersion: 'v11.1.0',
+            appVersion: 'v11.1.1',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -185,6 +185,14 @@ createApp({
                 count: 5,
                 instances: [],
                 groups: []
+            },
+            gmail_oauth_mode: {
+                master_email: '',
+                fission_enable: false,
+                fission_mode: 'suffix',
+                suffix_mode: 'mystic',
+                suffix_len_min: 8,
+                suffix_len_max: 12
             },
         };
     },

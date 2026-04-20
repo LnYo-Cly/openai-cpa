@@ -643,7 +643,8 @@
                                     <option value="cloudflare_temp_email">cloudflare_temp_email (CF 临时邮箱)</option>
                                     <option value="imap">imap (直连收件箱)</option>
                                     <option value="local_microsoft">本地微软邮箱库</option>
-                                    <option value="Gmail_OAuth">Gmail_OAuth</option>
+                                    <option value="gmail_fission">Gmail OAuth裂变</option>
+                                    <option value="Gmail_OAuth">Gmail_OAuth授权</option>
                                     <option value="freemail">freemail</option>
                                     <option value="cloudmail">cloudmail</option>
                                     <option value="mail_curl">mail_curl</option>
@@ -964,6 +965,67 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <div v-if="config.email_api_mode === 'gmail_fission' && config.gmail_oauth_mode"  class="animate-fade-in space-y-4">
+                                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center text-xl shadow-sm">G</div>
+                                            <div>
+                                                <h3 class="text-base font-bold text-slate-800">Gmail OAuth 裂变控制</h3>
+                                                <p class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">必须先在左侧选择Gmail OAuth授权完毕后在回到此功能使用</p>
+                                            </div>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" v-model="config.gmail_oauth_mode.fission_enable" @change="saveConfig" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                                        </label>
+                                    </div>
+
+                                    <div class="p-6 space-y-6" v-if="config.gmail_oauth_mode.fission_enable">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div class="space-y-2">
+                                                <label class="text-sm font-bold text-slate-700 flex items-center gap-2">Gmail 主号 (Master)</label>
+                                                <input type="text" v-model="config.gmail_oauth_mode.master_email" @blur="saveConfig" placeholder="example@gmail.com"
+                                                       class="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-2.5 px-4 focus:outline-none focus:border-red-400 transition-all text-sm">
+                                            </div>
+
+                                            <div class="space-y-2">
+                                                <label class="text-sm font-bold text-slate-700">别名策略</label>
+                                                <select v-model="config.gmail_oauth_mode.fission_mode" @change="saveConfig"
+                                                        class="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-2.5 px-4 focus:outline-none focus:border-red-400 transition-all text-sm">
+                                                    <option value="suffix">加号大法 (+ 别名后缀)</option>
+                                                    <option value="dot">圆点大法 (. 忽略位置)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="p-4 bg-red-50/30 rounded-xl border border-red-100 space-y-4" v-if="config.gmail_oauth_mode.fission_mode === 'suffix'">
+                                            <div class="flex items-center gap-2 text-red-700 font-bold text-sm mb-2">
+                                                <span>⚡ 后缀生成器设置</span>
+                                            </div>
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">生成模式</label>
+                                                    <select v-model="config.gmail_oauth_mode.suffix_mode" @change="saveConfig" class="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                                                        <option value="fixed">Fixed (固定长度)</option>
+                                                        <option value="range">Range (随机范围)</option>
+                                                        <option value="mystic">Mystic (拟真词库)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">最小长度</label>
+                                                    <input type="number" v-model="config.gmail_oauth_mode.suffix_len_min" @blur="saveConfig" class="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm">
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">最大长度</label>
+                                                    <input type="number" v-model="config.gmail_oauth_mode.suffix_len_max" @blur="saveConfig" class="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+
                                 <div v-if="config.email_api_mode === 'fvia' && config.fvia" class="animate-fade-in space-y-4">
                                     <div class="flex items-center gap-2 mb-4">
                                         <span class="text-xs font-black text-amber-800 bg-amber-100 px-3 py-1.5 rounded-md border border-amber-200 shadow-sm uppercase tracking-wider">当前模式</span>

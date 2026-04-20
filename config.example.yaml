@@ -110,6 +110,17 @@ tmailor:
 # [FviaInboxes 配置]
 fvia:
   token: ''
+
+# Gmail OAuth 裂变配置
+gmail_oauth_mode:
+  master_email: ""           # Gmail 主号 (需已完成 credentials.json 授权)
+  fission_enable: false      # 是否开启 Gmail 裂变
+  fission_mode: "suffix"     # 裂变模式: suffix、dot
+  # 后缀生成配置 (当 fission_mode 为 suffix 时生效)
+  suffix_mode: "mystic"      # fixed (固定长度) / range (随机范围) / mystic (高拟真词库)
+  suffix_len_min: 8
+  suffix_len_max: 12
+
 # [代理配置]
 # openai注册时代理地址，例子：http://127.0.0.1:7897。如果是国外服务器此项可以不填
 default_proxy: ""
