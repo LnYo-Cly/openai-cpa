@@ -1337,11 +1337,23 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
         gc.collect()
 
 def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, dict]:
-    """刷新 OAuth Token，不使用 impersonate 避免 SOCKS5 TLS 兼容问题"""
+    """刷新 OAuth Token，使用标准 requests 避免 curl_cffi 的 SOCKS5 TLS 兼容问题"""
+    import requests as std_requests
+
     if not refresh_token:
         return False, {"error": "无 refresh_token"}
     try:
-        resp = requests.post(
+        # 确保使用 socks5h:// 让代理解析 DNS
+        _proxies = None
+        if proxies:
+            _proxies = {}
+            for k, v in proxies.items():
+                if v and isinstance(v, str) and v.startswith("socks5://"):
+                    _proxies[k] = "socks5h://" + v[9:]
+                else:
+                    _proxies[k] = v
+
+        resp = std_requests.post(
             TOKEN_URL,
             data={
                 "client_id": CLIENT_ID,
@@ -1354,8 +1366,8 @@ def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, 
                 "Accept": "application/json",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             },
-            proxies=proxies,
-            verify=_ssl_verify(),
+            proxies=_proxies,
+            verify=False,
             timeout=30,
         )
         if resp.status_code == 200:
