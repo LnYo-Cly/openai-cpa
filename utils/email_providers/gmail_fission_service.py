@@ -168,8 +168,13 @@ class GmailFissionService:
             custom_http = None
             if proxy_url and proxy_url.startswith("socks5"):
                 parsed = urllib.parse.urlparse(proxy_url)
-                proxy_info = httplib2.ProxyInfo(proxy_type=socks.PROXY_TYPE_SOCKS5, proxy_host=parsed.hostname,
-                                                proxy_port=parsed.port)
+                proxy_info = httplib2.ProxyInfo(
+                    proxy_type=socks.PROXY_TYPE_SOCKS5,
+                    proxy_host=parsed.hostname,
+                    proxy_port=parsed.port or 1080,
+                    proxy_user=urllib.parse.unquote(parsed.username or ""),
+                    proxy_pass=urllib.parse.unquote(parsed.password or ""),
+                )
                 custom_http = httplib2.Http(proxy_info=proxy_info)
 
             if custom_http:
