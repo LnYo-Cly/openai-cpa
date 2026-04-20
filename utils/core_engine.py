@@ -400,9 +400,12 @@ def _extract_cliproxy_failure_reason(
     return None
 
 
+_token_refresh_lock = threading.Lock()
+
 def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, dict]:
-    """刷新获取新的 access_token 等凭证"""
-    return _refresh_oauth_token(refresh_token, proxies=proxies)
+    """刷新获取新的 access_token 等凭证（串行化避免并发压垮代理）"""
+    with _token_refresh_lock:
+        return _refresh_oauth_token(refresh_token, proxies=proxies)
 
 
 def test_cliproxy_auth_file(item: dict, api_url: str, api_token: str) -> Tuple[bool, str]:
