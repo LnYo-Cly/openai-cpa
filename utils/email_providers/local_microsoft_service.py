@@ -101,17 +101,22 @@ class LocalMicrosoftService:
             master_email = getattr(cfg, "LOCAL_MS_MASTER_EMAIL", "").strip()
             if master_email and "@" in master_email:
                 user_part, domain_part = master_email.split("@", 1)
-                random_suffix = self.generate_suffix_v2(user_part=user_part)
-                target_email = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
-                return {
-                    "id": "manual_config",
-                    "email": target_email,
-                    "master_email": master_email,
-                    "is_raw_trial": False,
-                    "client_id": getattr(cfg, "LOCAL_MS_CLIENT_ID", ""),
-                    "refresh_token": getattr(cfg, "LOCAL_MS_REFRESH_TOKEN", ""),
-                    "assigned_at": time.time()
-                }
+                for _ in range(20):
+                    random_suffix = self.generate_suffix_v2(user_part=user_part)
+                    target_email = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
+
+                    if not db_manager.check_account_exists(target_email):
+                        return {
+                            "id": "manual_config",
+                            "email": target_email,
+                            "master_email": master_email,
+                            "is_raw_trial": False,
+                            "client_id": getattr(cfg, "LOCAL_MS_CLIENT_ID", ""),
+                            "refresh_token": getattr(cfg, "LOCAL_MS_REFRESH_TOKEN", ""),
+                            "assigned_at": time.time()
+                        }
+                print(f"[{cfg.ts()}] [WARNING] 裂变生成别名多次重复，请前往配置调大[别名后缀长度]！")
+                return None
 
         if getattr(cfg, "LOCAL_MS_POOL_FISSION", False):
             with _fission_lock:
@@ -123,10 +128,24 @@ class LocalMicrosoftService:
                     if is_raw:
                         target_email = master_email
                         db_manager.clear_retry_master_status(master_email)
+                        if db_manager.check_account_exists(target_email):
+                            print(f"[{cfg.ts()}] [WARNING] 准备重试的主号实际已存在本地账号库，停止拿取。")
+                            db_manager.update_local_mailbox_status(target_email, 3)
+                            return None
                     else:
                         user_part, domain_part = master_email.split("@", 1)
-                        random_suffix = self.generate_suffix_v2(user_part=user_part)
-                        target_email = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
+                        target_email = None
+                        for _ in range(20):
+                            random_suffix = self.generate_suffix_v2(user_part=user_part)
+                            candidate = f"{user_part}+{random_suffix}@{domain_part}" if random_suffix else master_email
+
+                            if not db_manager.check_account_exists(candidate):
+                                target_email = candidate
+                                break
+
+                        if not target_email:
+                            print(f"[{cfg.ts()}] [WARNING] 生成的别名严重重复，本次放弃该号。")
+                            return None
 
                     return {
                         "id": mailbox_data["id"],
@@ -139,6 +158,12 @@ class LocalMicrosoftService:
                     }
         mailbox = db_manager.get_and_lock_unused_local_mailbox()
         if mailbox:
+            target_email = mailbox["email"]
+            if db_manager.check_account_exists(target_email):
+                print(f"[{cfg.ts()}] [WARNING] 拦截：原始主号实际已存在账号库！已废弃。")
+                db_manager.update_local_mailbox_status(target_email, 3)
+                return None
+
             res = dict(mailbox)
             res["master_email"] = res["email"]
             res["is_raw_trial"] = True

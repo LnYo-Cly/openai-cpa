@@ -182,16 +182,20 @@ def delete_accounts_by_emails(emails: list) -> bool:
         return False
 
 
-def get_accounts_page(page: int = 1, page_size: int = 50) -> dict:
+def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0") -> dict:
     try:
         with get_db_conn() as conn:
             c = get_cursor(conn)
-            execute_sql(c, "SELECT COUNT(1) FROM accounts")
+            where_clause = ""
+            if hide_reg == "1":
+                where_clause = " WHERE token_data NOT LIKE '%\"仅注册成功\"%'"
+            count_sql = f"SELECT COUNT(1) FROM accounts{where_clause}"
+            execute_sql(c, count_sql)
             total = c.fetchone()[0]
 
             offset = (page - 1) * page_size
-            execute_sql(c, "SELECT email, password, created_at, token_data FROM accounts ORDER BY id DESC LIMIT ? OFFSET ?",
-                        (page_size, offset))
+            data_sql = f"SELECT email, password, created_at, token_data FROM accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            execute_sql(c, data_sql, (page_size, offset))
             rows = c.fetchall()
 
             data = [
@@ -300,11 +304,13 @@ def get_and_lock_unused_local_mailbox() -> dict:
             c = get_cursor(conn, as_dict=True)
 
             filter_sql = """
-                SELECT * FROM local_mailboxes 
-                WHERE status = 0 
-                AND email NOT IN (SELECT email FROM accounts) 
-                ORDER BY id ASC LIMIT 1
-            """
+                            SELECT * FROM local_mailboxes m
+                            WHERE status = 0 
+                            AND NOT EXISTS (
+                                SELECT 1 FROM accounts a WHERE TRIM(LOWER(a.email)) = TRIM(LOWER(m.email))
+                            )
+                            ORDER BY id ASC LIMIT 1
+                        """
 
             if DB_TYPE == "mysql":
                 execute_sql(c, "START TRANSACTION")
@@ -330,17 +336,16 @@ def get_mailbox_for_pool_fission() -> dict:
             c = get_cursor(conn, as_dict=True)
             if DB_TYPE == "mysql":
                 execute_sql(c, "START TRANSACTION")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1 FOR UPDATE")
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND email NOT IN (SELECT email FROM accounts) LIMIT 1 FOR UPDATE")
             else:
                 execute_sql(c, "BEGIN EXCLUSIVE")
-                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 LIMIT 1")
+                execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 AND retry_master = 1 AND email NOT IN (SELECT email FROM accounts) LIMIT 1")
 
             row = c.fetchone()
 
             if not row:
                 if DB_TYPE == "mysql":
-                    execute_sql(c,
-                                "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1 FOR UPDATE")
+                    execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1 FOR UPDATE")
                 else:
                     execute_sql(c, "SELECT * FROM local_mailboxes WHERE status = 0 ORDER BY fission_count ASC LIMIT 1")
                 row = c.fetchone()
@@ -404,6 +409,18 @@ def get_all_accounts_raw() -> list:
             rows = c.fetchall()
             return [{"email": r[0], "password": r[1], "token_data": json.loads(r[2]) if r[2] else {}} for r in rows]
     except: return []
+
+def check_account_exists(email: str) -> bool:
+    """检查指定邮箱是否已经在本地账号库中"""
+    if not email: return False
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "SELECT 1 FROM accounts WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))", (email,))
+            return c.fetchone() is not None
+    except Exception as e:
+        print(f"[{ts()}] [DB_ERROR] 查重失败: {e}")
+        return False
 
 def clear_all_accounts() -> bool:
     """一键清空账号库"""

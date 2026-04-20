@@ -40,17 +40,21 @@ class PostmanFleet:
 
     def clear_fleet(self):
         with self.fleet_lock:
+            for master_email, stop_event in self.postman_signals.items():
+                stop_event.set()
+
+            self.postman_signals.clear()
             self.active_mailboxes.clear()
-            print(f"[{cfg.ts()}] [INFO] 🛑 邮局总管已下达停工令，所有邮递员准备下班。")
+            print(f"[{cfg.ts()}] [INFO] 🛑 邮局总管已下达停工令，本轮所有邮递员已下班。")
 
     def add_mailbox_listener(self, ms_service, master_mailbox):
         master_email = master_mailbox.get('master_email') or master_mailbox.get('email')
         from utils.email_providers.mail_service import mask_email
+
         with self.fleet_lock:
             if master_email in self.postman_signals:
-                print(f"[{cfg.ts()}] [INFO] 🔄 发现老邮递员 ({mask_email(master_email)})，正在让其下班休息...")
-                self.postman_signals[master_email].set()
-                del self.postman_signals[master_email]
+                return
+
             stop_event = threading.Event()
             self.postman_signals[master_email] = stop_event
 
@@ -60,7 +64,6 @@ class PostmanFleet:
             daemon=True
         )
         t.start()
-
         print(f"[{cfg.ts()}] [INFO] 📮 派发新邮递员！开始专属监听: {mask_email(master_email)}")
 
     def _exclusive_postman_worker(self, ms_service, master_mailbox, stop_event):

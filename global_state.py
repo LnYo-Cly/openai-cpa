@@ -8,16 +8,14 @@ VALID_TOKENS = set()
 CLUSTER_NODES = {}
 NODE_COMMANDS = {}
 cluster_lock = threading.Lock()
-log_history = []
+log_history = deque(maxlen=cfg.MAX_LOG_LINES)
 worker_status: dict = {}
 engine = core_engine.RegEngine()
 
 
 def append_log(msg: str):
     log_history.append(msg)
-    limit = getattr(cfg, 'MAX_LOG_LINES', 500)
-    if len(log_history) > limit * 1.2:
-        del log_history[:-limit]
+
 
 async def verify_token(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):

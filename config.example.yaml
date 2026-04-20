@@ -162,6 +162,23 @@ clash_proxy_pool:
     - "China"
     - "回国"
 
+raw_proxy_pool:
+  # 独立于 Clash 的批量代理池；启用后优先使用这里的代理列表
+  # 支持 HTTP / HTTPS / SOCKS5 显式协议；未写协议时默认按 socks5h 解析
+  enable: false
+  proxy_list:
+    # 支持以下格式：
+    # - http://user:pass@host:8080
+    # - https://user:pass@host:8443
+    # - socks5://user:pass@host:1080
+    # - socks5h://user:pass@host:1080
+    # - host:port
+    # - host:port:user:pass
+    # - user:pass@host:port
+    - "http://user:pass@127.0.0.1:8080"
+    - "socks5://user:pass@127.0.0.1:1080"
+    - "127.0.0.1:1081:user:pass"
+
 warp_proxy_list:
   - "http://127.0.0.1:41001"
   - "http://127.0.0.1:41002"
@@ -188,6 +205,9 @@ enable_email_masking: true
 #注册后等待多少秒在去拿tokens,默认是5-15秒之内
 login_delay_min: 20
 login_delay_max: 45
+
+#常规模式是否保存仅注册账号，用于后续手动登录或者其他作用
+retain_reg_only: false
 
 # CPA 模式专属配置
 cpa_mode:
@@ -217,6 +237,8 @@ cpa_mode:
   check_interval_minutes: 60
   #并发线程数配置，默认 10 线程
   threads: 10
+  #是否保存仅注册账号，用于后续手动登录或者其他作用
+  retain_reg_only: false
 
 # SUB2APIA配置 参数含义跟CPA相同
 sub2api_mode:
@@ -240,6 +262,8 @@ sub2api_mode:
   enable_ws_mode: true
   test_model: "gpt-5.2"
   default_proxy: ""
+  #是否保存仅注册账号，用于后续手动登录或者其他作用
+  retain_reg_only: false
 
 hero_sms:
   enabled: false

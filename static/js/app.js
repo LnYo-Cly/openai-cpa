@@ -1,12 +1,32 @@
 const { createApp } = Vue;
 
+function normalizeBooleanLike(value, defaultValue = false) {
+    if (value === true || value === false) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+            return true;
+        }
+        if (['0', 'false', 'no', 'off', ''].includes(normalized)) {
+            return false;
+        }
+    }
+    if (typeof value === 'number') {
+        return value !== 0;
+    }
+    return defaultValue;
+}
+
 createApp({
     data() {
         return {
-            appVersion: 'v11.0.3',
+            appVersion: 'v11.1.0',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
+            isDarkMode: localStorage.getItem('ui_theme_mode') === 'dark',
 			showAccountsPlaintext: false,
             isRunning: false,
             tabs: [
@@ -54,8 +74,10 @@ createApp({
             config: null,
             blacklistStr: "",
             warpListStr: "",
+            rawProxyListStr: "",
             accounts: [],
             selectedAccounts: [],
+            hideRegisterOnlyAccounts: false,
 			currentPage: 1,
             pageSize: 10,
             totalAccounts: 0,
@@ -161,6 +183,7 @@ createApp({
         };
     },
     mounted() {
+        this.applyTheme();
         if (this.isLoggedIn) {
             this.initApp();
         }
@@ -181,6 +204,9 @@ createApp({
         totalPages() {
             return Math.ceil(this.totalAccounts / this.pageSize) || 1;
         },
+        filteredAccounts() {
+            return this.accounts;
+        },
         cloudTotalPages() {
             return Math.ceil(this.cloudTotal / this.cloudPageSize) || 1;
         },
@@ -189,6 +215,16 @@ createApp({
         }
     },
     methods: {
+        applyTheme() {
+            const nextMode = this.isDarkMode ? 'dark' : 'light';
+            document.body.classList.toggle('theme-dark', this.isDarkMode);
+            localStorage.setItem('ui_theme_mode', nextMode);
+        },
+        toggleTheme() {
+            this.isDarkMode = !this.isDarkMode;
+            this.applyTheme();
+            this.showToast(this.isDarkMode ? '已切换为护眼模式' : '已切换为日间模式', 'info');
+        },
         showToast(message, type = 'info') {
             const id = this.toastId++;
             this.toasts.push({ id, message, type });
@@ -343,6 +379,9 @@ createApp({
                 if (this.config.sub2api_mode.test_model === undefined) {
                     this.config.sub2api_mode.test_model = 'gpt-5.2';
                 }
+                if (Array.isArray(this.config.sub2api_mode.default_proxy)) {
+                    this.config.sub2api_mode.default_proxy = this.config.sub2api_mode.default_proxy.join('\n');
+                }
                 if (this.config.sub2api_mode.default_proxy === undefined) {
                     this.config.sub2api_mode.default_proxy = '';
                 }
@@ -402,6 +441,8 @@ createApp({
                 }
                 if(this.config.clash_proxy_pool && Array.isArray(this.config.clash_proxy_pool.blacklist)) {
                     this.blacklistStr = this.config.clash_proxy_pool.blacklist.join('\n');
+                } else {
+                    this.blacklistStr = '';
                 }
                 if (this.config.clash_proxy_pool.cluster_count !== undefined) {
                     this.clashPool.count = parseInt(this.config.clash_proxy_pool.cluster_count) || 5;
@@ -409,9 +450,21 @@ createApp({
                 if (this.config.clash_proxy_pool.sub_url !== undefined) {
                     this.clashPool.subUrl = this.config.clash_proxy_pool.sub_url;
                 }
+                if (!this.config.raw_proxy_pool || typeof this.config.raw_proxy_pool !== 'object' || Array.isArray(this.config.raw_proxy_pool)) {
+                    this.config.raw_proxy_pool = { enable: false, proxy_list: [] };
+                } else {
+                    this.config.raw_proxy_pool.enable = normalizeBooleanLike(this.config.raw_proxy_pool.enable, false);
+                    if (!Array.isArray(this.config.raw_proxy_pool.proxy_list)) {
+                        this.config.raw_proxy_pool.proxy_list = [];
+                    }
+                }
                 if(Array.isArray(this.config.warp_proxy_list)) {
                     this.warpListStr = this.config.warp_proxy_list.join('\n');
+                } else {
+                    this.config.warp_proxy_list = [];
+                    this.warpListStr = '';
                 }
+                this.rawProxyListStr = this.config.raw_proxy_pool.proxy_list.join('\n');
                 if (this.config.cluster_node_name === undefined) this.config.cluster_node_name = '';
                 if (this.config.cluster_master_url === undefined) this.config.cluster_master_url = '';
                 if (this.config.cluster_secret === undefined) this.config.cluster_secret = 'wenfxl666';
@@ -437,6 +490,13 @@ createApp({
                     this.config.clash_proxy_pool.cluster_count = parseInt(this.clashPool.count) || 5;
                     this.config.clash_proxy_pool.sub_url = this.clashPool.subUrl;
                 }
+                if (this.config?.sub2api_mode) {
+                    this.config.sub2api_mode.default_proxy = String(this.config.sub2api_mode.default_proxy || '')
+                        .split(/\r?\n/)
+                        .map(s => s.trim())
+                        .filter(s => s)
+                        .join('\n');
+                }
                 if (this.config.local_microsoft) {
                     const mode = String(this.config.local_microsoft.suffix_mode || 'fixed').toLowerCase();
                     this.config.local_microsoft.suffix_mode = ['fixed', 'range', 'mystic'].includes(mode) ? mode : 'fixed';
@@ -452,6 +512,11 @@ createApp({
                     this.config.local_microsoft.suffix_len_max = maxLen;
                 }
                 this.config.warp_proxy_list = this.warpListStr.split('\n').map(s => s.trim()).filter(s => s);
+                if (!this.config.raw_proxy_pool || typeof this.config.raw_proxy_pool !== 'object' || Array.isArray(this.config.raw_proxy_pool)) {
+                    this.config.raw_proxy_pool = { enable: false, proxy_list: [] };
+                }
+                this.config.raw_proxy_pool.enable = normalizeBooleanLike(this.config.raw_proxy_pool.enable, false);
+                this.config.raw_proxy_pool.proxy_list = this.rawProxyListStr.split('\n').map(s => s.trim()).filter(s => s);
                 const res = await this.authFetch('/api/config', {
                     method: 'POST', body: JSON.stringify(this.config)
                 });
@@ -467,7 +532,12 @@ createApp({
                 this.currentPage = 1;
             }
             try {
-                const res = await this.authFetch(`/api/accounts?page=${this.currentPage}&page_size=${this.pageSize}`);
+                let url = `/api/accounts?page=${this.currentPage}&page_size=${this.pageSize}`;
+                if (this.hideRegisterOnlyAccounts) {
+                    url += '&hide_reg=1';
+                }
+
+                const res = await this.authFetch(url);
                 const data = await res.json();
                 if(data.status === 'success') {
                     this.accounts = data.data ? data.data : data;
@@ -666,10 +736,14 @@ createApp({
 			}
         },
         toggleAll(event) {
-            if (event.target.checked) this.selectedAccounts = [...this.accounts];
+            if (event.target.checked) this.selectedAccounts = [...this.filteredAccounts];
             else this.selectedAccounts = [];
         },
-
+        toggleHideRegisterOnlyAccounts() {
+            this.hideRegisterOnlyAccounts = !this.hideRegisterOnlyAccounts;
+            this.currentPage = 1;
+            this.fetchAccounts(true);
+        },
 		async toggleSystem() {
             if (this.isToggling) return;
             this.isToggling = true;
@@ -2223,9 +2297,7 @@ createApp({
                     const cpaFolder = zip.folder("cpa");
                     const sub2apiFolder = zip.folder("sub2api");
 
-                    const proxyUrl = this.config?.sub2api_mode?.default_proxy || "";
-                    const proxyObj = this.parseSub2ApiProxy(proxyUrl);
-                    const proxiesArray = proxyObj ? [proxyObj] : [];
+                    const proxyPool = this.buildSub2ApiProxyPool(this.config?.sub2api_mode?.default_proxy || "");
 
                     const validAccounts = allData.filter(acc => acc.token_data && acc.token_data.access_token);
 
@@ -2242,8 +2314,9 @@ createApp({
                         };
                         cpaFolder.file(`token_${prefix}_${domain}_${timestamp + index}.json`, JSON.stringify(cpaData, null, 4));
 
+                        const proxyObj = proxyPool.length ? proxyPool[index % proxyPool.length] : null;
                         const accountNode = {
-                            name: accEmail,
+                            name: accEmail.slice(0, 64),
                             platform: "openai",
                             type: "oauth",
                             credentials: { refresh_token: acc.token_data.refresh_token || "" },
@@ -2259,7 +2332,7 @@ createApp({
 
                         const sub2apiData = {
                             exported_at: new Date().toISOString(),
-                            proxies: proxiesArray,
+                            proxies: proxyObj ? [proxyObj] : [],
                             accounts: [accountNode]
                         };
                         sub2apiFolder.file(`sub2api_${prefix}_${domain}_${timestamp + index}.json`, JSON.stringify(sub2apiData, null, 4));
@@ -2389,6 +2462,25 @@ createApp({
             } catch (e) {
                 return null;
             }
+        },
+        buildSub2ApiProxyPool(rawValue) {
+            const rawItems = Array.isArray(rawValue)
+                ? rawValue
+                : String(rawValue || '').replace(/\r/g, '\n').split('\n');
+
+            const proxyPool = [];
+            const seen = new Set();
+            rawItems.forEach(item => {
+                const value = String(item || '').trim();
+                if (!value || seen.has(value)) return;
+                seen.add(value);
+
+                const proxyObj = this.parseSub2ApiProxy(value);
+                if (proxyObj) {
+                    proxyPool.push(proxyObj);
+                }
+            });
+            return proxyPool;
         },
     }
 }).mount('#app');
