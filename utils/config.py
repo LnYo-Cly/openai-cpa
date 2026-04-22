@@ -329,7 +329,7 @@ GMAIL_OAUTH_FISSION_MODE: str = "suffix"
 GMAIL_OAUTH_SUFFIX_MODE: str = "fixed"
 GMAIL_OAUTH_SUFFIX_LEN_MIN: int = 8
 GMAIL_OAUTH_SUFFIX_LEN_MAX: int = 8
-
+DISABLE_FORCED_TAKEOVER: bool = True
 
 
 def reset_sub2api_proxy_rotation():
@@ -413,6 +413,7 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_CHECK_FILTER
     global GMAIL_OAUTH_MASTER_EMAIL, GMAIL_OAUTH_FISSION_ENABLE, GMAIL_OAUTH_FISSION_MODE
     global GMAIL_OAUTH_SUFFIX_MODE, GMAIL_OAUTH_SUFFIX_LEN_MIN, GMAIL_OAUTH_SUFFIX_LEN_MAX
+    global DISABLE_FORCED_TAKEOVER
 
     base_yaml_config = init_config()
 
@@ -766,6 +767,7 @@ def reload_all_configs(new_config_dict=None):
     GMAIL_OAUTH_SUFFIX_LEN_MIN = int(_gmail.get("suffix_len_min", 8))
     GMAIL_OAUTH_SUFFIX_LEN_MAX = int(_gmail.get("suffix_len_max", 8))
 
+    DISABLE_FORCED_TAKEOVER = safe_bool(_c.get("disable_forced_takeover", True))
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

@@ -135,74 +135,78 @@
 
             <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <header class="bg-white/70 backdrop-blur-2xl border-b border-slate-200/60 text-slate-800 p-3 md:p-4 shrink-0 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-30 relative">
-                    <div class="w-full xl:max-w-[85%] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0">
-                        <div class="flex items-center justify-between md:justify-start gap-4 md:gap-6 w-full md:w-auto">
+                    <div class="w-full xl:max-w-[85%] mx-auto flex flex-wrap 2xl:flex-nowrap items-center justify-between gap-4 md:gap-5">
+                        <div class="flex items-center justify-between md:justify-start gap-4 md:gap-6 w-full 2xl:w-auto flex-1 min-w-[280px]">
                             <div class="bg-indigo-50/80 text-indigo-700 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[11px] md:text-sm font-bold tracking-wide border border-indigo-100/80 truncate max-w-[60%] md:max-w-none shadow-sm flex items-center">
                                 模式: {{ stats.mode }} <span class="hidden sm:inline opacity-30 mx-2">|</span> <span class="hidden sm:inline text-slate-500">成功</span> <span class="font-black ml-1 text-indigo-600">{{stats.success}}/{{stats.target}}</span> <span class="hidden lg:inline opacity-30 mx-2">|</span> <span class="hidden lg:inline text-slate-500">总 {{stats.total}}</span>
                             </div>
                             <div class="flex items-center gap-3">
                                 <div class="text-sky-500 font-black text-xs md:text-sm">{{stats.progress_pct}}</div>
-                                <div class="hidden md:block w-24 lg:w-64 h-2 md:h-2.5 bg-slate-100 rounded-full overflow-hidden shrink-0 shadow-inner border border-slate-200/60">
+                                <div class="hidden md:block w-24 lg:w-48 xl:w-64 h-2 md:h-2.5 bg-slate-100 rounded-full overflow-hidden shrink-0 shadow-inner border border-slate-200/60">
                                     <div class="h-full bg-sky-400 progress-bar-inner shadow-[0_0_8px_rgba(56,189,248,0.6)] rounded-full transition-all duration-500" :style="{ width: stats.progress_pct }"></div>
                                 </div>
                             </div>
                         </div>
 
-
-                        <div v-if="config" class="w-full md:w-auto">
-                            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                                <span class="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest ml-1 sm:hidden">运行模式切换</span>
-                                <div class="bg-slate-100 p-1 rounded-xl flex w-full sm:w-64 shadow-inner border border-slate-200">
-                                    <button @click="changeRegMode('protocol')"
-                                            :class="['flex-1 py-2 px-3 rounded-lg text-xs md:text-sm font-bold transition-all',
-                                                     config.reg_mode === 'protocol' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
-                                        协议
-                                    </button>
-                                    <button @click="changeRegMode('extension')"
-                                            :class="['flex-1 py-2 px-3 rounded-lg text-xs md:text-sm font-bold transition-all',
-                                                     config.reg_mode === 'extension' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
-                                        古法
-                                    </button>
+                        <div class="w-full 2xl:w-auto flex flex-col sm:flex-row items-start sm:items-center justify-start 2xl:justify-end gap-3 md:gap-5 shrink-0 mt-1 sm:mt-0">
+                            <div v-if="config" class="w-full sm:w-auto shrink-0">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                                    <span class="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest ml-1 sm:hidden">运行模式切换</span>
+                                    <div class="bg-slate-100 p-1 rounded-xl flex w-full sm:w-56 shadow-inner border border-slate-200 shrink-0">
+                                        <button @click="changeRegMode('protocol')"
+                                                :class="['flex-1 py-1.5 md:py-2 px-2 md:px-3 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap',
+                                                         config.reg_mode === 'protocol' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
+                                            协议
+                                        </button>
+                                        <button @click="changeRegMode('extension')"
+                                                :class="['flex-1 py-1.5 md:py-2 px-2 md:px-3 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap',
+                                                         config.reg_mode === 'extension' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
+                                            古法
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="flex items-center justify-between md:justify-end gap-3 md:gap-4 w-full md:w-auto">
-                            <button @click="toggleTheme" class="px-4 py-2 md:px-5 md:py-2.5 rounded-xl font-bold text-xs md:text-sm border transition-all active:scale-95 shrink-0 bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm">
-                                {{ isDarkMode ? '☀️ 日间' : '🌙 护眼' }}
-                            </button>
-                            <span v-if="isRunning" class="flex items-center gap-2 text-emerald-600 text-[11px] md:text-sm font-bold bg-white px-3 md:px-4 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span> 运行中
-                            </span>
-                            <span v-else class="flex items-center gap-2 text-slate-500 text-[11px] md:text-sm font-bold bg-white px-3 md:px-4 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                <span class="w-2 h-2 bg-slate-400 rounded-full"></span> 已停止
-                            </span>
-
-                            <button @click="toggleSystem"
-                                    class="px-5 py-2 md:px-6 md:py-2.5 rounded-xl font-black text-xs md:text-sm text-white shadow-lg transition-all active:scale-95 shrink-0"
-                                    :class="isRunning ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/30' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'">
-                                {{ isRunning ? '⏹️ 停止' : '🚀 启动' }}
-                            </button>
+                            <div class="flex items-center justify-between sm:justify-start gap-2 md:gap-4 w-full sm:w-auto shrink-0">
+                                <button @click="toggleTheme" class="px-3 py-1.5 md:px-5 md:py-2.5 rounded-xl font-bold text-xs md:text-sm border transition-all active:scale-95 shrink-0 bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm flex items-center justify-center">
+                                    <span class="sm:hidden">{{ isDarkMode ? '☀️' : '🌙' }}</span>
+                                    <span class="hidden sm:inline">{{ isDarkMode ? '☀️ 日间' : '🌙 护眼' }}</span>
+                                </button>
+                                <span v-if="isRunning" class="flex items-center gap-1.5 md:gap-2 text-emerald-600 text-[11px] md:text-sm font-bold bg-white px-2.5 py-1.5 md:px-4 md:py-1.5 rounded-full border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
+                                    <span class="w-1.5 h-1.5 md:w-2 md:h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span>
+                                    <span class="hidden sm:inline">运行中</span><span class="sm:hidden">运行</span>
+                                </span>
+                                <span v-else class="flex items-center gap-1.5 md:gap-2 text-slate-500 text-[11px] md:text-sm font-bold bg-white px-2.5 py-1.5 md:px-4 md:py-1.5 rounded-full border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
+                                    <span class="w-1.5 h-1.5 md:w-2 md:h-2 bg-slate-400 rounded-full"></span>
+                                    <span class="hidden sm:inline">已停止</span><span class="sm:hidden">停止</span>
+                                </span>
+                                <button @click="toggleSystem"
+                                        class="px-4 py-1.5 md:px-6 md:py-2.5 rounded-xl font-black text-xs md:text-sm text-white shadow-lg transition-all active:scale-95 shrink-0 whitespace-nowrap flex items-center gap-1"
+                                        :class="isRunning ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/30' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'">
+                                    <span>{{ isRunning ? '⏹️' : '🚀' }}</span>
+                                    <span>{{ isRunning ? '停止' : '启动' }}</span>
+                                </button>
+                            </div>
 
                         </div>
                     </div>
 
-                    <div class="w-full xl:max-w-[85%] mx-auto mt-4 md:mt-5 text-[10px] md:text-[12px] font-mono tracking-wide overflow-x-auto whitespace-nowrap hide-scrollbar flex items-center gap-3">
-                        <span class="text-slate-500 font-bold">成功率 <span class="text-sky-500 font-black ml-0.5">{{stats.success_rate}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">成功 <span class="text-emerald-500 font-black ml-0.5">{{stats.success}}/{{stats.target}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">失败 <span class="text-rose-500 font-black ml-0.5">{{stats.failed}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">风控拦截 <span class="text-amber-500 font-black ml-0.5">{{stats.retries}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">密码受阻 <span class="text-orange-500 font-black ml-0.5">{{stats.pwd_blocked || 0}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">出现手机 <span class="text-purple-500 font-black ml-0.5">{{stats.phone_verify || 0}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">总耗时 <span class="text-slate-800 font-black ml-0.5">{{stats.elapsed}}</span></span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-500 font-bold">平均 <span class="text-slate-800 font-black ml-0.5">{{stats.avg_time}}</span></span>
+                    <div class="w-full xl:max-w-[85%] mx-auto mt-4 md:mt-5 text-[10px] md:text-[12px] font-mono tracking-wide flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <span class="text-slate-500 font-bold whitespace-nowrap">成功率 <span class="text-sky-500 font-black ml-0.5">{{stats.success_rate}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">成功 <span class="text-emerald-500 font-black ml-0.5">{{stats.success}}/{{stats.target}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">失败 <span class="text-rose-500 font-black ml-0.5">{{stats.failed}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">风控拦截 <span class="text-amber-500 font-black ml-0.5">{{stats.retries}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">密码受阻 <span class="text-orange-500 font-black ml-0.5">{{stats.pwd_blocked || 0}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">出现手机 <span class="text-purple-500 font-black ml-0.5">{{stats.phone_verify || 0}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">总耗时 <span class="text-slate-800 font-black ml-0.5">{{stats.elapsed}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">平均 <span class="text-slate-800 font-black ml-0.5">{{stats.avg_time}}</span></span>
                     </div>
                 </header>
 
@@ -653,7 +657,7 @@
                                     <option value="tempmail_org">tempmail_org</option>
                                     <option value="duckmail">duckmail (DuckMail 鸭子邮箱)</option>
                                     <option value="generator_email">generator_email</option>
-                                    <option value="temporam">Temporam.com (需填Cookie)</option>
+<!--                                    <option value="temporam">Temporam.com (需填Cookie)</option>-->
                                     <option value="tmailor">Tmailor.com (需填token)</option>
                                     <option value="fvia">FviaInboxes (需填authorization)</option>
                                     <option value="inboxes">Inboxes.com</option>
@@ -722,8 +726,8 @@
                                                 <span>⚠️</span> 当前模式不支持此功能！仅限 cloudflare_temp_email, freemail, imap, cloudmail。
                                             </p>
                                         </div>
-                                        <label class="relative inline-flex items-center shrink-0 mt-3 sm:mt-0" :class="['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail'].includes(config.email_api_mode) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50 grayscale'">
-                                            <input type="checkbox" v-model="config.enable_sub_domains" :disabled="!['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail'].includes(config.email_api_mode)" class="sr-only peer">
+                                        <label class="relative inline-flex items-center shrink-0 mt-3 sm:mt-0" :class="['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail', 'Gmail_OAuth'].includes(config.email_api_mode) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50 grayscale'">
+                                            <input type="checkbox" v-model="config.enable_sub_domains" :disabled="!['freemail', 'imap', 'cloudflare_temp_email', 'cloudmail', 'Gmail_OAuth'].includes(config.email_api_mode)" class="sr-only peer">
                                             <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-blue-600 shadow-inner transition-colors duration-300"></div>
                                         </label>
                                     </div>
@@ -1417,23 +1421,23 @@
                                         <p class="mt-3 text-rose-600 font-black bg-rose-50/50 p-2 rounded-lg border border-rose-100">🔥 提示：此站可能存在强力的 Cloudflare 盾，建议开启“获取邮箱使用全局代理穿透”并使用优质代理。</p>
                                     </div>
                                 </div>
-                                <div v-if="config.email_api_mode === 'temporam'" class="space-y-4 mt-2 animate-fade-in">
-                                    <div class="flex items-center gap-2 mb-4">
-                                        <span class="text-xs font-black text-amber-800 bg-amber-100 px-3 py-1.5 rounded-md border border-amber-200 shadow-sm uppercase tracking-wider">当前模式</span>
-                                        <span class="text-sm font-black text-slate-700">Temporam.com (Cookie 模式)</span>
-                                    </div>
-                                    <div class="text-xs text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 p-4 rounded-xl leading-relaxed shadow-sm">
-                                        <p class="flex items-center gap-1.5 text-sm"><span>✅</span> 已切换至 Temporam.com 临时邮箱</p>
-                                        <p class="mt-2 text-emerald-700 opacity-90">请在浏览器中访问 temporam.com，按 F12 打开开发者工具，在网络请求的 Request Headers 中复制完整的 <code>Cookie</code> 字符串。</p>
-                                        <p class="mt-3 text-rose-600 font-black bg-rose-50/50 p-2 rounded-lg border border-rose-100">🔥 提示：Cookie 失效时会导致无法收取验证码，请定期更新此 Cookie！</p>
-                                    </div>
-                                    <div>
-                                        <label class="block text-slate-700 text-xs font-extrabold mb-1.5 uppercase tracking-wider">抓取的 Cookie 字符串</label>
-                                        <div class="relative">
-                                            <textarea v-model="config.temporam.cookie" class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-3 px-3 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-xs h-28 placeholder:text-slate-300" placeholder="例如: remember_web_59ba...; XSRF-TOKEN=..."></textarea>
-                                        </div>
-                                    </div>
-                                </div>
+<!--                                <div v-if="config.email_api_mode === 'temporam'" class="space-y-4 mt-2 animate-fade-in">-->
+<!--                                    <div class="flex items-center gap-2 mb-4">-->
+<!--                                        <span class="text-xs font-black text-amber-800 bg-amber-100 px-3 py-1.5 rounded-md border border-amber-200 shadow-sm uppercase tracking-wider">当前模式</span>-->
+<!--                                        <span class="text-sm font-black text-slate-700">Temporam.com (Cookie 模式)</span>-->
+<!--                                    </div>-->
+<!--                                    <div class="text-xs text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 p-4 rounded-xl leading-relaxed shadow-sm">-->
+<!--                                        <p class="flex items-center gap-1.5 text-sm"><span>✅</span> 已切换至 Temporam.com 临时邮箱</p>-->
+<!--                                        <p class="mt-2 text-emerald-700 opacity-90">请在浏览器中访问 temporam.com，按 F12 打开开发者工具，在网络请求的 Request Headers 中复制完整的 <code>Cookie</code> 字符串。</p>-->
+<!--                                        <p class="mt-3 text-rose-600 font-black bg-rose-50/50 p-2 rounded-lg border border-rose-100">🔥 提示：Cookie 失效时会导致无法收取验证码，请定期更新此 Cookie！</p>-->
+<!--                                    </div>-->
+<!--                                    <div>-->
+<!--                                        <label class="block text-slate-700 text-xs font-extrabold mb-1.5 uppercase tracking-wider">抓取的 Cookie 字符串</label>-->
+<!--                                        <div class="relative">-->
+<!--                                            <textarea v-model="config.temporam.cookie" class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-3 px-3 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-xs h-28 placeholder:text-slate-300" placeholder="例如: remember_web_59ba...; XSRF-TOKEN=..."></textarea>-->
+<!--                                        </div>-->
+<!--                                    </div>-->
+<!--                                </div>-->
                                 <div v-if="config.email_api_mode === 'tmailor' && config.tmailor" class="space-y-4 mt-2 animate-fade-in">
                                     <div class="flex items-center gap-2 mb-4">
                                         <span class="text-xs font-black text-amber-800 bg-amber-100 px-3 py-1.5 rounded-md border border-amber-200 shadow-sm uppercase tracking-wider">当前模式</span>
@@ -1998,43 +2002,56 @@
                         </div>
 
                         <div v-show="currentTab === 'cloud'" class="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200 overflow-hidden">
-
-                            <div class="px-5 md:px-8 py-5 md:py-6 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-50/50">
-                                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-                                    <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                                        <span>☁️</span> 云端库存
-                                    </h2>
-                                    <div class="flex items-center gap-1.5 bg-slate-200/60 p-1.5 rounded-xl border border-slate-300/50 shadow-inner">
-                                        <label :class="cloudFilters.includes('sub2api') ? 'bg-white shadow-sm border border-slate-200 text-purple-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-300/30'" class="flex items-center gap-2 px-4 py-2 cursor-pointer text-xs md:text-sm font-bold rounded-lg transition-all border border-transparent">
+                            <div class="px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-slate-50/50 min-h-[80px]">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                                    <div class="flex items-center gap-3">
+                                        <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                                            <span>☁️</span> 云端库存
+                                        </h2>
+                                        <button @click="fetchCloudAccounts" class="p-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm" title="刷新列表">
+                                            🔄
+                                        </button>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 bg-slate-200/60 p-1.5 rounded-xl border border-slate-300/50 shadow-inner w-max">
+                                        <label :class="cloudFilters.includes('sub2api') ? 'bg-white shadow-sm border border-slate-200 text-purple-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-300/30'" class="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs font-bold rounded-lg transition-all border border-transparent">
                                             <input type="checkbox" v-model="cloudFilters" value="sub2api" @change="fetchCloudAccounts" class="sr-only">
-                                            <span class="w-2.5 h-2.5 rounded-full shadow-inner" :class="cloudFilters.includes('sub2api') ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> Sub2API
+                                            <span class="w-2 h-2 rounded-full shadow-inner" :class="cloudFilters.includes('sub2api') ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> Sub2API
                                         </label>
-                                        <label :class="cloudFilters.includes('cpa') ? 'bg-white shadow-sm border border-slate-200 text-indigo-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-300/30'" class="flex items-center gap-2 px-4 py-2 cursor-pointer text-xs md:text-sm font-bold rounded-lg transition-all border border-transparent">
+                                        <label :class="cloudFilters.includes('cpa') ? 'bg-white shadow-sm border border-slate-200 text-indigo-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-300/30'" class="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs font-bold rounded-lg transition-all border border-transparent">
                                             <input type="checkbox" v-model="cloudFilters" value="cpa" @change="fetchCloudAccounts" class="sr-only">
-                                            <span class="w-2.5 h-2.5 rounded-full shadow-inner" :class="cloudFilters.includes('cpa') ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> CPA
+                                            <span class="w-2 h-2 rounded-full shadow-inner" :class="cloudFilters.includes('cpa') ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> CPA
                                         </label>
                                     </div>
                                 </div>
-
-                                <div class="flex flex-wrap gap-2 md:gap-3 justify-start lg:justify-end items-center w-full lg:w-auto">
-                                    <span class="text-sm md:text-base font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">已选 ({{ selectedCloud.length }})</span>
-
-                                    <button @click="showCloudPlaintext = !showCloudPlaintext" class="text-xs md:text-sm bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 active:scale-95 transition-all shadow-sm font-bold flex items-center gap-2">
+                                <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
+                                    <button @click="showCloudPlaintext = !showCloudPlaintext" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
                                         <span>{{ showCloudPlaintext ? '🙈' : '👁️' }}</span> {{ showCloudPlaintext ? '脱敏' : '明文' }}
                                     </button>
-                                    <button @click="fetchCloudAccounts" class="text-xs md:text-sm bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 active:scale-95 transition-all shadow-sm font-bold flex items-center gap-2">
-                                        <span class="text-base">🔄</span> 刷新
-                                    </button>
-                                    <button @click="bulkCloudAction('check')" :disabled="!selectedCloud.length || isCloudActionLoading" class="text-xs md:text-sm bg-blue-600 text-white px-4 md:px-5 py-2 rounded-xl hover:bg-blue-700 active:scale-95 transition-all shadow-md shadow-blue-500/20 disabled:opacity-50 font-bold flex items-center gap-2">
-                                        <span v-if="isCloudActionLoading" class="animate-spin text-base">⏳</span>
-                                        <span v-else class="text-base">⚡</span> 批量测活
-                                    </button>
-                                    <button @click="bulkCloudAction('enable')" :disabled="!selectedCloud.length || isCloudActionLoading" class="text-xs md:text-sm bg-emerald-600 text-white px-4 md:px-5 py-2 rounded-xl hover:bg-emerald-700 active:scale-95 transition-all shadow-md shadow-emerald-500/20 disabled:opacity-50 font-bold flex items-center gap-2">
-                                        <span class="text-base">🌱</span> 批量启用
-                                    </button>
-                                    <button @click="bulkCloudAction('delete')" :disabled="!selectedCloud.length || isCloudActionLoading" class="text-xs md:text-sm bg-rose-600 text-white px-4 md:px-5 py-2 rounded-xl hover:bg-rose-700 active:scale-95 transition-all shadow-md shadow-rose-500/20 disabled:opacity-50 font-bold flex items-center gap-2">
-                                        <span class="text-base">🗑️</span> 删除选中
-                                    </button>
+                                    <div class="relative">
+                                        <select v-model="cloudStatusFilter" @change="changeCloudPageSize()" class="appearance-none bg-white border border-slate-200 text-slate-600 rounded-lg py-1.5 pl-3 pr-8 focus:outline-none focus:ring-0 focus:border-indigo-500 text-sm font-bold shadow-sm transition-colors cursor-pointer hover:bg-slate-50">
+                                            <option value="all">全部状态</option>
+                                            <option value="active">🟢 存活</option>
+                                            <option value="dead">🔴 失效</option>
+                                            <option value="disabled">⚪ 已禁用</option>
+                                        </select>
+                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                        </div>
+                                    </div>
+                                    <div v-if="selectedCloud.length > 0" class="flex flex-wrap items-center gap-2 bg-indigo-50/80 border border-indigo-100 p-1.5 rounded-xl shadow-sm transition-all duration-300">
+                                        <span class="text-xs font-black text-indigo-700 px-2 border-r border-indigo-200">已选 {{ selectedCloud.length }}</span>
+
+                                        <button @click="bulkCloudAction('check')" :disabled="isCloudActionLoading" class="px-3 py-1 bg-blue-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-600 transition flex items-center gap-1 disabled:opacity-50">
+                                            <span v-if="isCloudActionLoading" class="animate-spin">⏳</span>
+                                            <span v-else>⚡</span> 批量测活
+                                        </button>
+                                        <button @click="bulkCloudAction('enable')" :disabled="isCloudActionLoading" class="px-3 py-1 bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-emerald-600 transition flex items-center gap-1 disabled:opacity-50">
+                                            🌱 批量启用
+                                        </button>
+                                        <button @click="bulkCloudAction('delete')" :disabled="isCloudActionLoading" class="px-3 py-1 bg-rose-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-rose-600 transition flex items-center gap-1 disabled:opacity-50 ml-1">
+                                            🗑️ 删除选中
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -2782,6 +2799,18 @@
                                             ⚠️ 设置过大(>1000)可能导致浏览器严重卡顿
                                         </p>
                                     </div>
+
+                                    <div class="bg-amber-50/50 p-5 md:p-6 rounded-2xl border border-amber-200/60 shadow-inner">
+                                        <label class="relative inline-flex items-center cursor-pointer group w-full">
+                                            <input type="checkbox" v-model="config.disable_forced_takeover" class="sr-only peer">
+                                            <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-amber-500 shadow-inner transition-colors duration-300"></div>
+                                            <span class="ml-4 text-sm font-black text-amber-900 tracking-wide flex-1">放弃强行变道走无密码 OTP</span>
+                                        </label>
+                                        <p class="text-[11px] text-amber-700/80 mt-3 font-medium bg-amber-100/50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-sm inline-block">
+                                            开启后，不再进入无密码接管流程，直接放弃，如果开启了接码，将节省 HeroSMS 接码成本。
+                                        </p>
+                                    </div>
+
                                 </div>
                             </div>
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-amber-400 bg-gradient-to-br from-amber-50/30 to-white">

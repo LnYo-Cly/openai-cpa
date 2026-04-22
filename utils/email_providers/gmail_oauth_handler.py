@@ -150,7 +150,6 @@ class GmailOAuthHandler:
             for msg_info in messages:
                 msg = service.users().messages().get(userId='me', id=msg_info['id']).execute()
 
-                # --- 详细解析 Header ---
                 headers = msg.get('payload', {}).get('headers', [])
                 subject = ""
                 to_addr = ""
