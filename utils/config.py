@@ -293,6 +293,22 @@ HERO_SMS_MAX_PRICE: float = 2.0
 HERO_SMS_MIN_BALANCE: float = 2.0
 HERO_SMS_MAX_TRIES: int = 3
 HERO_SMS_POLL_TIMEOUT_SEC: int = 120
+
+# SmsBower
+SMSBOWER_ENABLED = False
+SMSBOWER_API_KEY = ""
+SMSBOWER_BASE_URL = "https://smsbower.page/stubs/handler_api.php"
+SMSBOWER_COUNTRY = 0
+SMSBOWER_SERVICE = "dr"
+SMSBOWER_AUTO_PICK_COUNTRY = False
+SMSBOWER_VERIFY_ON_REGISTER = False
+SMSBOWER_REUSE_PHONE = True
+SMSBOWER_MAX_PRICE = 0.0
+SMSBOWER_MIN_BALANCE = 0.0
+SMSBOWER_MAX_TRIES = 3
+SMSBOWER_POLL_TIMEOUT_SEC = 180
+SMSBOWER_MIN_PRICE = 0.05
+
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
 NORMAL_TARGET_COUNT: int = 0
@@ -414,6 +430,10 @@ def reload_all_configs(new_config_dict=None):
     global GMAIL_OAUTH_MASTER_EMAIL, GMAIL_OAUTH_FISSION_ENABLE, GMAIL_OAUTH_FISSION_MODE
     global GMAIL_OAUTH_SUFFIX_MODE, GMAIL_OAUTH_SUFFIX_LEN_MIN, GMAIL_OAUTH_SUFFIX_LEN_MAX
     global DISABLE_FORCED_TAKEOVER
+    global SMSBOWER_ENABLED, SMSBOWER_API_KEY, SMSBOWER_BASE_URL, SMSBOWER_COUNTRY, SMSBOWER_SERVICE
+    global SMSBOWER_AUTO_PICK_COUNTRY, SMSBOWER_VERIFY_ON_REGISTER, SMSBOWER_REUSE_PHONE
+    global SMSBOWER_MAX_PRICE, SMSBOWER_MIN_BALANCE, SMSBOWER_MAX_TRIES, SMSBOWER_POLL_TIMEOUT_SEC
+
 
     base_yaml_config = init_config()
 
@@ -707,6 +727,21 @@ def reload_all_configs(new_config_dict=None):
         HERO_SMS_POLL_TIMEOUT_SEC = int(_hero_sms_conf.get("poll_timeout_sec", 120))
     except:
         HERO_SMS_POLL_TIMEOUT_SEC = 120
+
+    _smsbower = _c.get("smsbower", {})
+    SMSBOWER_ENABLED = safe_bool(_smsbower.get("enabled", False), default=False)
+    SMSBOWER_API_KEY = str(_smsbower.get("api_key") or "").strip()
+    SMSBOWER_BASE_URL = str(_smsbower.get("base_url") or "https://smsbower.page/stubs/handler_api.php").strip()
+    SMSBOWER_COUNTRY = safe_int(_smsbower.get("country", 0), default=0)
+    SMSBOWER_SERVICE = str(_smsbower.get("service") or "dr").strip()
+    SMSBOWER_AUTO_PICK_COUNTRY = safe_bool(_smsbower.get("auto_pick_country", True), default=True)
+    SMSBOWER_VERIFY_ON_REGISTER = safe_bool(_smsbower.get("verify_on_register", False), default=False)
+    SMSBOWER_REUSE_PHONE = safe_bool(_smsbower.get("reuse_phone", True), default=True)
+    SMSBOWER_MAX_PRICE = safe_float(_smsbower.get("max_price", 0.0), default=0.0)
+    SMSBOWER_MIN_BALANCE = safe_float(_smsbower.get("min_balance", 0.0), default=0.0)
+    SMSBOWER_MAX_TRIES = safe_int(_smsbower.get("max_tries", 3), default=3)
+    SMSBOWER_POLL_TIMEOUT_SEC = safe_int(_smsbower.get("poll_timeout_sec", 120), default=120)
+    SMSBOWER_MIN_PRICE = safe_float(_smsbower.get("min_price", 0.05), default=0.05)
 
     _ai = _c.get("ai_service", {})
     AI_API_BASE = str(_ai.get("api_base", "https://api.openai.com/v1")).strip().rstrip("/")

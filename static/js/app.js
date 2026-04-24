@@ -22,7 +22,7 @@ function normalizeBooleanLike(value, defaultValue = false) {
 createApp({
     data() {
         return {
-            appVersion: 'v12.0.0',
+            appVersion: 'v12.0.3',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -100,6 +100,7 @@ createApp({
                 ai_base: true, cluster_url: true, proxy: true, clash_api: true,
                 clash_test: true, tg_token: false, tg_chatid: false, cpa_url: true, sub_url: true,
                 cluster_secret: false, hero_key: false, duck_token: false, duck_cookie: false,
+                smsbower_key: false,
                 luckmail: false,
                 temporam: false,
                 tmailor_token: false,
@@ -195,6 +196,15 @@ createApp({
                 suffix_len_max: 12
             },
             cloudStatusFilter: 'all',
+            searchAccounts: '',
+            searchCloud: '',
+            searchMailboxes: '',
+
+            smsBowerBalance: '0.00',
+            isLoadingSmsBowerBalance: false,
+            isLoadingSmsBowerPrices: false,
+            smsBowerPrices: [],
+
         };
     },
     mounted() {
@@ -220,7 +230,28 @@ createApp({
             return Math.ceil(this.totalAccounts / this.pageSize) || 1;
         },
         filteredAccounts() {
-            return this.accounts;
+            let res = this.accounts;
+            if (this.searchAccounts) {
+                const term = this.searchAccounts.toLowerCase();
+                res = res.filter(a => a.email && a.email.toLowerCase().includes(term));
+            }
+            return res;
+        },
+        filteredCloud() {
+            let res = this.cloudAccounts;
+            if (this.searchCloud) {
+                const term = this.searchCloud.toLowerCase();
+                res = res.filter(a => a.credential && a.credential.toLowerCase().includes(term));
+            }
+            return res;
+        },
+        filteredMailboxes() {
+            let res = this.mailboxes;
+            if (this.searchMailboxes) {
+                const term = this.searchMailboxes.toLowerCase();
+                res = res.filter(a => a.email && a.email.toLowerCase().includes(term));
+            }
+            return res;
         },
         cloudTotalPages() {
             return Math.ceil(this.cloudTotal / this.cloudPageSize) || 1;
@@ -303,8 +334,10 @@ createApp({
         },
         async initApp() {
             await this.fetchConfig();
-            this.fetchAccounts();
             this.initSSE();
+            this.fetchAccounts();
+            this.fetchCloudAccounts();
+            this.fetchMailboxes();
             this.startStatsPolling();
             this.checkUpdate();
             if (this.config && this.config.reg_mode === 'extension') {
@@ -378,6 +411,27 @@ createApp({
                         suffix_len_min: 8,
                         suffix_len_max: 8
                     };
+                }
+
+
+                if (this.config) {
+                    if (!this.config.smsbower) {
+                        this.config.smsbower = {
+                            enabled: false, api_key: '', country: 0, service: 'dr',
+                            auto_pick_country: true, verify_on_register: false, reuse_phone: true,
+                            max_price: 0.08, min_price: 0.05, min_balance: 10.0, max_tries: 3, poll_timeout_sec: 180
+                        };
+                    } else {
+                        this.config.smsbower.min_price = parseFloat(this.config.smsbower.min_price) || 0.05;
+                        this.config.smsbower.enabled = normalizeBooleanLike(this.config.smsbower.enabled, false);
+                        this.config.smsbower.auto_pick_country = normalizeBooleanLike(this.config.smsbower.auto_pick_country, true);
+                        this.config.smsbower.reuse_phone = normalizeBooleanLike(this.config.smsbower.reuse_phone, true);
+                        this.config.smsbower.verify_on_register = normalizeBooleanLike(this.config.smsbower.verify_on_register, false);
+                    }
+
+                    if (this.config.hero_sms) {
+                        this.config.hero_sms.enabled = normalizeBooleanLike(this.config.hero_sms.enabled, false);
+                    }
                 }
                 if (this.config.local_microsoft.suffix_mode === undefined) {
                     this.config.local_microsoft.suffix_mode = 'fixed';
@@ -573,7 +627,12 @@ createApp({
             }
         },
 		changePage(newPage) {
-            if (newPage < 1 || newPage > this.totalPages) return;
+            if (!newPage || isNaN(newPage)) newPage = 1;
+            newPage = Math.max(1, Math.min(newPage, this.totalPages));
+            if (this.currentPage === newPage) {
+                this.$forceUpdate(); // 强制刷新非法输入的UI
+                return;
+            }
             this.currentPage = newPage;
             this.selectedAccounts = []; 
             this.fetchAccounts(false);
@@ -1208,7 +1267,7 @@ createApp({
             if (!this.config.hero_sms.api_key) return this.showToast('请先填写 API Key！', 'warning');
             this.isLoadingBalance = true;
             try {
-                const res = await this.authFetch('/api/sms/balance'); // 需后端配合增加此接口
+                const res = await this.authFetch('/api/sms/balance');
                 const data = await res.json();
                 if (data.status === 'success') {
                     this.heroSmsBalance = data.balance;
@@ -1241,6 +1300,45 @@ createApp({
                 this.showToast('通信异常: ' + e.message, 'error');
             } finally {
                 this.isLoadingPrices = false;
+            }
+        },
+        async fetchSmsBowerBalance() {
+            if (!this.config.smsbower.api_key) return this.showToast('请先填写 SmsBower API Key！', 'warning');
+            this.isLoadingSmsBowerBalance = true;
+            try {
+                const res = await this.authFetch('/api/smsbower/balance');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.smsBowerBalance = data.balance;
+                    this.showToast('余额刷新成功', 'success');
+                } else {
+                    this.showToast(data.message || '查询失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('查询异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingSmsBowerBalance = false;
+            }
+        },
+        async fetchSmsBowerPrices() {
+            if (!this.config.smsbower.api_key) return this.showToast('请先填写 API Key！', 'warning');
+            this.isLoadingSmsBowerPrices = true;
+            try {
+                const res = await this.authFetch('/api/smsbower/prices', {
+                    method: 'POST',
+                    body: JSON.stringify({ service: this.config.smsbower.service })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.smsBowerPrices = data.prices;
+                    this.showToast(`获取到 ${data.prices.length} 个国家的库存数据`, 'success');
+                } else {
+                    this.showToast(data.message || '获取失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('通信异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingSmsBowerPrices = false;
             }
         },
         async executeManualLuckMailBuy() {
@@ -1716,7 +1814,7 @@ createApp({
         },
         toggleAllCloud(e) {
             if (e.target.checked) {
-                this.selectedCloud = this.cloudAccounts.map(a => ({ id: String(a.id), type: a.account_type }));
+                this.selectedCloud = this.filteredCloud.map(a => ({ id: String(a.id), type: a.account_type }));
             } else {
                 this.selectedCloud = [];
             }
@@ -1730,7 +1828,12 @@ createApp({
             this.showCloudDetailModal = true;
         },
         changeCloudPage(newPage) {
-            if (newPage < 1 || newPage > this.cloudTotalPages) return;
+            if (!newPage || isNaN(newPage)) newPage = 1;
+            newPage = Math.max(1, Math.min(newPage, this.cloudTotalPages));
+            if (this.cloudPage === newPage) {
+                this.$forceUpdate();
+                return;
+            }
             this.cloudPage = newPage;
             this.fetchCloudAccounts();
         },
@@ -2026,7 +2129,12 @@ createApp({
             }
         },
         changeMailboxPage(newPage) {
-            if (newPage < 1 || newPage > this.mailboxTotalPages) return;
+            if (!newPage || isNaN(newPage)) newPage = 1;
+            newPage = Math.max(1, Math.min(newPage, this.mailboxTotalPages));
+            if (this.mailboxPage === newPage) {
+                this.$forceUpdate();
+                return;
+            }
             this.mailboxPage = newPage;
             this.fetchMailboxes();
         },
@@ -2035,7 +2143,7 @@ createApp({
             this.fetchMailboxes();
         },
         toggleAllMailboxes(event) {
-            if (event.target.checked) this.selectedMailboxes = [...this.mailboxes];
+            if (event.target.checked) this.selectedMailboxes = [...this.filteredMailboxes];
             else this.selectedMailboxes = [];
         },
         async submitImportMailboxes() {
