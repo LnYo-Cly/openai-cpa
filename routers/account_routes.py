@@ -1,10 +1,9 @@
 import json
 import urllib.parse
-from typing import List, Any
+from typing import List, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from curl_cffi import requests as cffi_requests
-
 from global_state import verify_token
 from utils import core_engine, db_manager
 import utils.config as cfg
@@ -106,8 +105,8 @@ def parse_sub2api_proxy(proxy_url: str):
         return None
 
 @router.get("/api/accounts")
-async def get_accounts(page: int = Query(1), page_size: int = Query(50), hide_reg: str = Query("0"), token: str = Depends(verify_token)):
-    result = db_manager.get_accounts_page(page, page_size, hide_reg=hide_reg)
+async def get_accounts(page: int = Query(1), page_size: int = Query(50), hide_reg: str = Query("0"), search: Optional[str] = Query(None), token: str = Depends(verify_token)):
+    result = db_manager.get_accounts_page(page, page_size, hide_reg=hide_reg, search=search)
     return {"status": "success", "data": result["data"], "total": result["total"], "page": page, "page_size": page_size}
 
 
@@ -180,7 +179,7 @@ async def clear_all_accounts_api(token: str = Depends(verify_token)):
 
 
 @router.get("/api/cloud/accounts")
-def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("all"), page: int = Query(1), page_size: int = Query(50),
+def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("all"), page: int = Query(1), page_size: int = Query(50), search: Optional[str] = Query(None),
                        token: str = Depends(verify_token)):
     type_list = types.split(",")
     combined_data = []
@@ -223,8 +222,23 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
                                           "details": {}, "last_check": "-"})
         if status_filter != "all":
             combined_data = [item for item in combined_data if item.get("status") == status_filter]
-        return {"status": "success", "data": combined_data[(page - 1) * page_size: page * page_size],
-                "total": len(combined_data)}
+
+        if search:
+            search_lower = search.lower()
+            combined_data = [
+                item for item in combined_data
+                if search_lower in str(item.get("credential", "")).lower() or
+                   search_lower in str(item.get("id", "")).lower()
+            ]
+        total_count = len(combined_data)
+        start_idx = (page - 1) * page_size
+        end_idx = page * page_size
+        paged_data = combined_data[start_idx:end_idx]
+        return {
+            "status": "success",
+            "data": paged_data,
+            "total": total_count
+        }
     except Exception as e:
         return {"status": "error", "message": f"拉取远端数据失败: {str(e)}"}
 
@@ -303,8 +317,8 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
 
 
 @router.get("/api/mailboxes")
-async def get_mailboxes(page: int = Query(1), page_size: int = Query(50), token: str = Depends(verify_token)):
-    result = db_manager.get_local_mailboxes_page(page, page_size)
+async def get_mailboxes(page: int = Query(1), page_size: int = Query(50), search: Optional[str] = Query(None), token: str = Depends(verify_token)):
+    result = db_manager.get_local_mailboxes_page(page, page_size, search=search)
     return {"status": "success", "data": result["data"], "total": result["total"], "page": page, "page_size": page_size}
 
 

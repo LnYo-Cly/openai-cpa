@@ -20,7 +20,7 @@ def _warn(msg):
 
 def _raise_if_stopped() -> None:
     if getattr(cfg, 'GLOBAL_STOP', False):
-        raise UserStoppedError("stopped_by_user")
+        raise UserStoppedError("stopped")
 
 def _sleep_interruptible(sec: float) -> bool:
     for _ in range(int(sec * 10)):
@@ -424,6 +424,22 @@ def _smsbower_set_status(activation_id: str, status: int, proxies: Any) -> str:
 def _smsbower_get_number(proxies: Any, *, service_code: str, country_id: int) -> tuple[str, str, str, str]:
     if country_id in _OPENAI_SMS_BLOCKED_COUNTRY_IDS:
         return "", "", f"COUNTRY_BLOCKED: 国家ID {country_id} 被拉黑", ""
+
+    limit_max = _smsbower_order_max_price()
+    limit_min = _smsbower_order_min_price()
+    if limit_max > 0 or limit_min > 0:
+        rows = _smsbower_prices_by_service(service_code, proxies)
+        actual_cost = -1.0
+        for r in rows:
+            if r.get("country") == country_id:
+                actual_cost = float(r.get("cost", -1.0))
+                break
+
+        if actual_cost > 0:
+            if limit_max > 0 and actual_cost > limit_max:
+                return "", "", f"价格拦截: 该国当前价格 ({actual_cost}$) 高于您的最高限价 ({limit_max}$)", ""
+            if limit_min > 0 and actual_cost < limit_min:
+                return "", "", f"价格拦截: 该国当前价格 ({actual_cost}$) 低于您的最低限价 ({limit_min}$)", ""
 
     params = {"service": service_code, "country": country_id}
     if _smsbower_order_max_price() > 0: params["maxPrice"] = _smsbower_order_max_price()

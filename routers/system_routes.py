@@ -490,7 +490,7 @@ def ext_get_mail_code(email: str, email_jwt: str = "", type: str = "signup", max
 @router.post("/api/ext/submit_result")
 def ext_submit_result(req: ExtResultReq, token: str = Depends(verify_token)):
     from utils import core_engine
-    from utils.register import submit_callback_url
+    from utils.auth_pipeline.register import submit_callback_url
 
     if req.status == "success":
         token_json = req.token_data

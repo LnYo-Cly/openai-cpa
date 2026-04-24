@@ -24,4 +24,6 @@ data
 utils/auth_core/
 !utils/auth_core.pyd
 test.py
-aitest.pydata.zip
+aitest.py
+data.zip
+register.py.bak

@@ -22,7 +22,7 @@ function normalizeBooleanLike(value, defaultValue = false) {
 createApp({
     data() {
         return {
-            appVersion: 'v12.0.3',
+            appVersion: 'v12.1.1',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -100,7 +100,7 @@ createApp({
                 ai_base: true, cluster_url: true, proxy: true, clash_api: true,
                 clash_test: true, tg_token: false, tg_chatid: false, cpa_url: true, sub_url: true,
                 cluster_secret: false, hero_key: false, duck_token: false, duck_cookie: false,
-                smsbower_key: false,
+                smsbower_key: false,fivesim_key: false,
                 luckmail: false,
                 temporam: false,
                 tmailor_token: false,
@@ -205,7 +205,26 @@ createApp({
             isLoadingSmsBowerPrices: false,
             smsBowerPrices: [],
 
+            fivesimBalance: null,
+            isLoadingFivesimBalance: false,
+            fivesimPrices: [],
+            isLoadingFivesimPrices: false,
+
         };
+    },
+    watch: {
+        searchAccounts() {
+            this.currentPage = 1;
+            this.fetchAccounts();
+        },
+        searchCloud() {
+            this.cloudPage = 1;
+            this.fetchCloudAccounts();
+        },
+        searchMailboxes() {
+            this.mailboxPage = 1;
+            this.fetchMailboxes();
+        }
     },
     mounted() {
         this.applyTheme();
@@ -429,10 +448,22 @@ createApp({
                         this.config.smsbower.verify_on_register = normalizeBooleanLike(this.config.smsbower.verify_on_register, false);
                     }
 
+                    if (!this.config.fivesim) {
+                        this.config.fivesim = {
+                            enabled: false, api_key: '', country: 'any', service: 'openai',
+                            auto_pick_country: true, verify_on_register: false,reuse_phone: true,
+                            max_price: 50.0, min_price: 0.0, min_balance: 10.0, max_tries: 3, poll_timeout_sec: 180
+                        };
+                    }
+
                     if (this.config.hero_sms) {
                         this.config.hero_sms.enabled = normalizeBooleanLike(this.config.hero_sms.enabled, false);
                     }
                 }
+
+
+
+
                 if (this.config.local_microsoft.suffix_mode === undefined) {
                     this.config.local_microsoft.suffix_mode = 'fixed';
                 }
@@ -608,7 +639,9 @@ createApp({
                 if (this.hideRegisterOnlyAccounts) {
                     url += '&hide_reg=1';
                 }
-
+                if (this.searchAccounts) {
+                    url += `&search=${encodeURIComponent(this.searchAccounts)}`;
+                }
                 const res = await this.authFetch(url);
                 const data = await res.json();
                 if(data.status === 'success') {
@@ -1341,6 +1374,46 @@ createApp({
                 this.isLoadingSmsBowerPrices = false;
             }
         },
+        async fetchFivesimBalance() {
+            if (!this.config.fivesim.api_key) return this.showToast('请先填写 5SIM API Key！', 'warning');
+            this.isLoadingFivesimBalance = true;
+            try {
+                const res = await this.authFetch('/api/fivesim/balance');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.fivesimBalance = data.balance;
+                    this.showToast('5SIM 余额刷新成功', 'success');
+                } else {
+                    this.showToast(data.message || '查询失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('查询异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingFivesimBalance = false;
+            }
+        },
+
+        async fetchFivesimPrices() {
+            if (!this.config.fivesim.api_key) return this.showToast('请先填写 5SIM API Key！', 'warning');
+            this.isLoadingFivesimPrices = true;
+            try {
+                const res = await this.authFetch('/api/fivesim/prices', {
+                    method: 'POST',
+                    body: JSON.stringify({ service: this.config.fivesim.service })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.fivesimPrices = data.prices || [];
+                    this.showToast(`获取到 ${data.prices.length} 个国家的库存数据`, 'success');
+                } else {
+                    this.showToast(data.message || '拉取失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('通信异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingFivesimPrices = false;
+            }
+        },
         async executeManualLuckMailBuy() {
             if (this.luckmailManualQty < 1) return;
             this.isManualBuying = true;
@@ -1705,8 +1778,14 @@ createApp({
                 return;
             }
             const types = this.cloudFilters.join(',');
+            let url = `/api/cloud/accounts?types=${types}&status_filter=${this.cloudStatusFilter}&page=${this.cloudPage}&page_size=${this.cloudPageSize}`;
+
+            if (this.searchCloud) {
+                url += `&search=${encodeURIComponent(this.searchCloud)}`;
+            }
+
             try {
-                const res = await this.authFetch(`/api/cloud/accounts?types=${types}&status_filter=${this.cloudStatusFilter}&page=${this.cloudPage}&page_size=${this.cloudPageSize}`);
+                const res = await this.authFetch(url);
                 const data = await res.json();
                 if(data.status === 'success') {
                     this.cloudAccounts = (data.data || []).map(acc => ({
@@ -2115,8 +2194,13 @@ createApp({
         },
         async fetchMailboxes(isManual = false) {
             if (isManual) this.mailboxPage = 1;
+            let url = `/api/mailboxes?page=${this.mailboxPage}&page_size=${this.mailboxPageSize}`;
+            if (this.searchMailboxes) {
+                url += `&search=${encodeURIComponent(this.searchMailboxes)}`;
+            }
+
             try {
-                const res = await this.authFetch(`/api/mailboxes?page=${this.mailboxPage}&page_size=${this.mailboxPageSize}`);
+                const res = await this.authFetch(url);
                 const data = await res.json();
                 if(data.status === 'success') {
                     this.mailboxes = data.data;

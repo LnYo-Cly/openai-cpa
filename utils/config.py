@@ -309,6 +309,20 @@ SMSBOWER_MAX_TRIES = 3
 SMSBOWER_POLL_TIMEOUT_SEC = 180
 SMSBOWER_MIN_PRICE = 0.05
 
+# 5SIM
+FIVESIM_ENABLED = False
+FIVESIM_API_KEY = ""
+FIVESIM_SERVICE = "openai"
+FIVESIM_COUNTRY = "any"
+FIVESIM_AUTO_PICK_COUNTRY = True
+FIVESIM_VERIFY_ON_REGISTER = False
+FIVESIM_REUSE_PHONE = True
+FIVESIM_MAX_PRICE = 50.0
+FIVESIM_MIN_PRICE = 0.0
+FIVESIM_MIN_BALANCE = 10.0
+FIVESIM_MAX_TRIES = 3
+FIVESIM_POLL_TIMEOUT_SEC = 180
+
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
 NORMAL_TARGET_COUNT: int = 0
@@ -432,8 +446,11 @@ def reload_all_configs(new_config_dict=None):
     global DISABLE_FORCED_TAKEOVER
     global SMSBOWER_ENABLED, SMSBOWER_API_KEY, SMSBOWER_BASE_URL, SMSBOWER_COUNTRY, SMSBOWER_SERVICE
     global SMSBOWER_AUTO_PICK_COUNTRY, SMSBOWER_VERIFY_ON_REGISTER, SMSBOWER_REUSE_PHONE
-    global SMSBOWER_MAX_PRICE, SMSBOWER_MIN_BALANCE, SMSBOWER_MAX_TRIES, SMSBOWER_POLL_TIMEOUT_SEC
-
+    global SMSBOWER_MAX_PRICE, SMSBOWER_MIN_BALANCE, SMSBOWER_MAX_TRIES, SMSBOWER_POLL_TIMEOUT_SEC, SMSBOWER_MIN_PRICE
+    global FIVESIM_ENABLED, FIVESIM_API_KEY, FIVESIM_SERVICE, FIVESIM_COUNTRY
+    global FIVESIM_AUTO_PICK_COUNTRY, FIVESIM_VERIFY_ON_REGISTER, FIVESIM_REUSE_PHONE
+    global FIVESIM_MAX_PRICE, FIVESIM_MIN_PRICE, FIVESIM_MIN_BALANCE
+    global FIVESIM_MAX_TRIES, FIVESIM_POLL_TIMEOUT_SEC
 
     base_yaml_config = init_config()
 
@@ -742,6 +759,21 @@ def reload_all_configs(new_config_dict=None):
     SMSBOWER_MAX_TRIES = safe_int(_smsbower.get("max_tries", 3), default=3)
     SMSBOWER_POLL_TIMEOUT_SEC = safe_int(_smsbower.get("poll_timeout_sec", 120), default=120)
     SMSBOWER_MIN_PRICE = safe_float(_smsbower.get("min_price", 0.05), default=0.05)
+
+    _fivesim = _c.get("fivesim", {})
+    FIVESIM_ENABLED = safe_bool(_fivesim.get("enabled", False), default=False)
+    FIVESIM_API_KEY = str(_fivesim.get("api_key") or "").strip()
+    FIVESIM_SERVICE = str(_fivesim.get("service") or "openai").strip()
+    FIVESIM_COUNTRY = str(_fivesim.get("country") or "any").strip()
+    FIVESIM_AUTO_PICK_COUNTRY = safe_bool(_fivesim.get("auto_pick_country", True), default=True)
+    FIVESIM_VERIFY_ON_REGISTER = safe_bool(_fivesim.get("verify_on_register", False), default=False)
+    FIVESIM_REUSE_PHONE = safe_bool(_fivesim.get("reuse_phone", True), default=True)
+    FIVESIM_MAX_PRICE = safe_float(_fivesim.get("max_price", 50.0), default=50.0)
+    FIVESIM_MIN_PRICE = safe_float(_fivesim.get("min_price", 0.0), default=0.0)
+    FIVESIM_MIN_BALANCE = safe_float(_fivesim.get("min_balance", 10.0), default=10.0)
+    FIVESIM_MAX_TRIES = safe_int(_fivesim.get("max_tries", 3), default=3)
+    FIVESIM_POLL_TIMEOUT_SEC = safe_int(_fivesim.get("poll_timeout_sec", 180), default=180)
+
 
     _ai = _c.get("ai_service", {})
     AI_API_BASE = str(_ai.get("api_base", "https://api.openai.com/v1")).strip().rstrip("/")
