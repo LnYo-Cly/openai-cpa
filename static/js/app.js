@@ -22,7 +22,7 @@ function normalizeBooleanLike(value, defaultValue = false) {
 createApp({
     data() {
         return {
-            appVersion: 'v12.1.1',
+            appVersion: 'v12.2.2',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -209,7 +209,7 @@ createApp({
             isLoadingFivesimBalance: false,
             fivesimPrices: [],
             isLoadingFivesimPrices: false,
-
+            isRestarting: false,
         };
     },
     watch: {
@@ -314,8 +314,10 @@ createApp({
             }
             const res = await fetch(url, options);
             if (res.status === 401) {
-                this.logout();
-                this.showToast("登录状态过期，请重新登录！", "warning");
+                if (this.isLoggedIn && !this.isRestarting) {
+                    this.logout();
+                    this.showToast("登录状态过期，请重新登录！", "warning");
+                }
                 throw new Error("Unauthorized");
             }
             return res;
@@ -437,7 +439,7 @@ createApp({
                     if (!this.config.smsbower) {
                         this.config.smsbower = {
                             enabled: false, api_key: '', country: 0, service: 'dr',
-                            auto_pick_country: true, verify_on_register: false, reuse_phone: true,
+                            auto_pick_country: true, verify_on_register: false, reuse_phone: true, reuse_max: 2,
                             max_price: 0.08, min_price: 0.05, min_balance: 10.0, max_tries: 3, poll_timeout_sec: 180
                         };
                     } else {
@@ -446,22 +448,24 @@ createApp({
                         this.config.smsbower.auto_pick_country = normalizeBooleanLike(this.config.smsbower.auto_pick_country, true);
                         this.config.smsbower.reuse_phone = normalizeBooleanLike(this.config.smsbower.reuse_phone, true);
                         this.config.smsbower.verify_on_register = normalizeBooleanLike(this.config.smsbower.verify_on_register, false);
+                        if(this.config.smsbower.reuse_max === undefined) this.config.smsbower.reuse_max = 2;
                     }
 
                     if (!this.config.fivesim) {
                         this.config.fivesim = {
                             enabled: false, api_key: '', country: 'any', service: 'openai',
-                            auto_pick_country: true, verify_on_register: false,reuse_phone: true,
+                            auto_pick_country: true, verify_on_register: false,reuse_phone: true,reuse_max: 2,
                             max_price: 50.0, min_price: 0.0, min_balance: 10.0, max_tries: 3, poll_timeout_sec: 180
                         };
+                    } else {
+                        if(this.config.fivesim.reuse_max === undefined) this.config.fivesim.reuse_max = 2;
                     }
 
                     if (this.config.hero_sms) {
                         this.config.hero_sms.enabled = normalizeBooleanLike(this.config.hero_sms.enabled, false);
+                        if(this.config.hero_sms.reuse_max === undefined) this.config.hero_sms.reuse_max = 2;
                     }
                 }
-
-
 
 
                 if (this.config.local_microsoft.suffix_mode === undefined) {
@@ -678,6 +682,7 @@ createApp({
             this.fetchAccounts(false);
         },
         switchTab(tabId) {
+            if (!this.isLoggedIn) return;
             this.currentTab = tabId;
             window.location.hash = tabId;
 			if (tabId === 'console') {
@@ -1670,6 +1675,7 @@ createApp({
 
             try {
                 this.showToast("🚀 正在向服务器发送重启指令...", "info");
+                this.isRestarting = true;
                 const res = await this.authFetch('/api/system/restart', { method: 'POST' });
                 const data = await res.json();
 
@@ -1677,14 +1683,17 @@ createApp({
                     this.showToast("✅ 系统正在重启，网页将于 6 秒后自动刷新...", "success");
                     if(this.statsTimer) clearInterval(this.statsTimer);
                     if(this.evtSource) this.evtSource.close();
+                    if(this.cfStatusTimer) clearInterval(this.cfStatusTimer);
 
                     setTimeout(() => {
                         window.location.reload();
                     }, 6000);
                 } else {
+                    this.isRestarting = false;
                     this.showToast(data.message || "重启指令发送失败", "error");
                 }
             } catch (e) {
+                this.isRestarting = false;
                 this.showToast("请求异常，请检查后端状态", "error");
             }
         },
@@ -1801,7 +1810,9 @@ createApp({
                 }
             } catch (e) {
                 console.error(e);
-                this.showToast("获取云端数据失败", "error");
+                if (this.isLoggedIn && e.message !== "Unauthorized") {
+                    this.showToast("获取云端数据失败", "error");
+                }
             }
         },
 

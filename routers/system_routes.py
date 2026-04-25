@@ -120,9 +120,8 @@ async def start_task(token: str = Depends(verify_token)):
 
     default_proxy = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
     args = DummyArgs(proxy=default_proxy if default_proxy else None)
-    core_engine.run_stats.update({"success": 0, "failed": 0, "retries": 0, "pwd_blocked": 0, "phone_verify": 0, "start_time": time.time()})
+    core_engine.run_stats.update({"success": 0, "failed": 0, "retries": 0, "pwd_blocked": 0, "phone_verify": 0, "start_time": time.time(),"target": 0})
     if getattr(core_engine.cfg, 'ENABLE_CPA_MODE', False):
-        core_engine.run_stats["target"] = 0
         engine.start_cpa(args)
         return {"status": "success", "message": "启动成功：已自动识别并开启 [CPA 智能仓管模式]"}
     elif getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False):
@@ -430,7 +429,9 @@ def cluster_upload_accounts(req: ClusterUploadAccountsReq):
 @router.get("/api/ext/generate_task")
 def ext_generate_task(token: str = Depends(verify_token)):
     from utils.email_providers.mail_service import mask_email, get_email_and_token, clear_sticky_domain
-    from utils.register import _generate_password, generate_random_user_info, generate_oauth_url
+    from utils.auth_pipeline.user_utils import generate_random_user_info, _generate_password
+    from utils.auth_pipeline.oauth import generate_oauth_url
+
     import utils.config as cfg
     import time
     print(f"[{cfg.ts()}] [INFO] 正在进行插件古法注册模式，请稍后...")

@@ -101,10 +101,13 @@ def _filter_accounts_by_status(accounts: list, filter_type: str) -> list:
             if status == "inactive" or disabled:
                 filtered.append(acc)
         elif filter_type == "rate_limited":
-            # 限流账号: status=active 但 extra 中有 rate limit 标记
-            extra = str(acc.get("extra", "") or "")
-            if "rate" in extra.lower() or "429" in extra:
+            # 限流账号: status=rate_limited 或 extra 中有 rate limit 标记
+            if status == "rate_limited":
                 filtered.append(acc)
+            else:
+                extra = str(acc.get("extra", "") or "")
+                if "rate" in extra.lower() or "429" in extra:
+                    filtered.append(acc)
 
     return filtered
 
@@ -943,7 +946,7 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
             if account_id:
                 client.delete_account(account_id)
             return "quota_deleted"
-        print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，禁用账号交由 Sub2API 自动恢复")
+        print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，禁用账号避免 Sub2API 无效调度")
         if account_id:
             client.set_account_status(account_id, disabled=True)
         return "quota_limited"
@@ -981,6 +984,12 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
     if result2 == "ok":
         print(f"[{ts()}] [SUCCESS] {mask_email(name)} 刷新复活成功，二次验证通过！")
         return "revived"
+
+    if result2 == "quota":
+        print(f"[{ts()}] [WARNING] {mask_email(name)} 二次验证失败 (quota limited)，禁用账号避免无效调度")
+        if account_id:
+            client.set_account_status(account_id, disabled=True)
+        return "quota_limited"
 
     print(f"[{ts()}] [ERROR] {mask_email(name)} 二次验证失败 ({reason2})，账号确认已死")
     return _handle_sub2api_dead_account(item, client, is_disabled=False)

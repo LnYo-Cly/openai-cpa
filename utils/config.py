@@ -203,9 +203,13 @@ LOCAL_MS_SUFFIX_LEN_MIN: int = 8
 LOCAL_MS_SUFFIX_LEN_MAX: int = 8
 FREEMAIL_API_URL: str = ""
 FREEMAIL_API_TOKEN: str = ""
+FREEMAIL_LOCAL_WEBHOOK: bool = False
+FREEMAIL_WEBHOOK_SECRET: str = ""
 CM_API_URL: str = ""
 CM_ADMIN_EMAIL: str = ""
 CM_ADMIN_PASS: str = ""
+CM_LOCAL_WEBHOOK: bool = False
+CM_WEBHOOK_SECRET: str = ""
 MC_API_BASE: str = ""
 MC_KEY: str = ""
 DEFAULT_PROXY: str = ""
@@ -360,7 +364,7 @@ GMAIL_OAUTH_SUFFIX_MODE: str = "fixed"
 GMAIL_OAUTH_SUFFIX_LEN_MIN: int = 8
 GMAIL_OAUTH_SUFFIX_LEN_MAX: int = 8
 DISABLE_FORCED_TAKEOVER: bool = True
-
+OPENAI_CPA_WEBHOOK_SECRET = ""
 
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
@@ -396,8 +400,8 @@ def reload_all_configs(new_config_dict=None):
     global EMAIL_API_MODE, MAIL_DOMAINS, GPTMAIL_BASE, ADMIN_AUTH
     global ENABLE_SUB_DOMAINS, SUB_DOMAIN_COUNT
     global IMAP_SERVER, IMAP_PORT, IMAP_USER, IMAP_PASS
-    global FREEMAIL_API_URL, FREEMAIL_API_TOKEN
-    global CM_API_URL, CM_ADMIN_EMAIL, CM_ADMIN_PASS
+    global FREEMAIL_API_URL, FREEMAIL_API_TOKEN, FREEMAIL_LOCAL_WEBHOOK, FREEMAIL_WEBHOOK_SECRET
+    global CM_API_URL, CM_ADMIN_EMAIL, CM_ADMIN_PASS, CM_LOCAL_WEBHOOK, CM_WEBHOOK_SECRET
     global MC_API_BASE, MC_KEY
     global DEFAULT_PROXY
     global SUB_DOMAIN_LEVEL, RANDOM_SUB_DOMAIN_LEVEL
@@ -451,7 +455,10 @@ def reload_all_configs(new_config_dict=None):
     global FIVESIM_AUTO_PICK_COUNTRY, FIVESIM_VERIFY_ON_REGISTER, FIVESIM_REUSE_PHONE
     global FIVESIM_MAX_PRICE, FIVESIM_MIN_PRICE, FIVESIM_MIN_BALANCE
     global FIVESIM_MAX_TRIES, FIVESIM_POLL_TIMEOUT_SEC
-
+    global SMSBOWER_REUSE_PHONE, SMSBOWER_REUSE_MAX
+    global HERO_SMS_REUSE_PHONE, HERO_SMS_REUSE_MAX
+    global FIVESIM_REUSE_PHONE, FIVESIM_REUSE_MAX
+    global OPENAI_CPA_WEBHOOK_SECRET
     base_yaml_config = init_config()
 
     _db_conf = base_yaml_config.get("database", {})
@@ -585,15 +592,23 @@ def reload_all_configs(new_config_dict=None):
     _free = _c.get("freemail", {})
     FREEMAIL_API_URL = str(_free.get("api_url", "")).strip().rstrip("/")
     FREEMAIL_API_TOKEN = _free.get("api_token", "")
+    FREEMAIL_LOCAL_WEBHOOK = bool(_free.get("enable_local_webhook", False))
+    FREEMAIL_WEBHOOK_SECRET = str(_free.get("webhook_secret", ""))
 
     _cm = _c.get("cloudmail", {})
     CM_API_URL = str(_cm.get("api_url", "")).strip().rstrip("/")
     CM_ADMIN_EMAIL = _cm.get("admin_email", "")
     CM_ADMIN_PASS = _cm.get("admin_password", "")
+    CM_LOCAL_WEBHOOK = bool(_cm.get("enable_local_webhook", False))
+    CM_WEBHOOK_SECRET = str(_cm.get("webhook_secret", ""))
 
     _mc = _c.get("mail_curl", {})
     MC_API_BASE = str(_mc.get("api_base", "")).strip().rstrip("/")
     MC_KEY = _mc.get("key", "")
+
+
+    _ocpa = _c.get("openai_cpa", {})
+    OPENAI_CPA_WEBHOOK_SECRET = str(_ocpa.get("webhook_secret", "")).strip()
 
     DEFAULT_PROXY = format_docker_url(_c.get("default_proxy", ""))
 
@@ -724,6 +739,7 @@ def reload_all_configs(new_config_dict=None):
     HERO_SMS_AUTO_PICK_COUNTRY = _hero_sms_conf.get("auto_pick_country", False)
     HERO_SMS_REUSE_PHONE = _hero_sms_conf.get("reuse_phone", True)
     HERO_SMS_VERIFY_ON_REGISTER = _hero_sms_conf.get("verify_on_register", False)
+    HERO_SMS_REUSE_MAX = safe_int(_hero_sms_conf.get("reuse_max", 2), default=2)
 
     try:
         HERO_SMS_MAX_PRICE = float(_hero_sms_conf.get("max_price", 2.0))
@@ -759,6 +775,7 @@ def reload_all_configs(new_config_dict=None):
     SMSBOWER_MAX_TRIES = safe_int(_smsbower.get("max_tries", 3), default=3)
     SMSBOWER_POLL_TIMEOUT_SEC = safe_int(_smsbower.get("poll_timeout_sec", 120), default=120)
     SMSBOWER_MIN_PRICE = safe_float(_smsbower.get("min_price", 0.05), default=0.05)
+    SMSBOWER_REUSE_MAX = safe_int(_smsbower.get("reuse_max", 2), default=2)
 
     _fivesim = _c.get("fivesim", {})
     FIVESIM_ENABLED = safe_bool(_fivesim.get("enabled", False), default=False)
@@ -773,6 +790,7 @@ def reload_all_configs(new_config_dict=None):
     FIVESIM_MIN_BALANCE = safe_float(_fivesim.get("min_balance", 10.0), default=10.0)
     FIVESIM_MAX_TRIES = safe_int(_fivesim.get("max_tries", 3), default=3)
     FIVESIM_POLL_TIMEOUT_SEC = safe_int(_fivesim.get("poll_timeout_sec", 180), default=180)
+    FIVESIM_REUSE_MAX = safe_int(_fivesim.get("reuse_max", 2), default=2)
 
 
     _ai = _c.get("ai_service", {})
