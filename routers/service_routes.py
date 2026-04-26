@@ -188,6 +188,38 @@ def get_sub2api_groups(token: str = Depends(verify_token)):
     except Exception as exc:
         return {"status": "error", "message": f"Failed to fetch Sub2API groups: {exc}"}
 
+@router.get("/api/sub2api/proxies")
+def get_sub2api_proxies(token: str = Depends(verify_token)):
+    from curl_cffi import requests as cffi_requests
+    sub2api_url = getattr(core_engine.cfg, "SUB2API_URL", "").strip()
+    sub2api_key = getattr(core_engine.cfg, "SUB2API_KEY", "").strip()
+    if not sub2api_url or not sub2api_key:
+        return {"status": "error", "message": "Please save the Sub2API URL and API key first."}
+    try:
+        all_proxies = []
+        page = 1
+        while True:
+            response = cffi_requests.get(
+                f"{sub2api_url.rstrip('/')}/api/v1/admin/proxies",
+                headers={"x-api-key": sub2api_key, "Content-Type": "application/json"},
+                params={"page": page, "page_size": 100}, timeout=10,
+                impersonate="chrome110",
+            )
+            if response.status_code != 200:
+                break
+            data = response.json()
+            items = data.get("data", {}).get("items", []) if isinstance(data.get("data"), dict) else []
+            if not items:
+                break
+            all_proxies.extend(items)
+            total = data.get("data", {}).get("total", 0) if isinstance(data.get("data"), dict) else 0
+            if len(all_proxies) >= total:
+                break
+            page += 1
+        return {"status": "success", "data": all_proxies}
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to fetch Sub2API proxies: {exc}"}
+
 @router.get("/api/sub2api/check_history")
 async def get_sub2api_check_history(token: str = Depends(verify_token)):
     from utils.core_engine import _check_history, _check_history_lock
