@@ -94,7 +94,7 @@ _FIVESIM_COUNTRY_ZH = {
     "vietnam": "越南", "zambia": "赞比亚"
 }
 
-_FIVESIM_REUSE_STATE: dict[str, Any] = {"phone": "", "service": "", "country": "", "uses": 0, "updated_at": 0.0}
+_FIVESIM_REUSE_STATE: dict[str, Any] = {"order_id": "", "phone": "", "service": "", "country": "", "uses": 0, "updated_at": 0.0}
 
 
 def _load_fivesim_reuse_state():
@@ -110,26 +110,27 @@ def _sync_fivesim_reuse():
     db_manager.set_sys_kv("fivesim_reuse_data", _FIVESIM_REUSE_STATE)
 
 
-def _fivesim_reuse_get(service: str, country: str) -> tuple[str, int]:
+def _fivesim_reuse_get(service: str, country: str) -> tuple[str, str, int]:
     now = time.time()
     max_uses = int(getattr(cfg, 'FIVESIM_REUSE_MAX', 2))
     with _FIVESIM_REUSE_LOCK:
+        order_id = str(_FIVESIM_REUSE_STATE.get("order_id") or "").strip()
         phone = str(_FIVESIM_REUSE_STATE.get("phone") or "").strip()
         state_svc = str(_FIVESIM_REUSE_STATE.get("service") or "").strip()
         state_country = str(_FIVESIM_REUSE_STATE.get("country") or "").strip()
         uses = int(_FIVESIM_REUSE_STATE.get("uses") or 0)
         updated = float(_FIVESIM_REUSE_STATE.get("updated_at") or 0.0)
 
-        if phone and state_svc == service and state_country == country and uses < max_uses and (now - updated) < 1200:
-            return phone, uses
-    return "", 0
+        if order_id and phone and state_svc == service and state_country == country and uses < max_uses and (now - updated) < 280:
+            return order_id, phone, uses
+    return "", "", 0
 
 
-def _fivesim_reuse_set(phone: str, service: str, country: str):
-    if not phone: return
+def _fivesim_reuse_set(order_id: str, phone: str, service: str, country: str):
+    if not phone or not order_id: return
     with _FIVESIM_REUSE_LOCK:
         _FIVESIM_REUSE_STATE.update(
-            {"phone": phone, "service": service, "country": country, "uses": 0, "updated_at": time.time()})
+            {"order_id": order_id, "phone": phone, "service": service, "country": country, "uses": 0, "updated_at": time.time()})
     _sync_fivesim_reuse()
 
 
@@ -142,7 +143,7 @@ def _fivesim_reuse_touch(increase: bool = False):
 
 def _fivesim_reuse_clear():
     with _FIVESIM_REUSE_LOCK:
-        _FIVESIM_REUSE_STATE.update({"phone": "", "service": "", "country": "", "uses": 0, "updated_at": 0.0})
+        _FIVESIM_REUSE_STATE.update({"order_id": "", "phone": "", "service": "", "country": "", "uses": 0, "updated_at": 0.0})
     _sync_fivesim_reuse()
 
 def _fivesim_request(method: str, endpoint: str, proxies: Any, params: dict = None, json_data: dict = None) -> tuple[
@@ -173,7 +174,10 @@ def _fivesim_request(method: str, endpoint: str, proxies: Any, params: dict = No
 
     if 200 <= code < 300:
         return True, resp.text, data
-    return False, str(data.get("message", resp.text) if data else f"HTTP {code}"), data
+    error_msg = resp.text.strip() if resp.text else f"HTTP {code}"
+    if isinstance(data, dict) and "message" in data:
+        error_msg = str(data["message"])
+    return False, error_msg, data
 
 def fivesim_get_balance(proxies: Any = None) -> tuple[float, str]:
     _info("正在查询 5SIM 账户余额...")
@@ -276,11 +280,10 @@ def _fivesim_set_status(action: str, order_id: str, proxies: Any):
     if not order_id: return
     _fivesim_request("GET", f"user/{action}/{order_id}", proxies)
 
-
-def _fivesim_poll_code(order_id: str, proxies: Any) -> str:
+def _fivesim_poll_code(order_id: str, proxies: Any, expected_sms_index: int = 0) -> str:
     timeout_sec = _fivesim_poll_timeout()
     started = time.time()
-    _info(f"⏳ 正在等待 5SIM 验证码 (最大等待 {timeout_sec} 秒)...")
+    _info(f"⏳ 正在等待 5SIM 验证码 (第 {expected_sms_index + 1} 条, 最大等待 {timeout_sec} 秒)...")
     last_print = time.time()
 
     while time.time() - started < timeout_sec:
@@ -291,12 +294,12 @@ def _fivesim_poll_code(order_id: str, proxies: Any) -> str:
             _info(f"🔄 仍在等待短信中... (当前状态: {status})")
             last_print = time.time()
 
-        if ok and data and data.get("status") == "RECEIVED":
+        if ok and data and data.get("status") in ["RECEIVED", "PENDING"]:
             sms_list = data.get("sms", [])
-            if sms_list and len(sms_list) > 0:
-                code = str(sms_list[0].get("code", ""))
+            if sms_list and len(sms_list) > expected_sms_index:
+                code = str(sms_list[expected_sms_index].get("code", ""))
                 if code:
-                    _info(f"🎉 成功接收到短信验证码: {code}")
+                    _info(f"🎉 成功接收到第 {expected_sms_index + 1} 条短信验证码: {code}")
                     return code
 
         elif ok and data and data.get("status") in ["CANCELED", "BANNED", "TIMEOUT"]:
@@ -309,8 +312,9 @@ def _fivesim_poll_code(order_id: str, proxies: Any) -> str:
     return ""
 
 
-
-def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hint_url: str = "", device_id: str = "", user_agent: str = "", run_ctx: dict = None, proxy: Optional[str] = None) -> tuple[bool, str]:
+def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hint_url: str = "", device_id: str = "",
+                                 user_agent: str = "", run_ctx: dict = None, proxy: Optional[str] = None) -> tuple[
+    bool, str]:
     if not _fivesim_enabled(): return False, "5SIM 未配置或未开启"
     max_tries = _fivesim_max_tries()
     started = time.time()
@@ -323,64 +327,52 @@ def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hin
             break
         if time.time() - started >= 180: return False, "5SIM 排队超时"
 
-    def _verify_once(aid: str, phone_number: str, source: str) -> tuple[bool, str, str]:
+    def _verify_once(aid: str, phone_number: str, source: str, current_use_index: int) -> tuple[bool, str, str]:
         try:
             _info(f"[{source}] 正在向 OpenAI 提交号码 {phone_number}...")
             hdrs = {"referer": "https://auth.openai.com/add-phone", "accept": "application/json",
                     "content-type": "application/json"}
 
-
             send_sentinel = generate_payload(
-                did=device_id,
-                flow="authorize_continue",
-                proxy=proxy,
-                user_agent=user_agent,
-                impersonate="chrome110",
-                ctx=run_ctx
+                did=device_id, flow="authorize_continue", proxy=proxy,
+                user_agent=user_agent, impersonate="chrome110", ctx=run_ctx
             )
-
             if send_sentinel: hdrs["openai-sentinel-token"] = send_sentinel
 
             send_resp = _post_with_retry(session, "https://auth.openai.com/api/accounts/add-phone/send", headers=hdrs,
                                          json_body={"phone_number": phone_number}, proxies=proxies)
             if send_resp.status_code != 200:
-                fail_reason = f"号码被拦截 HTTP {send_resp.json()}"
+                try:
+                    err_msg = send_resp.json()
+                except:
+                    err_msg = send_resp.text
+                fail_reason = f"号码被拦截 HTTP {send_resp.status_code} {err_msg}"
                 _warn(f"[{source}] ❌ {fail_reason}")
-                _fivesim_set_status("ban", aid, proxies)
                 return False, "", fail_reason
 
             _info(f"[{source}] ✅ OpenAI 接受了号码，开始轮询验证码...")
-            sms_code = _fivesim_poll_code(aid, proxies)
+            sms_code = _fivesim_poll_code(aid, proxies, expected_sms_index=current_use_index)
             if not sms_code:
-                _fivesim_set_status("cancel", aid, proxies)
                 return False, "", "接码超时"
 
             v_hdrs = {"referer": "https://auth.openai.com/phone-verification", "accept": "application/json",
                       "content-type": "application/json"}
 
-
             sentinel = generate_payload(
-                did=device_id,
-                flow="authorize_continue",
-                proxy=proxy,
-                user_agent=user_agent,
-                impersonate="chrome110",
-                ctx=run_ctx
+                did=device_id, flow="authorize_continue", proxy=proxy,
+                user_agent=user_agent, impersonate="chrome110", ctx=run_ctx
             )
-
             if sentinel: v_hdrs["openai-sentinel-token"] = sentinel
             v_resp = _post_with_retry(session, "https://auth.openai.com/api/accounts/phone-otp/validate",
                                       headers=v_hdrs, json_body={"code": sms_code}, proxies=proxies)
 
             if v_resp.status_code == 200:
                 _info(f"[{source}] 🎊 验证码核验通过！")
-                _fivesim_set_status("finish", aid, proxies)
                 vj = v_resp.json()
                 next_url = _extract_next_url(vj) or hint_url
                 return True, next_url, ""
             else:
                 _warn(f"[{source}] ❌ 验证码校验失败 HTTP {v_resp.status_code}")
-                _fivesim_set_status("ban", aid, proxies)
                 return False, "", f"校验失败 HTTP {v_resp.status_code}"
         except UserStoppedError:
             raise
@@ -393,36 +385,33 @@ def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hin
         excluded = set()
         last_reason = "验证失败"
         reuse_on = _fivesim_reuse_enabled()
+        max_uses = int(getattr(cfg, 'FIVESIM_REUSE_MAX', 2))
 
         if reuse_on:
-            rphone, rused = _fivesim_reuse_get(service_code, pref_country if not _fivesim_auto_pick() else "")
-            if rphone:
-                _info(f"♻️ 尝试复用旧号码: {rphone} (已使用 {rused} 次)")
-                num = rphone.replace("+", "")
-                r_ok, r_text, r_data = _fivesim_request("GET", f"user/reuse/{service_code}/{num}", proxies)
+            raid, rphone, rused = _fivesim_reuse_get(service_code, pref_country if not _fivesim_auto_pick() else "")
+            if raid and rphone:
+                _info(f"♻️ 触发【同单多码】复用: {rphone} (订单: {raid}, 已用 {rused} 次)")
 
-                if r_ok and r_data and "id" in r_data:
-                    raid = str(r_data["id"])
-                    new_phone = str(r_data["phone"])
-                    rcost = str(r_data.get("price", "未知"))
-                    _info(f"♻️ 复用接口请求成功！新订单 ID: {raid} (扣费: {rcost} $)")
+                ok_r, next_r, reason_r = _verify_once(raid, rphone, source="同单复用", current_use_index=rused)
 
-                    ok_r, next_r, reason_r = _verify_once(raid, new_phone, source="复用号码")
-                    if ok_r:
-                        _fivesim_reuse_touch(increase=True)
-                        return True, next_r
+                if ok_r:
+                    _fivesim_reuse_touch(increase=True)
+                    if (rused + 1) >= max_uses:
+                        _info(f"🛑 该号码已达到最大复用次数 ({max_uses})，完成订单。")
+                        _fivesim_set_status("finish", raid, proxies)
+                        _fivesim_reuse_clear()
+                    return True, next_r
 
-                    _fivesim_reuse_clear()
-                else:
-                    _warn(f"⚠️ 复用接口请求拒绝: {r_text}")
-                    _fivesim_reuse_clear()
+                _warn(f"⚠️ 复用中途失败: {reason_r}，放弃该号码。")
+                _fivesim_set_status("ban", raid, proxies)
+                _fivesim_reuse_clear()
 
         for attempt in range(1, max_tries + 1):
             _raise_if_stopped()
             country = _fivesim_pick_country(proxies, service_code, pref_country, excluded)
             _info(f"[{attempt}/{max_tries}] 正在向 5SIM 请求新号码 (国家: {country})...")
 
-            aid, phone, gerr, cost = _fivesim_get_number(proxies, service_code, country, enable_reuse=reuse_on)
+            aid, phone, gerr, cost = _fivesim_get_number(proxies, service_code, country, enable_reuse=False)
             if not aid:
                 _warn(f"⚠️ 第 {attempt} 次取号失败: {gerr}")
                 last_reason = gerr
@@ -434,13 +423,18 @@ def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hin
 
             _info(f"📱 成功取到新号码: {phone} (订单: {aid} | 扣费: {cost} $)")
 
-            ok_n, next_n, reason_n = _verify_once(aid, phone, source=f"新号#{attempt}")
+            ok_n, next_n, reason_n = _verify_once(aid, phone, source=f"新号#{attempt}", current_use_index=0)
             if ok_n:
-                if reuse_on:
-                    _fivesim_reuse_set(phone, service_code, country)
+                if reuse_on and max_uses > 1:
+                    _info(f"📥 号码已存入复用池，等待 5 分钟内下一次接码。")
+                    _fivesim_reuse_set(aid, phone, service_code, country)
+                    _fivesim_reuse_touch(increase=True)
+                else:
+                    _fivesim_set_status("finish", aid, proxies)
                 return True, next_n
 
             last_reason = reason_n
+            _fivesim_set_status("ban", aid, proxies)
             _sleep_interruptible(1.5)
 
         return False, last_reason
