@@ -1140,7 +1140,7 @@ def get_oai_code(
             elif mode == "cloudmail":
                 if getattr(cfg, 'CM_LOCAL_WEBHOOK', False):
                     try:
-                        from routers.system_routes import code_pool
+                        from utils.auth_core import code_pool
                         target_email = email.lower().strip()
                         if target_email in code_pool:
                             raw_text = code_pool.pop(target_email, "")
@@ -1764,7 +1764,7 @@ def get_oai_code(
             elif mode == "freemail":
                 if getattr(cfg, 'FREEMAIL_LOCAL_WEBHOOK', False):
                     try:
-                        from routers.system_routes import code_pool
+                        from utils.auth_core import code_pool
                         target_email = email.lower().strip()
                         if target_email in code_pool:
                             raw_text = code_pool.pop(target_email, "")

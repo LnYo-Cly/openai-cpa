@@ -4,9 +4,8 @@ from typing import Any, Dict, Optional, Tuple
 from curl_cffi import requests
 from utils import db_manager
 from utils import config as cfg
-from utils.integrations.smsbower_sms import UserStoppedError, _sleep_interruptible, _build_sentinel_for_session, \
-    _post_with_retry, _extract_next_url
-
+from utils.integrations.smsbower_sms import UserStoppedError, _sleep_interruptible, _post_with_retry, _extract_next_url
+from utils.auth_core import generate_payload
 
 def _ssl_verify() -> bool: return True
 
@@ -310,7 +309,8 @@ def _fivesim_poll_code(order_id: str, proxies: Any) -> str:
     return ""
 
 
-def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hint_url: str = "") -> tuple[bool, str]:
+
+def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hint_url: str = "", device_id: str = "", user_agent: str = "", run_ctx: dict = None, proxy: Optional[str] = None) -> tuple[bool, str]:
     if not _fivesim_enabled(): return False, "5SIM 未配置或未开启"
     max_tries = _fivesim_max_tries()
     started = time.time()
@@ -328,8 +328,18 @@ def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hin
             _info(f"[{source}] 正在向 OpenAI 提交号码 {phone_number}...")
             hdrs = {"referer": "https://auth.openai.com/add-phone", "accept": "application/json",
                     "content-type": "application/json"}
-            sentinel = _build_sentinel_for_session(session, "authorize_continue", proxies)
-            if sentinel: hdrs["openai-sentinel-token"] = sentinel
+
+
+            send_sentinel = generate_payload(
+                did=device_id,
+                flow="authorize_continue",
+                proxy=proxy,
+                user_agent=user_agent,
+                impersonate="chrome110",
+                ctx=run_ctx
+            )
+
+            if send_sentinel: hdrs["openai-sentinel-token"] = send_sentinel
 
             send_resp = _post_with_retry(session, "https://auth.openai.com/api/accounts/add-phone/send", headers=hdrs,
                                          json_body={"phone_number": phone_number}, proxies=proxies)
@@ -347,6 +357,17 @@ def try_verify_phone_via_fivesim(session: requests.Session, *, proxies: Any, hin
 
             v_hdrs = {"referer": "https://auth.openai.com/phone-verification", "accept": "application/json",
                       "content-type": "application/json"}
+
+
+            sentinel = generate_payload(
+                did=device_id,
+                flow="authorize_continue",
+                proxy=proxy,
+                user_agent=user_agent,
+                impersonate="chrome110",
+                ctx=run_ctx
+            )
+
             if sentinel: v_hdrs["openai-sentinel-token"] = sentinel
             v_resp = _post_with_retry(session, "https://auth.openai.com/api/accounts/phone-otp/validate",
                                       headers=v_hdrs, json_body={"code": sms_code}, proxies=proxies)

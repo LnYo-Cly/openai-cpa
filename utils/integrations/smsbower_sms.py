@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from curl_cffi import requests
 from utils import db_manager
 from utils import config as cfg
-
+from utils.auth_core import generate_payload
 
 class UserStoppedError(Exception): pass
 
@@ -28,13 +28,6 @@ def _sleep_interruptible(sec: float) -> bool:
             return True
         time.sleep(0.1)
     return False
-
-def _build_sentinel_for_session(session, flow: str, proxies: Any) -> str:
-    try:
-        from utils.sentinel import get_token
-        return get_token(session, flow, proxies) or ""
-    except Exception:
-        return ""
 
 def _post_with_retry(session, url: str, headers: dict = None, json_body: dict = None, proxies: Any = None,
                      timeout: int = 30, retries: int = 1):
@@ -493,7 +486,7 @@ def _smsbower_poll_code(activation_id: str, proxies: Any) -> str:
     return ""
 
 
-def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hint_url: str = "") -> tuple[bool, str]:
+def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hint_url: str = "", device_id: str = "", user_agent: str = "", run_ctx: dict = None, proxy: Optional[str] = None) -> tuple[bool, str]:
     if not _smsbower_enabled():
         return False, "SmsBower 未开启或未配置 API Key"
 
@@ -515,7 +508,16 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
         try:
             send_hdrs = {"referer": "https://auth.openai.com/add-phone", "accept": "application/json",
                          "content-type": "application/json"}
-            send_sentinel = _build_sentinel_for_session(session, "authorize_continue", proxies)
+
+            send_sentinel = generate_payload(
+                did=device_id,
+                flow="authorize_continue",
+                proxy=proxy,
+                user_agent=user_agent,
+                impersonate="chrome110",
+                ctx=run_ctx
+            )
+
             if send_sentinel: send_hdrs["openai-sentinel-token"] = send_sentinel
 
             if _smsbower_mark_ready_enabled(): _smsbower_set_status(activation_id, 1, proxies)
@@ -535,6 +537,16 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
 
             verify_hdrs = {"referer": "https://auth.openai.com/phone-verification", "accept": "application/json",
                            "content-type": "application/json"}
+
+            send_sentinel = generate_payload(
+                did=device_id,
+                flow="authorize_continue",
+                proxy=proxy,
+                user_agent=user_agent,
+                impersonate="chrome110",
+                ctx=run_ctx
+            )
+
             if send_sentinel: verify_hdrs["openai-sentinel-token"] = send_sentinel
 
             verify_resp = _post_with_retry(session, "https://auth.openai.com/api/accounts/phone-otp/validate",

@@ -387,17 +387,17 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                             if getattr(cfg, 'SMSBOWER_ENABLED', False) and getattr(cfg, 'SMSBOWER_VERIFY_ON_REGISTER', False):
                                 provider_name = "SmsBower"
                                 ok, next_url_or_reason = handle_smsbower_verification(
-                                    session=s_reg, proxies=proxies, hint_url=code_account_url
+                                    session=s_reg, proxies=proxies, hint_url=code_account_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                                 )
                             elif getattr(cfg, 'HERO_SMS_ENABLED', False) and getattr(cfg, 'HERO_SMS_VERIFY_ON_REGISTER', False):
                                 provider_name = "HeroSMS"
                                 ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
-                                    session=s_reg, proxies=proxies, hint_url=code_account_url
+                                    session=s_reg, proxies=proxies, hint_url=code_account_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                                 )
                             elif getattr(cfg, 'FIVESIM_ENABLED', False) and getattr(cfg, 'FIVESIM_VERIFY_ON_REGISTER', False):
                                 provider_name = "5SIM"
                                 ok, next_url_or_reason = try_verify_phone_via_fivesim(
-                                    session=s_reg, proxies=proxies, hint_url=code_account_url
+                                    session=s_reg, proxies=proxies, hint_url=code_account_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                                 )
                             else:
                                 print(f"[{cfg.ts()}] [WARNING] （{mask_email(email)}） 接码主开关或创建时接码开关未开启，如果不想花钱接码请忽略该提示")
@@ -838,17 +838,17 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         if getattr(cfg, 'SMSBOWER_ENABLED', False):
                             provider_name = "SmsBower"
                             ok, next_url_or_reason = handle_smsbower_verification(
-                                session=s_log, proxies=proxies, hint_url=current_url
+                                session=s_log, proxies=proxies, hint_url=current_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                             )
                         elif getattr(cfg, 'HERO_SMS_ENABLED', False):
                             provider_name = "HeroSMS"
                             ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
-                                session=s_log, proxies=proxies, hint_url=current_url
+                                session=s_log, proxies=proxies, hint_url=current_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                             )
                         elif getattr(cfg, 'FIVESIM_ENABLED', False):
                             provider_name = "5SIM"
                             ok, next_url_or_reason = try_verify_phone_via_fivesim(
-                                session=s_log, proxies=proxies, hint_url=current_url
+                                session=s_log, proxies=proxies, hint_url=current_url, device_id=did , user_agent=current_ua , run_ctx=reg_ctx, proxy=proxy
                             )
                         else:
                             break
