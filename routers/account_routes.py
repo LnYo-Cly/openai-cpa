@@ -1,4 +1,5 @@
 import json
+import time
 import urllib.parse
 from typing import List, Any, Optional
 from fastapi import APIRouter, Depends, Query
@@ -20,6 +21,8 @@ class DeleteMailboxReq(BaseModel): ids: list[Any]
 class OutlookAuthUrlReq(BaseModel): client_id: str
 class OutlookExchangeReq(BaseModel): email: str; client_id: str; code_or_url: str
 class UpdateMailboxStatusReq(BaseModel): emails: list[str]; status: int
+class PushReq(BaseModel):emails: list[str]; platform: str
+class BulkRefreshReq(BaseModel): emails: list[str]
 
 def parse_cpa_usage_to_details(raw_usage: dict) -> dict:
     details = {"is_cpa": True}
@@ -105,8 +108,8 @@ def parse_sub2api_proxy(proxy_url: str):
         return None
 
 @router.get("/api/accounts")
-async def get_accounts(page: int = Query(1), page_size: int = Query(50), hide_reg: str = Query("0"), search: Optional[str] = Query(None), token: str = Depends(verify_token)):
-    result = db_manager.get_accounts_page(page, page_size, hide_reg=hide_reg, search=search)
+async def get_accounts(page: int = Query(1), page_size: int = Query(50), hide_reg: str = Query("0"), search: Optional[str] = Query(None), status_filter: str = Query("all"), token: str = Depends(verify_token)):
+    result = db_manager.get_accounts_page(page, page_size, hide_reg=hide_reg, search=search, status_filter=status_filter)
     return {"status": "success", "data": result["data"], "total": result["total"], "page": page, "page_size": page_size}
 
 
@@ -126,31 +129,99 @@ async def delete_selected_accounts(req: DeleteReq, token: str = Depends(verify_t
 
 @router.post("/api/account/action")
 def account_action(data: dict, token: str = Depends(verify_token)):
+    from utils.email_providers.mail_service import mask_email
     try:
-        email, action = data.get("email"), data.get("action")
+        action = data.get("action")
+        target_emails = data.get("emails", [])
+        if not target_emails and data.get("email"):
+            target_emails = [data.get("email")]
+
+        if not target_emails:
+            return {"status": "error", "message": "未收到任何要操作的账号信息。"}
+
         config = getattr(core_engine.cfg, '_c', {})
-        token_data = db_manager.get_token_by_email(email)
-        if not token_data: return {"status": "error", "message": f"未找到 {email} 的 Token。"}
+        success_emails = []
+        fail_count = 0
+        last_error = ""
 
         if action == "push":
-            if not config.get("cpa_mode", {}).get("enable", False): return {"status": "error",
-                                                                            "message": "🚫 推送失败：未开启 CPA 模式！"}
-            success, msg = core_engine.upload_to_cpa_integrated(token_data,
-                                                                config.get("cpa_mode", {}).get("api_url", ""),
-                                                                config.get("cpa_mode", {}).get("api_token", ""))
-            return {"status": "success", "message": f"账号 {email} 已成功推送到 CPA！"} if success else {"status": "error",
-                                                                                                "message": f"CPA 推送失败: {msg}"}
+            if not config.get("cpa_mode", {}).get("enable", False):
+                return {"status": "error", "message": "🚫 推送失败：未开启 CPA 模式！"}
+            api_url = config.get("cpa_mode", {}).get("api_url", "")
+            api_token = config.get("cpa_mode", {}).get("api_token", "")
+            print(f"[{cfg.ts()}] [系统] 🚀 收到指令，准备将 {len(target_emails)} 个账号推送至 CPA...")
 
         elif action == "push_sub2api":
-            if not getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False): return {"status": "error",
-                                                                                   "message": "🚫 推送失败：未开启 Sub2API 模式！"}
-            client = Sub2APIClient(api_url=getattr(core_engine.cfg, 'SUB2API_URL', ''),
-                                   api_key=getattr(core_engine.cfg, 'SUB2API_KEY', ''))
-            success, resp = client.add_account(token_data)
-            return {"status": "success", "message": f"账号 {email} 已同步至 Sub2API！"} if success else {"status": "error",
-                                                                                                  "message": f"Sub2API 推送失败: {resp}"}
+            if not getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False):
+                return {"status": "error", "message": "🚫 推送失败：未开启 Sub2API 模式！"}
+            client = Sub2APIClient(
+                api_url=getattr(core_engine.cfg, 'SUB2API_URL', ''),
+                api_key=getattr(core_engine.cfg, 'SUB2API_KEY', '')
+            )
+            print(f"[{cfg.ts()}] [系统] 🛸 收到指令，准备将 {len(target_emails)} 个账号推送至 Sub2API...")
+
+        total_accounts = len(target_emails)
+        for idx, email in enumerate(target_emails):
+            token_data = db_manager.get_token_by_email(email)
+            if not token_data:
+                fail_count += 1
+                last_error = f"账号 {email} 未找到 Token"
+                print(f"[{cfg.ts()}] [警告] ❌ 账号 {mask_email(email)} 未找到有效 Token，跳过。")
+                continue
+
+            try:
+                success = False
+                if action == "push":
+                    success, msg = core_engine.upload_to_cpa_integrated(token_data, api_url, api_token)
+                    if not success:
+                        last_error = msg
+                        # 【新增日志】
+                        print(f"[{cfg.ts()}] [错误] ❌ 推送 CPA 失败 ({mask_email(email)}): {msg}")
+                    else:
+                        # 【新增日志】
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 CPA！")
+
+                elif action == "push_sub2api":
+                    success, resp = client.add_account(token_data)
+                    if not success:
+                        last_error = resp
+                        # 【新增日志】
+                        print(f"[{cfg.ts()}] [错误] ❌ 推送 Sub2API 失败 ({mask_email(email)}): {resp}")
+                    else:
+                        # 【新增日志】
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Sub2API！")
+
+                if success:
+                    success_emails.append(email)
+                else:
+                    fail_count += 1
+            except Exception as e:
+                fail_count += 1
+                last_error = str(e)
+
+        if idx < total_accounts - 1:
+            time.sleep(0.5)
+
+        if success_emails:
+            platform_marker = "cpa" if action == "push" else "sub2api"
+            db_manager.update_account_push_info(success_emails, platform_marker)
+
+        print(f"[{cfg.ts()}] [系统] 🏁 推送任务执行完毕。成功: {len(success_emails)} 个，失败: {fail_count} 个。")
+
+        total = len(target_emails)
+        if total == 1:
+            if success_emails:
+                return {"status": "success", "message": f"账号 {target_emails[0]} 已成功推送！"}
+            else:
+                return {"status": "error", "message": f"推送失败: {last_error}"}
+        else:
+            msg = f"批量操作完成！成功: {len(success_emails)} 个"
+            if fail_count > 0:
+                msg += f"，失败: {fail_count} 个"
+            return {"status": "success" if success_emails else "error", "message": msg}
+
     except Exception as e:
-        return {"status": "error", "message": f"后端推送异常: {str(e)}"}
+        return {"status": "error", "message": f"后端处理异常: {str(e)}"}
 
 
 @router.post("/api/accounts/export_sub2api")
@@ -179,12 +250,13 @@ async def clear_all_accounts_api(token: str = Depends(verify_token)):
 
 
 @router.get("/api/cloud/accounts")
-def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("all"), page: int = Query(1), page_size: int = Query(50), search: Optional[str] = Query(None),
+def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("all"), page: int = Query(1),
+                       page_size: int = Query(50), search: Optional[str] = Query(None),
                        token: str = Depends(verify_token)):
     type_list = types.split(",")
     combined_data = []
-    try:
-        if "sub2api" in type_list and getattr(cfg, 'SUB2API_URL', None) and getattr(cfg, 'SUB2API_KEY', None):
+    if "sub2api" in type_list and getattr(cfg, 'SUB2API_URL', None) and getattr(cfg, 'SUB2API_KEY', None):
+        try:
             client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY)
             success, raw_sub2_data = client.get_all_accounts()
             if success:
@@ -206,8 +278,11 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
                                     "codex_5h_used_percent": extra.get("codex_5h_used_percent", 0),
                                     "codex_7d_used_percent": extra.get("codex_7d_used_percent", 0)}
                     })
+        except Exception as e:
+            print(f"[DEBUG] 拉取 Sub2API 数据异常，将跳过: {e}")
 
-        if "cpa" in type_list and getattr(cfg, 'CPA_API_URL', None) and getattr(cfg, 'CPA_API_TOKEN', None):
+    if "cpa" in type_list and getattr(cfg, 'CPA_API_URL', None) and getattr(cfg, 'CPA_API_TOKEN', None):
+        try:
             from curl_cffi import requests
             res = requests.get(core_engine._normalize_cpa_auth_files_url(cfg.CPA_API_URL),
                                headers={"Authorization": f"Bearer {cfg.CPA_API_TOKEN}"}, timeout=20,
@@ -215,11 +290,44 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
             if res.status_code == 200:
                 for item in [f for f in res.json().get("files", []) if
                              "codex" in str(f.get("type", "")).lower() or "codex" in str(
-                                     f.get("provider", "")).lower()]:
+                                 f.get("provider", "")).lower()]:
                     combined_data.append({"id": item.get("name", ""), "account_type": "cpa",
                                           "credential": item.get("name", "").replace(".json", ""),
                                           "status": "disabled" if item.get("disabled", False) else "active",
                                           "details": {}, "last_check": "-"})
+        except Exception as e:
+            print(f"[DEBUG] 拉取 CPA 数据异常，将跳过: {e}")
+
+    try:
+        cpa_emails = [x["credential"] for x in combined_data if x["account_type"] == "cpa"]
+        sub_emails = [x["credential"] for x in combined_data if x["account_type"] == "sub2api"]
+        if cpa_emails:
+            db_manager.update_account_push_info(cpa_emails, "CPA", mode="sync")
+        if sub_emails:
+            db_manager.update_account_push_info(sub_emails, "SUB2API", mode="sync")
+
+        active_emails = [x["credential"] for x in combined_data if x["status"] == "active"]
+        inactive_emails = [x["credential"] for x in combined_data if x["status"] in ["disabled", "dead"]]
+
+        if active_emails:
+            db_manager.update_account_status(active_emails, 1)
+        if inactive_emails:
+            db_manager.update_account_status(inactive_emails, 0)
+
+        cpa_list = [x for x in combined_data if x["account_type"] == "cpa"]
+        sub2api_list = [x for x in combined_data if x["account_type"] == "sub2api"]
+
+        cloud_stats = {
+            "total": len(combined_data),
+            "enabled": sum(1 for x in combined_data if x["status"] == "active"),
+            "cpa": len(cpa_list),
+            "cpa_active": sum(1 for x in cpa_list if x["status"] == "active"),
+            "cpa_disabled": sum(1 for x in cpa_list if x["status"] != "active"),
+            "sub2api": len(sub2api_list),
+            "sub2api_active": sum(1 for x in sub2api_list if x["status"] == "active"),
+            "sub2api_disabled": sum(1 for x in sub2api_list if x["status"] != "active")
+        }
+
         if status_filter != "all":
             combined_data = [item for item in combined_data if item.get("status") == status_filter]
 
@@ -237,7 +345,8 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
         return {
             "status": "success",
             "data": paged_data,
-            "total": total_count
+            "total": total_count,
+            "cloud_stats": cloud_stats
         }
     except Exception as e:
         return {"status": "error", "message": f"拉取云端库存数据失败，请检查网络或者URL和KEY是否填写正确"}
@@ -249,10 +358,7 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
     from concurrent.futures import ThreadPoolExecutor
 
     success_count, fail_count, updated_details_map = 0, 0, {}
-    sub2api_client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY) if getattr(cfg, 'SUB2API_URL',
-                                                                                                None) and getattr(cfg,
-                                                                                                                  'SUB2API_KEY',
-                                                                                                                  None) else None
+    sub2api_client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY) if getattr(cfg, 'SUB2API_URL',None) and getattr(cfg,'SUB2API_KEY',None) else None
 
     cpa_files_map = {}
     if any(a.type == "cpa" for a in req.accounts) and req.action == "check" and getattr(cfg, 'CPA_API_URL', None):
@@ -263,7 +369,6 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
             if res.status_code == 200: cpa_files_map = {f.get("name"): f for f in res.json().get("files", [])}
         except:
             pass
-
     def _worker(acc: CloudAccountItem):
         is_success, details = False, None
         try:
@@ -303,12 +408,20 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
         getattr(cfg, '_c', {}).get('sub2api_mode', {}).get('threads', 10)))
 
     with ThreadPoolExecutor(max_workers=max(1, min(target_threads, 50))) as executor:
-        for is_success, acc_id, details in executor.map(_worker, req.accounts):
+        futures = []
+        for idx, acc in enumerate(req.accounts):
+            futures.append(executor.submit(_worker, acc))
+            if idx < len(req.accounts) - 1:
+                time.sleep(0.5)
+
+        for future in futures:
+            is_success, acc_id, details = future.result()
             if is_success:
                 success_count += 1
             else:
                 fail_count += 1
-            if details: updated_details_map[acc_id] = details
+            if details:
+                updated_details_map[acc_id] = details
 
     msg = f"测活完毕 | 存活: {success_count} 个 | 失效并已自动禁用: {fail_count} 个" if req.action == "check" else f"指令已下发 | 成功: {success_count} 个 | 失败: {fail_count} 个"
 
@@ -446,3 +559,99 @@ async def clear_all_mailboxes_api(token: str = Depends(verify_token)):
     if db_manager.clear_all_mailboxes():
         return {"status": "success", "message": "邮箱库已全部清空"}
     return {"status": "error", "message": "清空失败"}
+
+@router.get("/api/accounts/stats")
+async def api_get_inventory_stats(token: str = Depends(verify_token)):
+    stats = db_manager.get_inventory_stats()
+    return {"status": "success", "data": stats}
+
+@router.post("/api/accounts/bulk_refresh")
+def bulk_refresh_api(req: BulkRefreshReq, token: str = Depends(verify_token)):
+    from utils.email_providers.mail_service import mask_email
+    if not req.emails:
+        return {"status": "error", "message": "未收到任何要刷新的账号"}
+
+    sub2api_map = {}
+    if getattr(cfg, 'SUB2API_URL', None) and getattr(cfg, 'SUB2API_KEY', None):
+        try:
+            client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY)
+            ok, raw_data = client.get_all_accounts()
+            if ok:
+                sub2api_map = {acc.get("name"): acc.get("id") for acc in raw_data if acc.get("name")}
+        except Exception as e:
+            print(f"[{cfg.ts()}] [系统] 批量刷新前获取 Sub2API 映射失败: {e}")
+
+    def _refresh_single(email: str) -> bool:
+        full_info = db_manager.get_account_full_info(email)
+        if not full_info:
+            print(f"[{cfg.ts()}] [警告] ❌ 账号 {mask_email(email)} 未找到本地数据，跳过。")
+            return False
+
+        token_data = full_info['token_data']
+        rt = token_data.get("refresh_token")
+        if not rt:
+            db_manager.update_account_status([email], 0)
+            print(f"[{cfg.ts()}] [错误] ❌ 账号 {mask_email(email)} 缺少 refresh_token，标为死号。")
+            return False
+
+        proxies = {"http": getattr(cfg, 'DEFAULT_PROXY', None),
+                   "https": getattr(cfg, 'DEFAULT_PROXY', None)} if getattr(cfg, 'DEFAULT_PROXY', None) else None
+        ok, new_tokens = core_engine.refresh_oauth_token(rt, proxies=proxies)
+
+        if not ok:
+            err = new_tokens.get("error", "未知错误") if isinstance(new_tokens, dict) else str(new_tokens)
+            db_manager.update_account_status([email], 0)
+            db_manager.remove_account_push_platform(email, "CPA", exact_match=True)
+            db_manager.remove_account_push_platform(email, "SUB2API", exact_match=False)
+            print(f"[{cfg.ts()}] [错误] ❌ 账号 {mask_email(email)} 刷新失败 ({err})，已标记死亡并解绑平台。")
+            return False
+
+        token_data.update(new_tokens)
+        db_manager.update_account_token_only(email, json.dumps(token_data))
+        db_manager.update_account_status([email], 1)
+
+        current_platforms = [p.strip().upper() for p in (full_info.get('push_platform') or "").split(',') if p.strip()]
+        sync_tags = []
+
+        if "CPA" in current_platforms and getattr(cfg, 'CPA_API_URL', None):
+            up_ok, _ = core_engine.upload_to_cpa_integrated(token_data, cfg.CPA_API_URL, cfg.CPA_API_TOKEN,
+                                                            custom_filename=f"{email}.json")
+            if up_ok: sync_tags.append("CPA")
+
+        if "SUB2API" in current_platforms and sub2api_map:
+            target_id = sub2api_map.get(email[:64])
+            if target_id:
+                client = Sub2APIClient(api_url=cfg.SUB2API_URL, api_key=cfg.SUB2API_KEY)
+                client.update_account(target_id, {"credentials": token_data})
+                sync_tags.append("Sub2API")
+
+        sync_msg = f"已覆盖至: {' + '.join(sync_tags)}" if sync_tags else "无远端标签"
+        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 刷新存活！{sync_msg}")
+
+        return True
+
+    from concurrent.futures import ThreadPoolExecutor
+    print(f"[{cfg.ts()}] [系统] 🔄 开始并发批量刷新 {len(req.emails)} 个账号...")
+
+    target_threads = min(20, len(req.emails))
+    results = []
+    with ThreadPoolExecutor(max_workers=target_threads) as executor:
+        futures = []
+        for idx, email in enumerate(req.emails):
+
+            futures.append(executor.submit(_refresh_single, email))
+            if idx < len(req.emails) - 1:
+                time.sleep(0.5)
+
+        for future in futures:
+            results.append(future.result())
+
+    success_count = sum(1 for r in results if r)
+    fail_count = len(results) - success_count
+
+    print(f"[{cfg.ts()}] [系统] 🏁 批量刷新完毕！成功: {success_count} 个，失败/死亡: {fail_count} 个。")
+
+    return {
+        "status": "success" if success_count > 0 else "warning",
+        "message": f"批量刷新完成！成功: {success_count} 个，失败/死亡: {fail_count} 个"
+    }

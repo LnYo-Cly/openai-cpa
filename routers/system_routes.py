@@ -559,3 +559,7 @@ def ext_stop(token: str = Depends(verify_token)):
     from utils import core_engine
     core_engine.run_stats["ext_is_running"] = False
     return {"status": "success"}
+
+@router.get("/api/system/version")
+def get_system_version():
+    return {"status": "success", "version": cfg.APP_VERSION}

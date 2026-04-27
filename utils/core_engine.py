@@ -503,10 +503,15 @@ def test_sub2api_account_direct(item: dict, proxy: str) -> Tuple[bool, str]:
 def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
     if hasattr(args, 'check_stop') and args.check_stop(): return False
     name        = item.get("name")
+    email = name.replace(".json", "")
     is_disabled = item.get("disabled", False)
     is_ok, msg  = test_cliproxy_auth_file(item, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)
 
     if is_ok:
+        try:
+            db_manager.update_account_status([email], 1)
+        except Exception:
+            pass
         if is_disabled:
             can_reenable, reason = _should_reenable_cpa_account(
                 item.get("_raw_usage"), cfg.MIN_REMAINING_WEEKLY_PERCENT
@@ -528,12 +533,21 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
 
     if "周限额" in msg or "usage_limit_reached" in msg:
         if cfg.REMOVE_ON_LIMIT_REACHED:
+            try:
+                db_manager.update_account_status([email], 0)
+            except Exception:
+                pass
             print(f"[{ts()}] [INFO] 触发限额剔除规则，执行物理剔除...")
             requests.delete(
                 _normalize_cpa_auth_files_url(cfg.CPA_API_URL),
                 headers={"Authorization": f"Bearer {cfg.CPA_API_TOKEN}"},
                 params={"name": name},
             )
+            try:
+                db_manager.remove_account_push_platform(name, "CPA", exact_match=True)
+                print(f"[{ts()}] [系统] 已同步清除 {mask_email(name)} 本地的 CPA 平台推送状态")
+            except Exception:
+                pass
         elif not is_disabled:
             print(f"[{ts()}] [INFO] 测活: 凭证额度耗尽，正在禁用...")
             ok = set_cpa_auth_file_status(cfg.CPA_API_URL, cfg.CPA_API_TOKEN, name, disabled=True)
@@ -546,6 +560,10 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
         return False
 
     if not cfg.ENABLE_TOKEN_REVIVE:
+        try:
+            db_manager.update_account_status([email], 0)
+        except Exception:
+            pass
         print(f"[{ts()}] [INFO] 检测到 Token 已失效，但【复活】已关闭，仅记录状态。")
         _handle_dead_account(name, is_disabled)
         return False
@@ -590,6 +608,10 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
                 if is_ok2:
                     refresh_success = True
                     print(f"[{ts()}] [SUCCESS] 测活: {mask_email(name)} 刷新后复活成功！")
+                    try:
+                        db_manager.update_account_status([email], 1)
+                    except Exception:
+                        pass
                 else:
                     print(f"[{ts()}] [WARNING] {mask_email(name)} 刷新后二次测活依然失败({msg2})")
             else:
@@ -601,6 +623,10 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
         print(f"[{ts()}] [WARNING] {mask_email(name)} 未找到有效数据，无法抢救")
 
     if not refresh_success:
+        try:
+            db_manager.update_account_status([email], 0)
+        except Exception:
+            pass
         _handle_dead_account(name, is_disabled)
     return refresh_success
 
@@ -614,6 +640,11 @@ def _handle_dead_account(name: str, is_disabled: bool) -> None:
             headers={"Authorization": f"Bearer {cfg.CPA_API_TOKEN}"},
             params={"name": name},
         )
+        try:
+            db_manager.remove_account_push_platform(name, "CPA", exact_match=True)
+            print(f"[{ts()}] [系统] 已同步清除 {mask_email(name)} 本地的 CPA 平台推送状态")
+        except Exception:
+            pass
     elif not is_disabled:
         print(f"[{ts()}] [INFO] 凭证 {mask_email(name)} 死亡，根据配置保留，正在禁用...")
         if set_cpa_auth_file_status(cfg.CPA_API_URL, cfg.CPA_API_TOKEN, name, disabled=True):
@@ -904,6 +935,11 @@ def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> 
         print(f"[{ts()}] [ERROR] 凭证 {mask_email(name)} 彻底死亡，执行物理剔除...")
         if hasattr(client, "delete_account") and account_id:
             client.delete_account(account_id)
+        try:
+            db_manager.remove_account_push_platform(name, "SUB2API", exact_match=False)
+            print(f"[{ts()}] [系统] 已同步清除 {mask_email(name)} 本地的 Sub2API 平台推送状态")
+        except Exception:
+            pass
         return "dead_deleted"
     elif not is_disabled:
         print(f"[{ts()}] [ERROR] 凭证 {mask_email(name)} 死亡，根据配置保留，正在禁用...")
@@ -938,9 +974,17 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
     if result == "ok":
         print(f"[{ts()}] [SUCCESS] Sub2API测活: {mask_email(name)} 状态健康")
         client.set_account_status(account_id, disabled=False)
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 1)
+        except Exception:
+            pass
         return "ok"
 
     if result == "quota":
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 0)
+        except Exception:
+            pass
         if cfg.SUB2API_REMOVE_ON_LIMIT_REACHED:
             print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度耗尽，执行物理删除...")
             if account_id:
@@ -954,11 +998,19 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
     print(f"[{ts()}] [ERROR] Sub2API测活: {mask_email(name)} 测活失败 ({reason})")
 
     if not cfg.SUB2API_ENABLE_TOKEN_REVIVE:
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 0)
+        except Exception:
+            pass
         print(f"[{ts()}] [ERROR] Token 复活已关闭，直接执行死亡处理")
         return _handle_sub2api_dead_account(item, client, is_disabled=False)
 
     refresh_token_val = item.get("credentials", {}).get("refresh_token")
     if not refresh_token_val:
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 0)
+        except Exception:
+            pass
         print(f"[{ts()}] [ERROR] {mask_email(name)} 无 refresh_token，执行死亡处理")
         return _handle_sub2api_dead_account(item, client, is_disabled=False)
 
@@ -969,6 +1021,10 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
     if not ok:
         err_info = new_tokens.get('error', '未知') if isinstance(new_tokens, dict) else str(new_tokens)
         print(f"[{ts()}] [ERROR] {mask_email(name)} Token 刷新失败: {err_info}")
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 0)
+        except Exception:
+            pass
         return _handle_sub2api_dead_account(item, client, is_disabled=False)
 
     print(f"[{ts()}] [INFO] {mask_email(name)} Token 刷新成功，同步至 Sub2API...")
@@ -983,15 +1039,27 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
 
     if result2 == "ok":
         print(f"[{ts()}] [SUCCESS] {mask_email(name)} 刷新复活成功，二次验证通过！")
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 1)
+        except Exception:
+            pass
         return "revived"
 
     if result2 == "quota":
         print(f"[{ts()}] [WARNING] {mask_email(name)} 二次验证失败 (quota limited)，禁用账号避免无效调度")
         if account_id:
             client.set_account_status(account_id, disabled=True)
+        try:
+            db_manager.update_account_status_by_truncated_name(name, 0)
+        except Exception:
+            pass
         return "quota_limited"
 
     print(f"[{ts()}] [ERROR] {mask_email(name)} 二次验证失败 ({reason2})，账号确认已死")
+    try:
+        db_manager.update_account_status_by_truncated_name(name, 0)
+    except Exception:
+        pass
     return _handle_sub2api_dead_account(item, client, is_disabled=False)
 
 def normal_main_loop(args, stop_event: threading.Event, executor=None):
