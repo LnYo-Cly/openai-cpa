@@ -410,51 +410,101 @@
                             </div>
                         </div>
                         <div v-show="currentTab === 'accounts'" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div class="px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-slate-50/50 min-h-[80px]">
-                                <div class="flex items-center gap-3">
-                                    <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">本地账号库</h2>
-                                    <button @click="fetchAccounts(true)" class="p-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm" title="刷新列表">
-                                        🔄
-                                    </button>
+                            <div class="px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4 bg-slate-50/50">
+                                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
+                                    <div class="flex items-center gap-3">
+                                        <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">本地账号库</h2>
+                                        <button @click="fetchAccounts(true)" class="p-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm" title="刷新列表">
+                                            🔄
+                                        </button>
+                                    </div>
+
+                                    <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
+                                        <div class="relative flex items-center">
+                                            <span class="absolute left-3 text-slate-400 text-sm">🔍</span>
+                                            <input type="text" v-model="searchAccounts" placeholder="搜索本地账号..." class="pl-8 pr-3 py-1.5 w-32 md:w-48 text-sm bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition shadow-sm font-medium">
+                                        </div>
+                                        <button @click="showAccountsPlaintext = !showAccountsPlaintext" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                            <span>{{ showAccountsPlaintext ? '🙈' : '👁️' }}</span> {{ showAccountsPlaintext ? '脱敏' : '明文' }}
+                                        </button>
+                                        <button @click="toggleHideRegisterOnlyAccounts" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                            <span>{{ hideRegisterOnlyAccounts ? '✅' : '⚪' }}</span> {{ hideRegisterOnlyAccounts ? '已过滤仅注册成功' : '过滤仅注册成功' }}
+                                        </button>
+
+                                        <div class="flex items-center gap-2 ml-auto xl:ml-2 border-l border-slate-200 pl-3">
+                                            <button @click="exportAllAccounts" class="px-3 py-1.5 bg-slate-200/70 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-300 transition flex items-center gap-1">📦 导出全部</button>
+                                            <button @click="clearAllAccounts" class="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 text-sm font-bold rounded-lg hover:bg-rose-100 transition flex items-center gap-1">🗑️ 清空库</button>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
-                                    <div class="relative flex items-center">
-                                        <span class="absolute left-3 text-slate-400 text-sm">🔍</span>
-                                        <input type="text" v-model="searchAccounts" placeholder="搜索本地账号..." class="pl-8 pr-3 py-1.5 w-32 md:w-48 text-sm bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition shadow-sm font-medium">
-                                    </div>
-                                    <button @click="showAccountsPlaintext = !showAccountsPlaintext" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
-                                        <span>{{ showAccountsPlaintext ? '🙈' : '👁️' }}</span> {{ showAccountsPlaintext ? '脱敏' : '明文' }}
-                                    </button>
-                                    <button @click="toggleHideRegisterOnlyAccounts" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
-                                        <span>{{ hideRegisterOnlyAccounts ? '✅' : '⚪' }}</span> {{ hideRegisterOnlyAccounts ? '已过滤仅注册成功' : '过滤仅注册成功' }}
-                                    </button>
+                                <div v-if="selectedAccounts.length > 0" class="flex flex-wrap items-center gap-3 bg-indigo-50/80 border border-indigo-100 p-2.5 rounded-xl shadow-sm transition-all duration-300 w-full animate-fade-in">
+                                    <span class="text-sm font-black text-indigo-700 px-2 border-r border-indigo-200">已选 {{ selectedAccounts.length }}</span>
 
-                                    <div v-if="selectedAccounts.length > 0" class="flex flex-wrap items-center gap-2 bg-indigo-50/80 border border-indigo-100 p-1.5 rounded-xl shadow-sm transition-all duration-300">
-                                        <span class="text-xs font-black text-indigo-700 px-2 border-r border-indigo-200">已选 {{ selectedAccounts.length }}</span>
-
-                                        <div class="flex items-center bg-white rounded-lg p-0.5 shadow-sm border border-slate-100">
-                                            <span class="text-[10px] text-slate-400 font-bold px-2">导出:</span>
-                                            <button @click="exportSelectedAccounts" class="px-2 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">CPA</button>
-                                            <button @click="exportSub2Api" class="px-2 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">Sub2Api</button>
-                                            <button @click="exportAccountsToTxt" class="px-2 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">账密</button>
-                                        </div>
-
-                                        <div class="flex items-center bg-white rounded-lg p-0.5 shadow-sm border border-slate-100">
-                                            <span class="text-[10px] text-slate-400 font-bold px-2">推送:</span>
-                                            <button @click="bulkPushCPA" class="px-2 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded transition flex items-center"><span class="mr-1">🚀</span>CPA</button>
-                                            <button @click="bulkPushSub2API" class="px-2 py-1 text-xs font-bold text-purple-600 hover:bg-purple-50 rounded transition flex items-center"><span class="mr-1">🛸</span>Sub</button>
-                                        </div>
-
-                                        <button @click="deleteSelectedAccounts" class="px-3 py-1.5 bg-rose-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-rose-600 transition ml-1">🗑️ 删除</button>
+                                    <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
+                                        <span class="text-xs text-slate-400 font-bold px-2">导出:</span>
+                                        <button @click="exportSelectedAccounts" class="px-3 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">CPA</button>
+                                        <button @click="exportSub2Api" class="px-3 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">Sub2Api</button>
+                                        <button @click="exportAccountsToTxt" class="px-3 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition">账密</button>
                                     </div>
 
-                                    <div class="flex items-center gap-2 ml-auto xl:ml-2 border-l border-slate-200 pl-3">
-                                        <button @click="exportAllAccounts" class="px-3 py-1.5 bg-slate-200/70 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-300 transition flex items-center gap-1">📦 导出全部</button>
-                                        <button @click="clearAllAccounts" class="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 text-sm font-bold rounded-lg hover:bg-rose-100 transition flex items-center gap-1">🗑️ 清空库</button>
+                                    <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
+                                        <span class="text-xs text-slate-400 font-bold px-2">推送:</span>
+                                        <button @click="bulkPushCPA" class="px-3 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded transition flex items-center"><span class="mr-1">🚀</span>CPA</button>
+                                        <button @click="bulkPushSub2API" class="px-3 py-1 text-xs font-bold text-purple-600 hover:bg-purple-50 rounded transition flex items-center"><span class="mr-1">🛸</span>Sub</button>
+                                    </div>
+                                    <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
+                                        <span class="text-xs text-slate-400 font-bold px-2">凭证:</span>
+                                        <button @click="bulkRefreshLocalTokens" :disabled="isRefreshingAccounts" class="px-3 py-1 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition flex items-center disabled:opacity-50">
+                                            <span v-if="isRefreshingAccounts" class="animate-spin mr-1">⏳</span>
+                                            <span v-else class="mr-1">🔄</span> 批量刷新
+                                        </button>
+                                    </div>
+                                    <button @click="deleteSelectedAccounts" class="px-4 py-1.5 bg-rose-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-rose-600 transition ml-auto">🗑️ 删除选中</button>
+                                </div>
+                            </div>
+
+                            <div class="p-5 md:px-8 bg-slate-50/50 border-b border-slate-100">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5 w-full">
+
+                                    <div @click="filterLocalAccounts('all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group">
+                                        <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-slate-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="z-10">
+                                            <div class="text-xs font-black text-slate-400 mb-1 uppercase tracking-widest">账号总数</div>
+                                            <div class="text-3xl font-black text-slate-800">{{ inventoryStats?.local?.total || 0 }}</div>
+                                        </div>
+                                        <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-xl shadow-inner border border-slate-100 z-10">📦</div>
+                                    </div>
+
+                                    <div @click="filterLocalAccounts('unpushed')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group">
+                                        <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-amber-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="z-10">
+                                            <div class="text-xs font-black text-amber-500 mb-1 uppercase tracking-widest">未推送库存</div>
+                                            <div class="text-3xl font-black text-amber-600">{{ inventoryStats?.local?.unpushed || 0 }}</div>
+                                        </div>
+                                        <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-xl shadow-inner border border-amber-100 z-10">📥</div>
+                                    </div>
+
+                                    <div @click="filterLocalAccounts('active')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group">
+                                        <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-emerald-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="z-10">
+                                            <div class="text-xs font-black text-emerald-500/80 mb-1 uppercase tracking-widest">活跃状态</div>
+                                            <div class="text-3xl font-black text-emerald-600">{{ inventoryStats?.local?.active || 0 }}</div>
+                                        </div>
+                                        <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-xl shadow-inner border border-emerald-100 z-10">✅</div>
+                                    </div>
+
+                                    <div @click="filterLocalAccounts('disabled')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group">
+                                        <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-rose-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="z-10">
+                                            <div class="text-xs font-black text-rose-400 mb-1 uppercase tracking-widest">已禁用</div>
+                                            <div class="text-3xl font-black text-rose-600">{{ inventoryStats?.local?.disabled || 0 }}</div>
+                                        </div>
+                                        <div class="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-xl shadow-inner border border-rose-100 z-10">❌</div>
                                     </div>
                                 </div>
                             </div>
+
                             <div class="overflow-x-auto w-full">
                                 <table class="min-w-full divide-y divide-slate-100">
                                     <thead class="bg-slate-50/80">
@@ -465,6 +515,8 @@
                                             <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">登录密码</th>
                                             <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[180px]">入库（北京时间）</th>
                                             <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">凭证状态</th>
+                                            <th class="px-5 md:px-8 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[100px]">活跃状态</th>
+                                            <th class="px-5 md:px-8 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">推送平台</th>
                                             <th class="px-5 md:px-8 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[180px]">操作</th>
                                         </tr>
                                     </thead>
@@ -494,6 +546,42 @@
                                                 <span v-else class="px-2.5 py-1.5 text-[10px] font-black bg-slate-50 text-slate-500 rounded-md border border-slate-200 shadow-sm flex items-center w-max gap-1">
                                                     <span class="text-xs">❓</span> 未知状态
                                                 </span>
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-center">
+                                                <div v-if="!acc.push_platform" class="inline-flex items-center gap-2 text-[11px] font-bold text-slate-400 bg-slate-100/50 px-2.5 py-1.5 rounded-md border border-slate-200">
+                                                    <span class="w-2 h-2 bg-slate-300 rounded-full"></span> 未推送
+                                                </div>
+
+                                                <template v-else>
+                                                    <div v-if="acc.is_active === 1" class="inline-flex items-center gap-2 text-[11px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-md border border-emerald-200 shadow-sm">
+                                                        <span class="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_#10b981] animate-pulse"></span> 活跃中
+                                                    </div>
+                                                    <div v-else-if="acc.is_active === 0" class="inline-flex items-center gap-2 text-[11px] font-black text-rose-600 bg-rose-50 px-2.5 py-1.5 rounded-md border border-rose-200 shadow-sm">
+                                                        <span class="w-2 h-2 bg-rose-500 rounded-full shadow-[0_0_8px_#f43f5e]"></span> 已禁用
+                                                    </div>
+                                                    <div v-else class="inline-flex items-center gap-2 text-[11px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-md border border-slate-200 shadow-sm">
+                                                        <span class="w-2 h-2 bg-slate-300 rounded-full"></span> 待检查
+                                                    </div>
+                                                </template>
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-center">
+                                                <div v-if="acc.push_platform" class="flex flex-col items-center gap-1">
+                                                    <span v-if="acc.push_platform.toUpperCase().includes('CPA') && acc.push_platform.toUpperCase().includes('SUB2API')"
+                                                          class="px-2 py-0.5 text-[10px] font-black rounded uppercase tracking-widest border shadow-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-transparent">
+                                                        ✨ 双平台
+                                                    </span>
+
+                                                    <span v-else-if="acc.push_platform.toUpperCase().includes('CPA')"
+                                                          class="px-2 py-0.5 text-[10px] font-black rounded uppercase tracking-widest border shadow-sm bg-indigo-50 text-indigo-700 border-indigo-200">
+                                                        CPA
+                                                    </span>
+
+                                                    <span v-else-if="acc.push_platform.toUpperCase().includes('SUB2API')"
+                                                          class="px-2 py-0.5 text-[10px] font-black rounded uppercase tracking-widest border shadow-sm bg-purple-50 text-purple-700 border-purple-200">
+                                                        SUB2API
+                                                    </span>
+                                                </div>
+                                                <span v-else class="px-2.5 py-1 bg-slate-50 text-slate-400 text-[10px] font-bold rounded-md border border-slate-200 shadow-sm">未推送</span>
                                             </td>
                                             <td class="px-5 md:px-8 py-4 whitespace-nowrap text-center text-sm font-bold flex gap-2 justify-center">
                                                 <button @click="triggerAccountAction(acc, 'push')" class="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg active:scale-95 transition-all shadow-sm">推CPA</button>
@@ -1074,7 +1162,7 @@
                                     </div>
 
                                     <div class="text-xs text-indigo-800 font-bold bg-indigo-50 border border-indigo-200 p-4 rounded-xl leading-relaxed shadow-sm mt-4">
-                                        <p class="flex items-center gap-1.5 text-sm"><span>⚡</span> 解决每日CF 10w限制问题，邮件内存储存60秒，阅后既焚，项目重启后会自动清空。</p>
+                                        <p class="flex items-center gap-1.5 text-sm"><span>⚡</span> 减少每日CF 10w触发限制问题，邮件内存储存60秒，阅后既焚，项目重启后会自动清空。</p>
                                         <p class="mt-2 text-indigo-700 opacity-90">系统将自动开启本地服务接收，抛弃R2,D1,KV</p>
                                         <p class="mt-3 text-rose-600 font-black bg-rose-50/50 p-2 rounded-lg border border-rose-100">
                                             🔥 注意：请务必确保上方填写的密钥与 CF Worker 变量中的 <code>EMAIL_WEBHOOK_SECRET</code> 严格一致！
@@ -1252,7 +1340,7 @@
                                         <div class="flex items-center justify-between">
                                             <div>
                                                 <h4 class="text-sm font-medium">本项目极速接收邮件</h4>
-                                                <p class="text-xs opacity-70 mt-1">开启后将放弃查询worker，解决每日CF 10w限制问题，如果不需要开启该开关记得删除worker里的EMAIL_WEBHOOK_URL和EMAIL_WEBHOOK_SECRET变量。</p>
+                                                <p class="text-xs opacity-70 mt-1">开启后，减少每日CF 10w触发限制问题，如果不需要开启该开关记得删除worker里的EMAIL_WEBHOOK_URL和EMAIL_WEBHOOK_SECRET变量。</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
                                                 <input type="checkbox" v-model="config.freemail.enable_local_webhook" class="sr-only peer">
@@ -1330,7 +1418,7 @@
                                         <div class="flex items-center justify-between">
                                             <div>
                                                 <h4 class="text-sm font-medium">本项目极速接收邮件</h4>
-                                                <p class="text-xs opacity-70 mt-1">开启后将放弃查询worker，解决每日CF 10w限制问题，如果不需要开启该开关记得删除worker里的EMAIL_WEBHOOK_URL和EMAIL_WEBHOOK_SECRET变量。</p>
+                                                <p class="text-xs opacity-70 mt-1">开启后，减少每日CF 10w触发限制问题，如果不需要开启该开关记得删除worker里的EMAIL_WEBHOOK_URL和EMAIL_WEBHOOK_SECRET变量。</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
                                                 <input type="checkbox" v-model="config.cloudmail.enable_local_webhook" class="sr-only peer">
@@ -1359,7 +1447,7 @@
                                         <a href="https://github.com/maillab/cloud-mail" class="text-blue-600 hover:text-blue-700 hover:underline break-all block" target="_blank">ithub.com/maillab/cloud-mail</a>
                                     </div>
                                     <div class="text-[11px] text-rose-800 mt-3 font-bold bg-rose-50 border border-rose-100 p-3 rounded-lg leading-relaxed shadow-sm">
-                                        <p class="mb-1 flex items-center gap-1"><span>⚠️</span> 若开启左边多级域名泛解析模式或使用上面的解决每日CF 10w限制问题，必需部署魔改版：</p>
+                                        <p class="mb-1 flex items-center gap-1"><span>⚠️</span> 若开启左边多级域名泛解析模式或使用上面的减少每日CF 10w触发限制问题，必需部署魔改版：</p>
                                         <a href="https://github.com/wenfxl/cloud-mail" class="text-blue-600 hover:text-blue-700 hover:underline break-all block" target="_blank">github.com/wenfxl/cloud-mail</a>
                                     </div>
                                 </div>
@@ -2388,7 +2476,53 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="p-5 md:px-8 bg-slate-50/50 border-b border-slate-100">
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                                    <div @click="filterByCard('all', 'active')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-center group">
+                                        <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-emerald-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="text-[10px] font-black text-emerald-500/80 mb-1 uppercase tracking-widest z-10 relative">云端启用</div>
+                                        <div class="text-2xl font-black text-emerald-600 z-10 relative">{{ inventoryStats?.cloud?.enabled || 0 }}</div>
+                                    </div>
 
+                                    <div @click="filterByCard('cpa', 'all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between group">
+                                        <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-indigo-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div>
+                                            <div class="text-[10px] font-black text-indigo-400 mb-1 uppercase tracking-widest z-10 relative">CPA 平台</div>
+                                            <div class="text-2xl font-black text-indigo-600 z-10 relative">{{ inventoryStats?.cloud?.cpa || 0 }}</div>
+                                        </div>
+                                        <div class="flex gap-2 mt-2.5 z-10 relative">
+                                            <span @click.stop="filterByCard('cpa', 'active')" class="cursor-pointer hover:bg-emerald-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-inner"></span>{{ inventoryStats?.cloud?.cpa_active || 0 }} 存活
+                                            </span>
+                                            <span @click.stop="filterByCard('cpa', 'disabled')" class="cursor-pointer hover:bg-rose-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded border border-rose-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-inner"></span>{{ inventoryStats?.cloud?.cpa_disabled || 0 }} 失效
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div @click="filterByCard('sub2api', 'all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between group">
+                                        <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-purple-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div>
+                                            <div class="text-[10px] font-black text-purple-400 mb-1 uppercase tracking-widest z-10 relative">Sub2API</div>
+                                            <div class="text-2xl font-black text-purple-600 z-10 relative">{{ inventoryStats?.cloud?.sub2api || 0 }}</div>
+                                        </div>
+                                        <div class="flex gap-2 mt-2.5 z-10 relative">
+                                            <span @click.stop="filterByCard('sub2api', 'active')" class="cursor-pointer hover:bg-emerald-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-inner"></span>{{ inventoryStats?.cloud?.sub2api_active || 0 }} 存活
+                                            </span>
+                                            <span @click.stop="filterByCard('sub2api', 'disabled')" class="cursor-pointer hover:bg-rose-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded border border-rose-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-inner"></span>{{ inventoryStats?.cloud?.sub2api_disabled || 0 }} 失效
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div @click="filterByCard('all', 'all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-center group">
+                                        <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-blue-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div class="text-[10px] font-black text-blue-400 mb-1 uppercase tracking-widest z-10 relative">总计推送</div>
+                                        <div class="text-2xl font-black text-blue-600 z-10 relative">{{ inventoryStats?.cloud?.total || 0 }}</div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="overflow-x-auto w-full">
                                 <table class="min-w-full divide-y divide-slate-100">
                                     <thead class="bg-slate-50/80">

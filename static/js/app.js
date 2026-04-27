@@ -22,7 +22,7 @@ function normalizeBooleanLike(value, defaultValue = false) {
 createApp({
     data() {
         return {
-            appVersion: 'v12.2.5',
+            appVersion: '检查中...',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -87,6 +87,10 @@ createApp({
                 pwd_blocked: 0, phone_verify: 0,
                 success_rate: '0.0%', elapsed: '0.0s', avg_time: '0.0s', progress_pct: '0%',
                 mode: '未启动'
+            },
+            inventoryStats: {
+                local: { total: 0, active: 0, disabled: 0 },
+                cloud: { total: 0, cpa: 0, sub2api: 0, enabled: 0 }
             },
             statsTimer: null,
 
@@ -186,6 +190,7 @@ createApp({
             fivesimPrices: [],
             isLoadingFivesimPrices: false,
             isRestarting: false,
+            isRefreshingAccounts: false,
         };
     },
     watch: {
@@ -204,6 +209,7 @@ createApp({
     },
     mounted() {
         this.applyTheme();
+        this.fetchSystemVersion();
         if (this.isLoggedIn) {
             this.initApp();
         }
@@ -337,6 +343,7 @@ createApp({
             this.fetchMailboxes();
             this.startStatsPolling();
             this.checkUpdate();
+            this.fetchInventoryStats();
             if (this.config && this.config.reg_mode === 'extension') {
                 this.listenToExtension();
             }
@@ -594,6 +601,19 @@ createApp({
                 } else { this.showToast("保存失败：" + data.message, "error"); }
             } catch (e) { this.showToast("保存失败网络异常", "error"); }
         },
+        filterLocalAccounts(status) {
+            this.accountStatusFilter = status;
+            this.currentPage = 1;
+            this.fetchAccounts();
+
+            const statusMap = {
+                'all': '全部',
+                'unpushed': '未推送',
+                'active': '活跃',
+                'disabled': '已禁用'
+            };
+            this.showToast(`已筛选: ${statusMap[status]}的本地账号`, 'info');
+        },
 		async fetchAccounts(isManual = false) {
             if (isManual) {
                 this.currentPage = 1;
@@ -605,6 +625,9 @@ createApp({
                 }
                 if (this.searchAccounts) {
                     url += `&search=${encodeURIComponent(this.searchAccounts)}`;
+                }
+                if (this.accountStatusFilter && this.accountStatusFilter !== 'all') {
+                    url += `&status_filter=${this.accountStatusFilter}`;
                 }
                 const res = await this.authFetch(url);
                 const data = await res.json();
@@ -801,6 +824,7 @@ createApp({
                     this.showToast(`成功物理删除 ${emailsToDelete.length} 个账号`, 'success');
                     this.selectedAccounts = [];
                     this.fetchAccounts();
+                    this.fetchInventoryStats();
                 } else {
                     this.showToast('删除失败: ' + data.message, 'error');
                 }
@@ -922,48 +946,93 @@ createApp({
         },
         async bulkPushCPA() {
             if (!this.config.cpa_mode.enable) {
-                this.showToast("🚫 请先开启 CPA 巡检并填写 API", "warning"); return;
+              this.showToast("🚫 请先开启 CPA 巡检并填写 API", "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
-            const confirmed = await this.customConfirm(`确定推送到 CPA？`);
-            if (!confirmed) return;
-            this.currentTab = 'console';
-            for (let i = 0; i < this.selectedAccounts.length; i++) {
-                const acc = this.selectedAccounts[i];
-                try {
-                    await this.authFetch('/api/account/action', {
-                        method: 'POST', body: JSON.stringify({ email: acc.email, action: 'push' })
-                    });
-                } catch (e) {}
-                await new Promise(r => setTimeout(r, 500));
+            const targetAccounts = this.selectedAccounts.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('CPA'));
+
+            if (targetAccounts.length === 0) {
+                this.showToast("⚠️ 选中的账号都已推送过 CPA，无需重复推送！", "warning");
+                return;
             }
-            this.showToast(`批量推送完毕！`, "success");
-            this.selectedAccounts = []; 
+            const skippedCount = this.selectedAccounts.length - targetAccounts.length;
+            const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
+
+            const confirmed = await this.customConfirm(`确定将 ${targetAccounts.length} 个新账号推送到 CPA？${extraMsg}`);
+            if (!confirmed) return;
+
+            this.currentTab = 'console';
+            const emailList = targetAccounts.map(acc => acc.email);
+
+            try {
+              const res = await this.authFetch('/api/account/action', {
+                  method: 'POST',
+                  body: JSON.stringify({ emails: emailList, action: 'push' })
+              });
+                const result = await res.json();
+                this.showToast(result.message, result.status);
+            } catch (e) {
+                this.showToast("批量推送请求异常", "error");
+            } finally {
+                this.selectedAccounts = [];
+                if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
+                if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
+            }
         },
-		async bulkPushSub2API() {
+        async bulkPushSub2API() {
             if (!this.config.sub2api_mode.enable) {
                 this.showToast("🚫 请先开启 Sub2API 模式并填写参数", "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
-            const confirmed = await this.customConfirm(`确定推送到 Sub2API？`);
-            if (!confirmed) return;
-            this.currentTab = 'console';
-            for (let i = 0; i < this.selectedAccounts.length; i++) {
-                const acc = this.selectedAccounts[i];
-                try {
-                    await this.authFetch('/api/account/action', {
-                        method: 'POST', body: JSON.stringify({ email: acc.email, action: 'push_sub2api' })
-                    });
-                } catch (e) {}
-                await new Promise(r => setTimeout(r, 500));
+            const targetAccounts = this.selectedAccounts.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('SUB2API'));
+
+            if (targetAccounts.length === 0) {
+                this.showToast("⚠️ 选中的账号都已推送过 Sub2API，无需重复推送！", "warning");
+                return;
             }
-            this.showToast(`批量推送完毕！`, "success");
-            this.selectedAccounts = []; 
+
+            const skippedCount = this.selectedAccounts.length - targetAccounts.length;
+            const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
+
+            const confirmed = await this.customConfirm(`确定将 ${targetAccounts.length} 个新账号推送到 Sub2API？${extraMsg}`);
+            if (!confirmed) return;
+
+            this.currentTab = 'console';
+            const emailList = targetAccounts.map(acc => acc.email);
+
+            try {
+                const res = await this.authFetch('/api/account/action', {
+                    method: 'POST',
+                    body: JSON.stringify({ emails: emailList, action: 'push_sub2api' })
+                });
+                const result = await res.json();
+                this.showToast(result.message, result.status);
+            } catch (e) {
+                this.showToast("批量推送请求异常", "error");
+            } finally {
+                this.selectedAccounts = [];
+                if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
+                if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
+            }
         },
         async triggerAccountAction(account, action) {
-            if (action === 'push' && !this.config.cpa_mode.enable) {
-                this.showToast("🚫 无法推送：请先配置 CPA 参数！", "warning"); return;
+            if (action === 'push') {
+                if (!this.config.cpa_mode.enable) {
+                    this.showToast("🚫 无法推送：请先配置 CPA 参数！", "warning"); return;
+                }
+                if (account.push_platform && account.push_platform.toUpperCase().includes('CPA')) {
+                    this.showToast("⚠️ 该账号已在 CPA 平台，无需重复推送！", "warning"); return;
+                }
             }
+            if (action === 'push_sub2api') {
+                if (!this.config.sub2api_mode.enable) {
+                    this.showToast("🚫 无法推送：请先配置 Sub2API 参数！", "warning"); return;
+                }
+                if (account.push_platform && account.push_platform.toUpperCase().includes('SUB2API')) {
+                    this.showToast("⚠️ 该账号已在 Sub2API 平台，无需重复推送！", "warning"); return;
+                }
+            }
+
             this.currentTab = 'console';
             try {
                 const res = await this.authFetch('/api/account/action', {
@@ -971,7 +1040,26 @@ createApp({
                 });
                 const result = await res.json();
                 this.showToast(result.message, result.status);
-            } catch (e) {}
+                if (action === 'push' || action === 'push_sub2api') {
+                    if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
+                    if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
+                }
+            } catch (e) {
+                this.showToast("请求异常", "error");
+            }
+        },
+        async fetchInventoryStats() {
+            try {
+                const res = await this.authFetch('/api/accounts/stats');
+                const json = await res.json();
+                if (json.status === 'success') {
+                    this.inventoryStats.local = json.data.local;
+                } else {
+                    console.error("获取统计数据失败:", json.message);
+                }
+            } catch (e) {
+                console.error('获取统计面板异常', e);
+            }
         },
         async clearLogs() {
             this.logs = []; 
@@ -1461,6 +1549,7 @@ createApp({
                 this.showToast('请先停止当前运行的任务', 'warning');
                 return;
             }
+            this.currentTab = 'console';
             try {
                 const res = await this.authFetch('/api/start_check', {
                     method: 'POST'
@@ -1660,10 +1749,31 @@ createApp({
             }
         },
 
+        async fetchInventoryStats() {
+            try {
+                const res = await this.authFetch('/api/accounts/stats');
+                const json = await res.json();
+                if (json.status === 'success') {
+                    // 【核心修改】仅更新本地库存的统计 (local)
+                    // 彻底切断数据库对云端统计 (cloud) 的干预，让云端数据纯粹由 fetchCloudAccounts 实时驱动
+                    this.inventoryStats.local = json.data.local;
+                } else {
+                    console.error("获取统计数据失败:", json.message);
+                }
+            } catch (e) {
+                console.error('获取统计面板异常', e);
+            }
+        },
+
         async fetchCloudAccounts() {
             if (this.cloudFilters.length === 0) {
                 this.cloudAccounts = [];
                 this.cloudTotal = 0;
+                this.inventoryStats.cloud = {
+                    total: 0, enabled: 0,
+                    cpa: 0, cpa_active: 0, cpa_disabled: 0,
+                    sub2api: 0, sub2api_active: 0, sub2api_disabled: 0
+                };
                 return;
             }
             const types = this.cloudFilters.join(',');
@@ -1676,6 +1786,7 @@ createApp({
             try {
                 const res = await this.authFetch(url);
                 const data = await res.json();
+
                 if(data.status === 'success') {
                     this.cloudAccounts = (data.data || []).map(acc => ({
                         ...acc,
@@ -1685,13 +1796,31 @@ createApp({
                     }));
                     this.cloudTotal = data.total || 0;
                     this.selectedCloud = [];
+
+                    if (data.cloud_stats) {
+                        this.inventoryStats.cloud = data.cloud_stats;
+                    }
+
+                    if (typeof this.fetchInventoryStats === 'function') {
+                        this.fetchInventoryStats();
+                    }
                 } else {
                     this.showToast(data.message, "error");
+                    this.inventoryStats.cloud = {
+                        total: 0, enabled: 0, cpa: 0, cpa_active: 0, cpa_disabled: 0, sub2api: 0, sub2api_active: 0, sub2api_disabled: 0
+                    };
+                    this.cloudAccounts = [];
+                    this.cloudTotal = 0;
                 }
             } catch (e) {
                 console.error(e);
                 if (this.isLoggedIn && e.message !== "Unauthorized") {
                     this.showToast("获取云端数据失败", "error");
+                    this.inventoryStats.cloud = {
+                        total: 0, enabled: 0, cpa: 0, cpa_active: 0, cpa_disabled: 0, sub2api: 0, sub2api_active: 0, sub2api_disabled: 0
+                    };
+                    this.cloudAccounts = [];
+                    this.cloudTotal = 0;
                 }
             }
         },
@@ -1717,18 +1846,21 @@ createApp({
                 if (action === 'disable' && result.status !== 'error') acc.status = 'disabled';
 
                 if (action === 'check') {
+                    this.currentTab = 'console';
                     const now = new Date().toLocaleString('zh-CN', { hour12: false });
                     this.localCheckTimes[acc.id] = now;
                     acc.last_check = now;
 
-                    if (result.status === 'warning') {
+                    if (result.status === 'warning' || result.status === 'error') {
                         acc.status = 'disabled';
+                    } else {
+                        acc.status = 'active';
                     }
                 }
                 this.showToast(result.message, result.status);
 
                 setTimeout(() => {
-                    if (action === 'delete' || action === 'check') {
+                    if (action === 'delete' || action === 'check' || action === 'enable' || action === 'disable' ) {
                         this.fetchCloudAccounts();
                     }
                 }, 1500);
@@ -1739,7 +1871,21 @@ createApp({
                 acc._loading = null;
             }
         },
-
+        filterByCard(platformType, status) {
+            if (platformType === 'all') {
+                this.cloudFilters = ['sub2api', 'cpa'];
+            } else if (platformType === 'cpa') {
+                this.cloudFilters = ['cpa'];
+            } else if (platformType === 'sub2api') {
+                this.cloudFilters = ['sub2api'];
+            }
+            this.cloudStatusFilter = status || 'all';
+            this.cloudPage = 1;
+            this.fetchCloudAccounts();
+            const typeName = platformType === 'all' ? '全部平台' : (platformType === 'cpa' ? 'CPA' : 'Sub2API');
+            const statusName = status === 'active' ? '存活' : (status === 'disabled' ? '失效' : '全部');
+            this.showToast(`已筛选: ${typeName} - ${statusName}账号`, 'info');
+        },
         async bulkCloudAction(action) {
             if (this.selectedCloud.length === 0) {
                 return this.showToast('请先勾选需要操作的账号', 'warning');
@@ -1769,6 +1915,7 @@ createApp({
                     });
                 }
                 if (action === 'check') {
+                    this.currentTab = 'console';
                     const now = new Date().toLocaleString('zh-CN', { hour12: false });
                     this.selectedCloud.forEach(c => { this.localCheckTimes[c.id] = now; });
                 }
@@ -2470,6 +2617,7 @@ createApp({
                 if (data.status === 'success') {
                     this.showToast('账号库已全部清空', 'success');
                     this.fetchAccounts();
+                    this.fetchInventoryStats();
                 } else {
                     this.showToast(data.message, 'error');
                 }
@@ -2582,6 +2730,44 @@ createApp({
                 }
             });
             return proxyPool;
+        },
+        async bulkRefreshLocalTokens() {
+            if (this.selectedAccounts.length === 0) return;
+
+            const confirmed = await this.customConfirm(`确定要批量刷新这 ${this.selectedAccounts.length} 个账号的凭证吗？\n\n系统会自动剔除死号，并将成功的新凭证同步覆盖至远端平台。`);
+            if (!confirmed) return;
+
+            this.isRefreshingAccounts = true;
+            this.showToast(`🚀 正在后端并发刷新 ${this.selectedAccounts.length} 个账号，请稍候...`, 'info');
+            this.currentTab = 'console';
+            try {
+                const emails = this.selectedAccounts.map(acc => acc.email);
+                const res = await this.authFetch('/api/accounts/bulk_refresh', {
+                    method: 'POST',
+                    body: JSON.stringify({ emails: emails })
+                });
+                const result = await res.json();
+
+                this.showToast(result.message, result.status);
+            } catch (e) {
+                this.showToast("请求异常", "error");
+            } finally {
+                this.selectedAccounts = [];
+                this.fetchAccounts();
+                this.fetchInventoryStats();
+                this.isRefreshingAccounts = false;
+            }
+        },
+        async fetchSystemVersion() {
+            try {
+                const res = await fetch('/api/system/version');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.appVersion = data.version;
+                }
+            } catch (e) {
+                return null;
+            }
         },
     }
 }).mount('#app');
