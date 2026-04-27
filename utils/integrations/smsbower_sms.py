@@ -588,7 +588,7 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
             if rid and rphone:
                 _info(f"♻️ 尝试复用旧号码: {rphone} (已使用 {rused} 次)")
                 ok_r, next_r, reason_r = _verify_once(rid, rphone, source="复用号码", close_on_success=False,
-                                                      cancel_on_fail=False)
+                                                      cancel_on_fail=True)
                 if ok_r:
                     _smsbower_country_mark_success(country_id)
                     _smsbower_country_record_result(country_id, True)
@@ -599,7 +599,7 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
                     if _smsbower_country_mark_timeout(country_id):
                         country_id = _smsbower_pick_country_id(proxies, service_code=service_code,
                                                                preferred_country=pref_country)
-                _smsbower_set_status(rid, 8, proxies)
+                # _smsbower_set_status(rid, 8, proxies)
                 _smsbower_reuse_clear()
 
         for attempt in range(1, max_tries + 1):
@@ -622,12 +622,13 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
             cost_display = f"{cost} $" if cost and cost != "未知" else "未知"
             _info(f"📱 成功取到新号码: {phone} (订单ID: {aid} | 扣费: {cost_display})")
             ok_n, next_n, reason_n = _verify_once(aid, phone, source=f"新号#{attempt}", close_on_success=not reuse_on,
-                                                  cancel_on_fail=not reuse_on)
+                                                  cancel_on_fail=True)
             if ok_n:
                 _smsbower_country_mark_success(country_id)
                 _smsbower_country_record_result(country_id, True)
                 if reuse_on:
                     _smsbower_reuse_set(aid, phone, service_code, country_id)
+                    _info(f"📥 验证成功！号码 {phone} 已挂起并存入复用池。")
                 return True, next_n
 
             last_reason = reason_n
@@ -637,12 +638,12 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
                     _smsbower_set_status(aid, 8, proxies)
                     country_id = _smsbower_pick_country_id(proxies, service_code=service_code,
                                                            preferred_country=pref_country)
-                else:
-                    _smsbower_reuse_set(aid, phone, service_code, country_id)
-                    _smsbower_set_status(aid, 3, proxies)
-                    _warn("⚠️ 新购号码接码超时，已保留该号码供下一次复用。")
-                    return False, "接码超时，保留复用"
-            if reuse_on: _smsbower_set_status(aid, 8, proxies)
+                # else:
+                #     _smsbower_reuse_set(aid, phone, service_code, country_id)
+                #     _smsbower_set_status(aid, 3, proxies)
+                #     _warn("⚠️ 新购号码接码超时，已保留该号码供下一次复用。")
+                #     return False, "接码超时，保留复用"
+            # if reuse_on: _smsbower_set_status(aid, 8, proxies)
             _sleep_interruptible(1.5)
 
         return False, last_reason
@@ -654,5 +655,5 @@ def try_verify_phone_via_smsbower(session: requests.Session, *, proxies: Any, hi
         except:
             pass
         if lock_acquired: _SMSBOWER_VERIFY_LOCK.release()
-def handle_smsbower_verification(session, proxies, hint_url=""):
-    return try_verify_phone_via_smsbower(session, proxies=proxies, hint_url=hint_url)
+def handle_smsbower_verification(session, proxies, hint_url="", device_id: str = "", user_agent: str = "", run_ctx: dict = None, proxy: Optional[str] = None):
+    return try_verify_phone_via_smsbower(session, proxies=proxies, hint_url=hint_url, device_id=device_id, user_agent=user_agent, run_ctx=run_ctx, proxy=proxy)
