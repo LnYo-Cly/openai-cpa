@@ -866,12 +866,12 @@ createApp({
             }
             return name.substring(0, 3) + '***@' + maskedDomain;
         },
-		exportAccountsToTxt() {
         isHtmlContent(text) {
             if (!text) return false;
             const lower = text.toLowerCase().trim();
             return lower.startsWith('<!doctype') || lower.startsWith('<html') || lower.includes('<body') || (lower.includes('<div') && lower.includes('</div>'));
         },
+		exportAccountsToTxt() {
 			if (this.selectedAccounts.length === 0) return;
 
 			const textContent = this.selectedAccounts
