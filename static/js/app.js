@@ -126,6 +126,11 @@ createApp({
             selectedSub2apiProxyId: '',
             checkHistory: [],
             isLoadingCheckHistory: false,
+            webhookCodes: [],
+            isLoadingWebhookCodes: false,
+            webhookCodeFilter: '',
+            clearOlderHours: 1,
+            webhookCodesTimer: null,
             cronPresets: [
                 { label: '每30分钟', expr: '*/30 * * * *' },
                 { label: '每1小时', expr: '0 * * * *' },
@@ -285,6 +290,11 @@ createApp({
         },
         mailboxTotalPages() {
             return Math.ceil(this.totalMailboxes / this.mailboxPageSize) || 1;
+        },
+        filteredWebhookCodes() {
+            if (!this.webhookCodeFilter) return this.webhookCodes;
+            const term = this.webhookCodeFilter.toLowerCase();
+            return this.webhookCodes.filter(c => c.email.toLowerCase().includes(term));
         }
     },
     methods: {
@@ -607,6 +617,8 @@ createApp({
                     this.parseCronToFields(this.config.sub2api_mode.check_cron);
                     this.fetchCheckHistory();
                 }
+                // 启动验证码内存池轮询
+                this.startWebhookCodesPolling();
             } catch (e) {}
         },
         async saveConfig() {
@@ -1714,6 +1726,61 @@ createApp({
                 console.error('Fetch check history failed:', e);
             } finally {
                 this.isLoadingCheckHistory = false;
+            }
+        },
+        async fetchWebhookCodes() {
+            this.isLoadingWebhookCodes = true;
+            try {
+                const email = this.webhookCodeFilter ? `&email=${encodeURIComponent(this.webhookCodeFilter)}` : '';
+                const res = await this.authFetch(`/api/webhook/codes?${email}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.webhookCodes = data.data;
+                }
+            } catch (e) {
+                console.error('Fetch webhook codes failed:', e);
+            } finally {
+                this.isLoadingWebhookCodes = false;
+            }
+        },
+        async deleteWebhookCode(email) {
+            try {
+                const res = await this.authFetch(`/api/webhook/codes/${encodeURIComponent(email)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.webhookCodes = this.webhookCodes.filter(c => c.email !== email);
+                }
+            } catch (e) {
+                console.error('Delete webhook code failed:', e);
+            }
+        },
+        async clearWebhookCodes(hours) {
+            try {
+                const res = await this.authFetch('/api/webhook/codes/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ older_than_hours: hours || 0 }),
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(`已清空 ${data.cleared} 条记录`, 'success');
+                    this.fetchWebhookCodes();
+                }
+            } catch (e) {
+                console.error('Clear webhook codes failed:', e);
+            }
+        },
+        startWebhookCodesPolling() {
+            this.stopWebhookCodesPolling();
+            if (['freemail','cloudmail','openai_cpa'].includes(this.config?.email_api_mode)) {
+                this.fetchWebhookCodes();
+                this.webhookCodesTimer = setInterval(() => this.fetchWebhookCodes(), 5000);
+            }
+        },
+        stopWebhookCodesPolling() {
+            if (this.webhookCodesTimer) {
+                clearInterval(this.webhookCodesTimer);
+                this.webhookCodesTimer = null;
             }
         },
         assembleCron() {
