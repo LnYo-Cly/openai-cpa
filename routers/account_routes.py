@@ -9,7 +9,7 @@ from global_state import verify_token
 from utils import core_engine, db_manager
 import utils.config as cfg
 from utils.integrations.sub2api_client import Sub2APIClient, build_sub2api_export_bundle, get_sub2api_push_settings
-
+from utils.integrations.image2api_client import Image2APIClient
 router = APIRouter()
 
 class ExportReq(BaseModel): emails: list[str]
@@ -23,6 +23,8 @@ class OutlookExchangeReq(BaseModel): email: str; client_id: str; code_or_url: st
 class UpdateMailboxStatusReq(BaseModel): emails: list[str]; status: int
 class PushReq(BaseModel):emails: list[str]; platform: str
 class BulkRefreshReq(BaseModel): emails: list[str]
+class Image2APIStatusReq(BaseModel): access_token: str; status: str; type: str = "Free"; quota: int = 25;
+class Image2APIRefreshReq(BaseModel):tokens: list[str]
 
 def parse_cpa_usage_to_details(raw_usage: dict) -> dict:
     details = {"is_cpa": True}
@@ -159,6 +161,11 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 api_key=getattr(core_engine.cfg, 'SUB2API_KEY', '')
             )
             print(f"[{cfg.ts()}] [系统] 🛸 收到指令，准备将 {len(target_emails)} 个账号推送至 Sub2API...")
+        elif action == "push_image2api":
+            if not config.get("image2api_mode", {}).get("enable", False):
+                return {"status": "error", "message": "🚫 推送失败：未开启 Image2API 模式！"}
+            img_client = Image2APIClient()
+            print(f"[{cfg.ts()}] [系统] 🖼️ 收到指令，准备将 {len(target_emails)} 个账号推送至 Image2API...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -175,22 +182,24 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                     success, msg = core_engine.upload_to_cpa_integrated(token_data, api_url, api_token)
                     if not success:
                         last_error = msg
-                        # 【新增日志】
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 CPA 失败 ({mask_email(email)}): {msg}")
                     else:
-                        # 【新增日志】
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 CPA！")
 
                 elif action == "push_sub2api":
                     success, resp = client.add_account(token_data)
                     if not success:
                         last_error = resp
-                        # 【新增日志】
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 Sub2API 失败 ({mask_email(email)}): {resp}")
                     else:
-                        # 【新增日志】
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Sub2API！")
-
+                elif action == "push_image2api":
+                    access_token = token_data.get("access_token")
+                    success, resp = img_client.add_accounts([access_token])
+                    if not success:
+                        last_error = resp
+                    else:
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
                 if success:
                     success_emails.append(email)
                 else:
@@ -199,11 +208,16 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 fail_count += 1
                 last_error = str(e)
 
-        if idx < total_accounts - 1:
-            time.sleep(0.5)
+        if total_accounts > 1 and idx < total_accounts - 1:
+            time.sleep(0.3)
 
         if success_emails:
-            platform_marker = "cpa" if action == "push" else "sub2api"
+            platform_map = {
+                "push": "CPA",
+                "push_sub2api": "SUB2API",
+                "push_image2api": "IMAGE2API"
+            }
+            platform_marker = platform_map.get(action, "UNKNOWN")
             db_manager.update_account_push_info(success_emails, platform_marker)
 
         print(f"[{cfg.ts()}] [系统] 🏁 推送任务执行完毕。成功: {len(success_emails)} 个，失败: {fail_count} 个。")
@@ -298,13 +312,41 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
         except Exception as e:
             print(f"[DEBUG] 拉取 CPA 数据异常，将跳过: {e}")
 
+    if "image2api" in type_list and getattr(cfg, 'ENABLE_IMAGE2API_MODE', False):
+        try:
+            from utils.integrations.image2api_client import Image2APIClient
+            client = Image2APIClient()
+            ok, raw_img2_data = client.get_accounts()
+            if ok:
+                for item in raw_img2_data.get("items", []):
+                    token_str = item.get("access_token", "")
+                    combined_data.append({
+                        "id": token_str,
+                        "account_type": "image2api",
+                        "credential": item.get("email", "未知邮箱"),
+                        "status": "active" if item.get("status") == "正常" else "disabled",
+                        "last_check": str(item.get("restoreAt", "-")).split("T")[0],
+                        "details": {
+                            "plan_type": item.get("type", "Free"),
+                            "quota": item.get("quota", 0),
+                            "limits": item.get("limits_progress", [])
+                        }
+                    })
+        except Exception as e:
+            print(f"[DEBUG] 拉取 Image2API 数据异常: {e}")
+
     try:
         cpa_emails = [x["credential"] for x in combined_data if x["account_type"] == "cpa"]
         sub_emails = [x["credential"] for x in combined_data if x["account_type"] == "sub2api"]
+        img2_emails = [x["credential"] for x in combined_data if x["account_type"] == "image2api"]
+
         if cpa_emails:
             db_manager.update_account_push_info(cpa_emails, "CPA", mode="sync")
         if sub_emails:
             db_manager.update_account_push_info(sub_emails, "SUB2API", mode="sync")
+        if img2_emails:
+            db_manager.update_account_push_info(img2_emails, "IMAGE2API", mode="sync")
+
 
         active_emails = [x["credential"] for x in combined_data if x["status"] == "active"]
         inactive_emails = [x["credential"] for x in combined_data if x["status"] in ["disabled", "dead"]]
@@ -316,6 +358,7 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
 
         cpa_list = [x for x in combined_data if x["account_type"] == "cpa"]
         sub2api_list = [x for x in combined_data if x["account_type"] == "sub2api"]
+        image2api_list = [x for x in combined_data if x["account_type"] == "image2api"]
 
         cloud_stats = {
             "total": len(combined_data),
@@ -325,7 +368,10 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
             "cpa_disabled": sum(1 for x in cpa_list if x["status"] != "active"),
             "sub2api": len(sub2api_list),
             "sub2api_active": sum(1 for x in sub2api_list if x["status"] == "active"),
-            "sub2api_disabled": sum(1 for x in sub2api_list if x["status"] != "active")
+            "sub2api_disabled": sum(1 for x in sub2api_list if x["status"] != "active"),
+            "image2api": len(image2api_list),
+            "image2api_active": sum(1 for x in image2api_list if x["status"] == "active"),
+            "image2api_disabled": sum(1 for x in image2api_list if x["status"] != "active")
         }
 
         if status_filter != "all":
@@ -397,6 +443,23 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
                                                  headers={"Authorization": f"Bearer {cfg.CPA_API_TOKEN}"},
                                                  params={"name": acc.id}, impersonate="chrome110").status_code in (
                                  200, 204)
+            elif acc.type == "image2api":
+                from utils.integrations.image2api_client import Image2APIClient
+                client = Image2APIClient()
+
+                if req.action in ["enable", "disable"]:
+                    target_status = "正常" if req.action == "enable" else "禁用"
+                    is_success, _ = client.update_account_status(access_token=acc.id, status=target_status)
+                elif req.action == "refresh":
+                    is_success, resp = client.refresh_tokens([acc.id])
+                    if is_success:
+                        details = {"refresh_msg": f"成功刷新 {resp.get('refreshed', 0)} 个"}
+
+                elif req.action == "check":
+                    is_success = True
+
+                elif req.action == "delete":
+                    pass
         except:
             pass
         return (is_success, acc.id, details)
@@ -406,6 +469,8 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
         getattr(cfg, '_c', {}).get('cpa_mode', {}).get('threads', 10)))
     if any(a.type == "sub2api" for a in req.accounts): target_threads = max(target_threads, int(
         getattr(cfg, '_c', {}).get('sub2api_mode', {}).get('threads', 10)))
+    if any(a.type == "image2api" for a in req.accounts):
+        target_threads = max(target_threads, 10)
 
     with ThreadPoolExecutor(max_workers=max(1, min(target_threads, 50))) as executor:
         futures = []
@@ -589,6 +654,45 @@ def bulk_refresh_api(req: BulkRefreshReq, token: str = Depends(verify_token)):
 
         token_data = full_info['token_data']
         rt = token_data.get("refresh_token")
+        current_platforms = [p.strip().upper() for p in (full_info.get('push_platform') or "").split(',') if p.strip()]
+        is_image2api = ("IMAGE2API" in current_platforms) or ("image2api" in str(token_data.get("status", "")).lower())
+        if is_image2api:
+            old_token = token_data.get("access_token")
+            if not old_token:
+                db_manager.update_account_status([email], 0)
+                print(f"[{cfg.ts()}] [错误] ❌ Image2API 账号 {mask_email(email)} 缺少 access_token，标为死号。")
+                return False
+
+            print(f"[{cfg.ts()}] [INFO] 🔄 检测到 {mask_email(email)} 属于 Image2API，自动调用远端刷新...")
+            try:
+                from utils.integrations.image2api_client import Image2APIClient
+                client = Image2APIClient()
+                ok, res = client.refresh_tokens([old_token])
+
+                if ok and isinstance(res, dict) and res.get("items"):
+                    refreshed_item = next((item for item in res.get("items", []) if
+                                           item.get("email") == email or item.get("access_token")), None)
+
+                    if refreshed_item and refreshed_item.get("access_token"):
+                        new_token = refreshed_item.get("access_token")
+                        token_data["access_token"] = new_token
+
+                        remote_status = refreshed_item.get("status", "正常")
+                        token_data["status"] = "image2api" if remote_status == "正常" else "image2api_禁用"
+
+                        db_manager.update_account_token_only(email, json.dumps(token_data))
+                        db_manager.update_account_status([email], 1 if remote_status == "正常" else 0)
+
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 经由 Image2API 远端刷新存活！")
+                        return True
+                db_manager.update_account_status([email], 0)
+                db_manager.remove_account_push_platform(email, "IMAGE2API", exact_match=True)
+                print(f"[{cfg.ts()}] [错误] ❌ 账号 {mask_email(email)} Image2API 远端刷新失败或已失效，标记死亡并解绑平台。")
+                return False
+            except Exception as e:
+                print(f"[{cfg.ts()}] [系统] 账号 {mask_email(email)} Image2API 刷新异常: {e}")
+                return False
+
         if not rt:
             db_manager.update_account_status([email], 0)
             print(f"[{cfg.ts()}] [错误] ❌ 账号 {mask_email(email)} 缺少 refresh_token，标为死号。")

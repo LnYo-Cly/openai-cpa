@@ -10,7 +10,8 @@ from utils.email_providers.mail_service import get_email_and_token, get_oai_code
 from utils.integrations.hero_sms import _try_verify_phone_via_hero_sms
 from utils.integrations.fivesim_sms import try_verify_phone_via_fivesim
 from utils.integrations.smsbower_sms import handle_smsbower_verification
-from utils.auth_core import generate_payload, init_auth
+from utils.auth_core import generate_payload, init_auth, image2api_data
+from utils.integrations.image2api_client import Image2APIClient
 
 from .http_utils import _ssl_verify, _skip_net_check, _post_with_retry, _oai_headers, _follow_redirect_chain_local
 from .common import _extract_next_url, _parse_workspace_from_auth_cookie, _otp_verify_loop, _create_account_about_you
@@ -468,6 +469,43 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         print(f"[{cfg.ts()}] [INFO] [{mode_label}] （{mask_email(email)}）账号已注册成功，根据配置提前作为半成品写入本地库。")
                     except Exception as e:
                         pass
+                if mode_label == "常规模式":
+                    try:
+                        from utils import db_manager
+                        import json
+                        data = image2api_data(s_reg, target_continue_url, proxies)
+                        if data:
+                            image2api_token_data = json.dumps({
+                                "status": "image2api",
+                                "access_token": data
+                            })
+                            db_manager.save_account_to_db(email, password, image2api_token_data)
+                            print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，已将 image2api 写回本地库。")
+                    except Exception as e:
+                        print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
+                else:
+                    if getattr(cfg, "ENABLE_IMAGE2API_MODE", False):
+                        print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）根据配置将同步至IMAGE2API平台。")
+                        data = image2api_data(s_reg, target_continue_url, proxies)
+                        if data:
+                            client = Image2APIClient()
+                            ok, msg = client.add_accounts([data])
+                            if ok:
+                                print(f"[{cfg.ts()}] [SUCCESS] [IMAGE2API] （{mask_email(email)}）同步成功")
+                                if getattr(cfg, "IMAGE2API_RETAIN_REG_ONLY", False):
+                                    try:
+                                        from utils import db_manager
+                                        import json
+                                        image2api_token_data = json.dumps({
+                                            "status": "image2api",
+                                            "access_token": data
+                                        })
+                                        db_manager.save_account_to_db(email, password, image2api_token_data)
+                                        print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，根据配置已将 image2api 写回本地库。")
+                                    except Exception as e:
+                                        print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
+                            else:
+                                print(f"[{cfg.ts()}] [ERROR] [IMAGE2API] （{mask_email(email)}）同步失败: {msg}")
 
                 time.sleep(wait_time)
 
@@ -853,7 +891,7 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         else:
                             break
                         if ok and next_url_or_reason:
-                            print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） {provider_name} 手机验证成功，继续创建账号")
+                            print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） {provider_name} 手机验证成功，继续获取凭证")
                             current_url = next_url_or_reason
                             continue
                         else:
