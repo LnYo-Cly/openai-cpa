@@ -1475,6 +1475,7 @@
                                             <thead>
                                                 <tr class="border-b-2 border-slate-100">
                                                     <th class="text-left py-2 px-2 text-slate-500 font-black uppercase tracking-wider">邮箱</th>
+                                                    <th class="text-center py-2 px-2 text-emerald-600 font-black uppercase tracking-wider">验证码</th>
                                                     <th class="text-left py-2 px-2 text-slate-500 font-black uppercase tracking-wider">内容</th>
                                                     <th class="text-left py-2 px-2 text-slate-500 font-black uppercase tracking-wider">接收时间</th>
                                                     <th class="text-center py-2 px-2 text-slate-500 font-black uppercase tracking-wider">操作</th>
@@ -1482,8 +1483,17 @@
                                             </thead>
                                             <tbody>
                                                 <tr v-for="item in filteredWebhookCodes" :key="item.email" class="border-b border-slate-50 hover:bg-purple-50/30 transition-colors">
-                                                    <td class="py-2 px-2 font-mono text-slate-700 text-xs max-w-[200px] truncate" :title="item.email">{{ item.email }}</td>
-                                                    <td class="py-2 px-2 text-slate-600 max-w-[300px] truncate" :title="item.content">{{ item.content }}</td>
+                                                    <td class="py-2 px-2 font-mono text-slate-700 text-xs max-w-[180px] truncate" :title="item.email">{{ item.email }}</td>
+                                                    <td class="py-2 px-2 text-center">
+                                                        <span v-if="item.code" class="font-black text-base text-emerald-600 font-mono tracking-widest select-all">{{ item.code }}</span>
+                                                        <span v-else class="text-slate-400">-</span>
+                                                    </td>
+                                                    <td class="py-2 px-2">
+                                                        <button @click="viewCodeDetail = item"
+                                                            class="text-purple-600 hover:text-purple-800 font-bold hover:underline cursor-pointer">
+                                                            查看详情
+                                                        </button>
+                                                    </td>
                                                     <td class="py-2 px-2 text-slate-500 whitespace-nowrap">{{ item.received_at || '未知' }}</td>
                                                     <td class="py-2 px-2 text-center">
                                                         <button @click="deleteWebhookCode(item.email)"
@@ -1503,6 +1513,43 @@
                                             class="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-xs rounded-lg transition-colors shadow-sm">
                                             清空{{ clearOlderHours > 0 ? '超过 ' + clearOlderHours + ' 小时' : '全部' }}
                                         </button>
+                                    </div>
+                                </div>
+
+                                <!-- 验证码详情模态框 -->
+                                <div v-if="viewCodeDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="viewCodeDetail = null">
+                                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200">
+                                        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-purple-50/50">
+                                            <h5 class="font-black text-purple-700 text-sm">验证码详情</h5>
+                                            <button @click="viewCodeDetail = null" class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
+                                        </div>
+                                        <div class="p-5 space-y-3">
+                                            <div>
+                                                <span class="text-xs font-black text-slate-500 uppercase tracking-wider">邮箱</span>
+                                                <p class="font-mono text-sm text-slate-800 mt-0.5 break-all">{{ viewCodeDetail.email }}</p>
+                                            </div>
+                                            <div v-if="viewCodeDetail.code">
+                                                <span class="text-xs font-black text-emerald-600 uppercase tracking-wider">验证码</span>
+                                                <div class="flex items-center gap-2 mt-0.5">
+                                                    <span class="text-2xl font-black text-emerald-600 font-mono tracking-[0.3em] select-all">{{ viewCodeDetail.code }}</span>
+                                                    <button @click="navigator.clipboard.writeText(viewCodeDetail.code)" class="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs font-bold rounded transition-colors">复制</button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span class="text-xs font-black text-slate-500 uppercase tracking-wider">接收时间</span>
+                                                <p class="text-sm text-slate-600 mt-0.5">{{ viewCodeDetail.received_at || '未知' }}</p>
+                                            </div>
+                                            <div>
+                                                <span class="text-xs font-black text-slate-500 uppercase tracking-wider">原始内容</span>
+                                                <pre class="mt-0.5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 whitespace-pre-wrap break-all max-h-60 overflow-y-auto font-mono leading-relaxed">{{ viewCodeDetail.full_content }}</pre>
+                                            </div>
+                                        </div>
+                                        <div class="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+                                            <button @click="deleteWebhookCode(viewCodeDetail.email); viewCodeDetail = null"
+                                                class="px-4 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-xs rounded-lg transition-colors">删除</button>
+                                            <button @click="viewCodeDetail = null"
+                                                class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-lg transition-colors">关闭</button>
+                                        </div>
                                     </div>
                                 </div>
 

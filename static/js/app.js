@@ -131,6 +131,7 @@ createApp({
             webhookCodeFilter: '',
             clearOlderHours: 1,
             webhookCodesTimer: null,
+            viewCodeDetail: null,
             cronPresets: [
                 { label: '每30分钟', expr: '*/30 * * * *' },
                 { label: '每1小时', expr: '0 * * * *' },

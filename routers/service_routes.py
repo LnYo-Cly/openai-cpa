@@ -275,9 +275,16 @@ async def list_codes(email: str = "", token: str = Depends(verify_token)):
                 continue
             meta = _code_meta.get(addr, {})
             ts = meta.get("received_at")
+            # 提取6位验证码
+            import re
+            code = ""
+            m = re.search(r"(?<!\d)(\d{6})(?!\d)", content)
+            if m:
+                code = m.group(1)
             results.append({
                 "email": addr,
-                "content": content[:300],
+                "code": code,
+                "full_content": content,
                 "received_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "",
             })
         return {"status": "success", "data": results, "total": len(code_pool)}
