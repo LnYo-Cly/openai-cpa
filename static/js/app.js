@@ -37,6 +37,7 @@ createApp({
                 { id: 'accounts', name: '账号库存', icon: '📦' },
                 { id: 'cloud', name: '云端库存', icon: '☁️' },
                 { id: 'sms', name: '手机接码', icon: '📱' },
+				{ id: 'team', name: 'Team管理', icon: '👥' },
 				// { id: 'cf_routes', name: 'CF 路由', icon: '🌍' },
                 { id: 'proxy', name: '网络代理', icon: '🌐' },
                 { id: 'relay', name: '中转管仓', icon: '☁️' },
@@ -132,6 +133,18 @@ createApp({
             clearOlderHours: 1,
             webhookCodesTimer: null,
             viewCodeDetail: null,
+            codeViewMode: 'preview',
+            // Team 管理
+            teamAccounts: [],
+            teamSelectedManager: '',
+            teamWorkspaces: [],
+            teamMembers: [],
+            teamInvites: [],
+            teamSelectedWorkspace: '',
+            teamSelectedWorkspaceName: '',
+            teamInviteEmails: '',
+            teamInviteRecords: [],
+            isLoadingTeam: false,
             cronPresets: [
                 { label: '每30分钟', expr: '*/30 * * * *' },
                 { label: '每1小时', expr: '0 * * * *' },
@@ -237,6 +250,12 @@ createApp({
         searchMailboxes() {
             this.mailboxPage = 1;
             this.fetchMailboxes();
+        },
+        currentTab(val) {
+            if (val === 'team') {
+                this.fetchTeamAccounts();
+                this.fetchTeamInviteRecords();
+            }
         }
     },
     mounted() {
@@ -848,6 +867,11 @@ createApp({
             return name.substring(0, 3) + '***@' + maskedDomain;
         },
 		exportAccountsToTxt() {
+        isHtmlContent(text) {
+            if (!text) return false;
+            const lower = text.toLowerCase().trim();
+            return lower.startsWith('<!doctype') || lower.startsWith('<html') || lower.includes('<body') || (lower.includes('<div') && lower.includes('</div>'));
+        },
 			if (this.selectedAccounts.length === 0) return;
 
 			const textContent = this.selectedAccounts
@@ -1784,6 +1808,153 @@ createApp({
                 this.webhookCodesTimer = null;
             }
         },
+
+        // ── Team 管理 ──
+        async fetchTeamAccounts() {
+            try {
+                const res = await this.authFetch('/api/team/accounts');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamAccounts = data.data;
+                }
+            } catch (e) { console.error('fetchTeamAccounts', e); }
+        },
+        async discoverTeamWorkspaces() {
+            if (!this.teamSelectedManager) return;
+            this.isLoadingTeam = true;
+            this.teamWorkspaces = [];
+            this.teamMembers = [];
+            this.teamInvites = [];
+            this.teamSelectedWorkspace = '';
+            try {
+                const res = await this.authFetch('/api/team/discover', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: this.teamSelectedManager })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamWorkspaces = data.data;
+                    if (this.teamWorkspaces.length === 0) {
+                        alert('该账号未发现 Team 工作区');
+                    }
+                } else {
+                    alert(data.message || '发现工作区失败');
+                }
+            } catch (e) { alert('请求失败: ' + e.message); }
+            finally { this.isLoadingTeam = false; }
+        },
+        async fetchTeamMembers(wsId, wsName) {
+            this.teamSelectedWorkspace = wsId;
+            this.teamSelectedWorkspaceName = wsName || wsId;
+            this.isLoadingTeam = true;
+            try {
+                const res = await this.authFetch('/api/team/members', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: this.teamSelectedManager, workspace_id: wsId })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamMembers = data.data.members || [];
+                    this.teamInvites = data.data.invites || [];
+                } else {
+                    alert(data.message || '获取成员失败');
+                }
+            } catch (e) { alert('请求失败: ' + e.message); }
+            finally { this.isLoadingTeam = false; }
+        },
+        async inviteTeamMembers() {
+            if (!this.teamSelectedWorkspace || !this.teamInviteEmails.trim()) return;
+            const emails = this.teamInviteEmails
+                .split(/[\n,;]+/)
+                .map(e => e.trim())
+                .filter(e => e.includes('@'));
+            if (emails.length === 0) { alert('请输入有效的邮箱地址'); return; }
+            if (!confirm(`确定要邀请 ${emails.length} 个邮箱到工作区 ${this.teamSelectedWorkspaceName} 吗？`)) return;
+            this.isLoadingTeam = true;
+            try {
+                const res = await this.authFetch('/api/team/invite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        target_emails: emails
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(data.message);
+                    this.teamInviteEmails = '';
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                    this.fetchTeamInviteRecords();
+                } else {
+                    alert(data.message || '邀请失败');
+                }
+            } catch (e) { alert('请求失败: ' + e.message); }
+            finally { this.isLoadingTeam = false; }
+        },
+        async revokeTeamInvite(email) {
+            if (!confirm(`确定撤回对 ${email} 的邀请吗？`)) return;
+            try {
+                const res = await this.authFetch('/api/team/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        target_email: email
+                    })
+                });
+                const data = await res.json();
+                alert(data.message);
+                if (data.status === 'success') {
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                }
+            } catch (e) { alert('请求失败: ' + e.message); }
+        },
+        async removeTeamMember(userId, userEmail) {
+            if (!confirm(`确定移除成员 ${userEmail} 吗？`)) return;
+            try {
+                const res = await this.authFetch('/api/team/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        user_id: userId
+                    })
+                });
+                const data = await res.json();
+                alert(data.message);
+                if (data.status === 'success') {
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                }
+            } catch (e) { alert('请求失败: ' + e.message); }
+        },
+        async fetchTeamInviteRecords() {
+            try {
+                const params = new URLSearchParams();
+                if (this.teamSelectedManager) params.set('manager_email', this.teamSelectedManager);
+                if (this.teamSelectedWorkspace) params.set('workspace_id', this.teamSelectedWorkspace);
+                const res = await this.authFetch('/api/team/invite-records?' + params.toString());
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamInviteRecords = data.data;
+                }
+            } catch (e) { console.error('fetchTeamInviteRecords', e); }
+        },
+        async clearTeamInviteRecords() {
+            if (!confirm('确定清空所有邀请记录吗？')) return;
+            try {
+                const res = await this.authFetch('/api/team/invite-records/clear', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                if (data.status === 'success') this.teamInviteRecords = [];
+            } catch (e) { alert('请求失败: ' + e.message); }
+        },
+
         assembleCron() {
             const f = this.cronFields;
             this.config.sub2api_mode.check_cron = `${f.minute} ${f.hour} ${f.day} ${f.month} ${f.weekday}`;

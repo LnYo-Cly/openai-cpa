@@ -552,6 +552,15 @@
                                                         <span>❓</span> 未知
                                                     </span>
 
+                                                    <span v-if="acc.plan_type" class="px-2 py-1 text-[10px] font-black rounded border shadow-sm flex items-center gap-1"
+                                                        :class="{
+                                                            'bg-purple-50 text-purple-600 border-purple-200': acc.plan_type === 'Team',
+                                                            'bg-blue-50 text-blue-600 border-blue-200': acc.plan_type === 'Plus',
+                                                            'bg-gray-50 text-gray-500 border-gray-200': acc.plan_type === 'Free'
+                                                        }">
+                                                        {{ acc.plan_type }}
+                                                    </span>
+
                                                     <div v-if="!acc.push_platform" class="px-2 py-1 text-[10px] font-bold text-slate-400 bg-slate-100/50 rounded border border-slate-200 flex items-center gap-1">
                                                         <span class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span> 未推送
                                                     </div>
@@ -1489,7 +1498,7 @@
                                                         <span v-else class="text-slate-400">-</span>
                                                     </td>
                                                     <td class="py-2 px-2">
-                                                        <button @click="viewCodeDetail = item"
+                                                        <button @click="viewCodeDetail = item; codeViewMode = 'preview'"
                                                             class="text-purple-600 hover:text-purple-800 font-bold hover:underline cursor-pointer">
                                                             查看详情
                                                         </button>
@@ -1540,8 +1549,17 @@
                                                 <p class="text-sm text-slate-600 mt-0.5">{{ viewCodeDetail.received_at || '未知' }}</p>
                                             </div>
                                             <div>
-                                                <span class="text-xs font-black text-slate-500 uppercase tracking-wider">原始内容</span>
-                                                <pre class="mt-0.5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 whitespace-pre-wrap break-all max-h-60 overflow-y-auto font-mono leading-relaxed">{{ viewCodeDetail.full_content }}</pre>
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-xs font-black text-slate-500 uppercase tracking-wider">内容</span>
+                                                    <div class="flex bg-slate-100 rounded-lg p-0.5 gap-0.5" v-if="isHtmlContent(viewCodeDetail.full_content)">
+                                                        <button @click="codeViewMode = 'preview'" :class="codeViewMode === 'preview' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'" class="px-2 py-0.5 text-[10px] font-bold rounded transition-all">预览</button>
+                                                        <button @click="codeViewMode = 'raw'" :class="codeViewMode === 'raw' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'" class="px-2 py-0.5 text-[10px] font-bold rounded transition-all">原文</button>
+                                                    </div>
+                                                </div>
+                                                <div v-if="isHtmlContent(viewCodeDetail.full_content) && codeViewMode === 'preview'" class="mt-0.5 bg-white border border-slate-200 rounded-lg overflow-hidden" style="max-height: 320px;">
+                                                    <iframe :srcdoc="viewCodeDetail.full_content" sandbox="allow-same-origin" class="w-full border-0" style="height: 300px; min-height: 100px;"></iframe>
+                                                </div>
+                                                <pre v-else class="mt-0.5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 whitespace-pre-wrap break-all max-h-60 overflow-y-auto font-mono leading-relaxed">{{ viewCodeDetail.full_content }}</pre>
                                             </div>
                                         </div>
                                         <div class="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
@@ -2375,6 +2393,208 @@
                             </div>
                         </div>
 
+
+                        <!-- ═══ Team 管理 ═══ -->
+                        <div v-show="currentTab === 'team'" class="space-y-5 md:space-y-8">
+                            <!-- 管理者选择 -->
+                            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">管理者账号</h3>
+                                <div class="flex flex-wrap gap-3 items-end">
+                                    <div class="flex-1 min-w-[200px]">
+                                        <select v-model="teamSelectedManager" class="w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 text-sm p-2">
+                                            <option value="">-- 选择有 Team 订阅的账号 --</option>
+                                            <option v-for="a in teamAccounts" :key="a.email" :value="a.email">
+                                                {{ a.email }} <span v-if="a.plan_type" class="text-gray-400">({{ a.plan_type }})</span>
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <button @click="discoverTeamWorkspaces" :disabled="!teamSelectedManager || isLoadingTeam"
+                                        class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {{ isLoadingTeam && !teamSelectedWorkspace ? '发现中...' : '发现工作区' }}
+                                    </button>
+                                    <button @click="fetchTeamAccounts" class="px-4 py-2 bg-gray-500 text-white text-sm rounded hover:bg-gray-600">
+                                        刷新账号
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 工作区列表 -->
+                            <div v-if="teamWorkspaces.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Team 工作区</h3>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left text-gray-600 dark:text-gray-300">名称</th>
+                                                <th class="px-3 py-2 text-left text-gray-600 dark:text-gray-300">计划</th>
+                                                <th class="px-3 py-2 text-left text-gray-600 dark:text-gray-300">角色</th>
+                                                <th class="px-3 py-2 text-left text-gray-600 dark:text-gray-300">成员</th>
+                                                <th class="px-3 py-2 text-left text-gray-600 dark:text-gray-300">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+                                            <tr v-for="ws in teamWorkspaces" :key="ws.workspace_id"
+                                                :class="{'bg-blue-50 dark:bg-blue-900/20': teamSelectedWorkspace === ws.workspace_id}">
+                                                <td class="px-3 py-2 text-gray-800 dark:text-gray-200">{{ ws.name || ws.workspace_id }}</td>
+                                                <td class="px-3 py-2">
+                                                    <span class="px-2 py-0.5 rounded text-xs font-medium"
+                                                        :class="ws.plan_type.includes('team') ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 'bg-gray-100 text-gray-800'">
+                                                        {{ ws.plan_type }}
+                                                    </span>
+                                                </td>
+                                                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ ws.role }}</td>
+                                                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ ws.current_members }} / {{ ws.max_members }}</td>
+                                                <td class="px-3 py-2">
+                                                    <button @click="fetchTeamMembers(ws.workspace_id, ws.name || ws.workspace_id)"
+                                                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 text-xs">
+                                                        查看成员
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 成员管理面板 -->
+                            <div v-if="teamSelectedWorkspace" class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
+                                    成员管理 — {{ teamSelectedWorkspaceName }}
+                                </h3>
+
+                                <!-- 邀请新成员 -->
+                                <div class="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded">
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">邀请新成员（每行一个邮箱或逗号分隔）</label>
+                                    <div class="flex gap-2">
+                                        <textarea v-model="teamInviteEmails" rows="2" placeholder="user1@example.com&#10;user2@example.com"
+                                            class="flex-1 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-gray-200 text-sm p-2"></textarea>
+                                        <button @click="inviteTeamMembers" :disabled="isLoadingTeam || !teamInviteEmails.trim()"
+                                            class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 self-end whitespace-nowrap">
+                                            {{ isLoadingTeam ? '邀请中...' : '发送邀请' }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- 已加入成员 -->
+                                <div v-if="teamMembers.length > 0" class="mb-4">
+                                    <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">已加入成员 ({{ teamMembers.length }})</h4>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-xs">
+                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">邮箱</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">角色</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">加入时间</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+                                                <tr v-for="m in teamMembers" :key="m.user_id">
+                                                    <td class="px-2 py-1.5 text-gray-800 dark:text-gray-200">{{ m.email }}</td>
+                                                    <td class="px-2 py-1.5 text-gray-600 dark:text-gray-400">{{ m.role }}</td>
+                                                    <td class="px-2 py-1.5 text-gray-600 dark:text-gray-400">{{ m.created_at }}</td>
+                                                    <td class="px-2 py-1.5">
+                                                        <button @click="removeTeamMember(m.user_id, m.email)"
+                                                            class="text-red-600 hover:text-red-800 dark:text-red-400 text-xs">
+                                                            移除
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- 待处理邀请 -->
+                                <div v-if="teamInvites.length > 0">
+                                    <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">待处理邀请 ({{ teamInvites.length }})</h4>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-xs">
+                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">邮箱</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">状态</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">时间</th>
+                                                    <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+                                                <tr v-for="inv in teamInvites" :key="inv.id || inv.email">
+                                                    <td class="px-2 py-1.5 text-gray-800 dark:text-gray-200">{{ inv.email }}</td>
+                                                    <td class="px-2 py-1.5">
+                                                        <span class="px-1.5 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                                            {{ inv.state || '待处理' }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-2 py-1.5 text-gray-600 dark:text-gray-400">{{ inv.created_at }}</td>
+                                                    <td class="px-2 py-1.5">
+                                                        <button @click="revokeTeamInvite(inv.email)"
+                                                            class="text-orange-600 hover:text-orange-800 dark:text-orange-400 text-xs">
+                                                            撤回
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div v-if="teamMembers.length === 0 && teamInvites.length === 0 && !isLoadingTeam"
+                                    class="text-center text-gray-400 dark:text-gray-500 text-sm py-4">
+                                    暂无成员数据
+                                </div>
+                            </div>
+
+                            <!-- 邀请记录 -->
+                            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">邀请记录</h3>
+                                    <div class="flex gap-2">
+                                        <button @click="fetchTeamInviteRecords" class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                                            刷新
+                                        </button>
+                                        <button @click="clearTeamInviteRecords" class="text-xs text-red-600 hover:text-red-800 dark:text-red-400">
+                                            清空
+                                        </button>
+                                    </div>
+                                </div>
+                                <div v-if="teamInviteRecords.length > 0" class="overflow-x-auto">
+                                    <table class="w-full text-xs">
+                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                            <tr>
+                                                <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">管理者</th>
+                                                <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">目标邮箱</th>
+                                                <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">状态</th>
+                                                <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">错误</th>
+                                                <th class="px-2 py-1.5 text-left text-gray-600 dark:text-gray-300">时间</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+                                            <tr v-for="r in teamInviteRecords" :key="r.id">
+                                                <td class="px-2 py-1.5 text-gray-800 dark:text-gray-200">{{ r.manager_email }}</td>
+                                                <td class="px-2 py-1.5 text-gray-800 dark:text-gray-200">{{ r.target_email }}</td>
+                                                <td class="px-2 py-1.5">
+                                                    <span class="px-1.5 py-0.5 rounded text-xs"
+                                                        :class="{
+                                                            'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': r.state === 'invited' || r.state === 'already_member',
+                                                            'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': r.state === 'pending',
+                                                            'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': r.state === 'failed',
+                                                            'bg-gray-100 text-gray-800': r.state === 'revoked'
+                                                        }">
+                                                        {{ r.state }}
+                                                    </span>
+                                                </td>
+                                                <td class="px-2 py-1.5 text-gray-500 dark:text-gray-400 max-w-[200px] truncate">{{ r.last_error || '-' }}</td>
+                                                <td class="px-2 py-1.5 text-gray-500 dark:text-gray-400">{{ r.updated_at }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div v-else class="text-center text-gray-400 dark:text-gray-500 text-sm py-4">
+                                    暂无邀请记录
+                                </div>
+                            </div>
+                        </div>
 
 
                         <div v-show="currentTab === 'proxy'" v-if="config" class="space-y-5 md:space-y-8">

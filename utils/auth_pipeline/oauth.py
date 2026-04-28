@@ -86,6 +86,7 @@ def submit_callback_url(
     email = str(claims.get("email") or "").strip()
     auth_claims = claims.get("https://api.openai.com/auth") or {}
     account_id = str(auth_claims.get("chatgpt_account_id") or "").strip()
+    plan_type = str(auth_claims.get("chatgpt_plan_type") or "").strip()
 
     now = int(time.time())
     now_rfc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
@@ -98,6 +99,7 @@ def submit_callback_url(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "account_id": account_id,
+        "plan_type": plan_type,
         "last_refresh": now_rfc,
         "email": email,
         "type": "codex",
