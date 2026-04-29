@@ -493,20 +493,21 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                             ok, msg = client.add_accounts([data])
                             if ok:
                                 print(f"[{cfg.ts()}] [SUCCESS] [IMAGE2API] （{mask_email(email)}）同步成功")
-                                if getattr(cfg, "IMAGE2API_RETAIN_REG_ONLY", False):
-                                    try:
-                                        from utils import db_manager
-                                        import json
-                                        image2api_token_data = json.dumps({
-                                            "status": "image2api",
-                                            "access_token": data
-                                        })
-                                        db_manager.save_account_to_db(email, password, image2api_token_data)
-                                        print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，根据配置已将 image2api 写回本地库。")
-                                    except Exception as e:
-                                        print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
                             else:
                                 print(f"[{cfg.ts()}] [ERROR] [IMAGE2API] （{mask_email(email)}）同步失败: {msg}")
+                    if getattr(cfg, "IMAGE2API_RETAIN_REG_ONLY", False):
+                        try:
+                            from utils import db_manager
+                            import json
+                            image2api_token_data = json.dumps({
+                                "status": "image2api",
+                                "access_token": data
+                            })
+                            db_manager.save_account_to_db(email, password, image2api_token_data)
+                            print(
+                                f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，根据配置已将 image2api 写回本地库。")
+                        except Exception as e:
+                            print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
 
                 if data:
                     saved_temp_at = data
