@@ -10,6 +10,7 @@ from utils import core_engine, db_manager
 import utils.config as cfg
 from utils.integrations.sub2api_client import Sub2APIClient, build_sub2api_export_bundle, get_sub2api_push_settings
 from utils.integrations.image2api_client import Image2APIClient
+from utils.auth_core import email_jwt
 router = APIRouter()
 
 class ExportReq(BaseModel): emails: list[str]
@@ -25,6 +26,8 @@ class PushReq(BaseModel):emails: list[str]; platform: str
 class BulkRefreshReq(BaseModel): emails: list[str]
 class Image2APIStatusReq(BaseModel): access_token: str; status: str; type: str = "Free"; quota: int = 25;
 class Image2APIRefreshReq(BaseModel):tokens: list[str]
+class ImportTeamReq(BaseModel): raw_text: str
+class DeleteTeamReq(BaseModel): ids: list[int]
 
 def parse_cpa_usage_to_details(raw_usage: dict) -> dict:
     details = {"is_cpa": True}
@@ -759,3 +762,46 @@ def bulk_refresh_api(req: BulkRefreshReq, token: str = Depends(verify_token)):
         "status": "success" if success_count > 0 else "warning",
         "message": f"批量刷新完成！成功: {success_count} 个，失败/死亡: {fail_count} 个"
     }
+
+
+@router.get("/api/team_accounts")
+async def get_team_accounts(page: int = Query(1), page_size: int = Query(50), search: Optional[str] = Query(None),
+                            token: str = Depends(verify_token)):
+    result = db_manager.get_team_accounts_page(page, page_size, search=search)
+    return {"status": "success", "data": result["data"], "total": result["total"], "page": page, "page_size": page_size}
+
+
+@router.post("/api/team_accounts/import")
+async def import_team_accounts(req: ImportTeamReq, token: str = Depends(verify_token)):
+    if not req.raw_text: return {"status": "error", "message": "内容为空"}
+
+    parsed_teams = []
+    lines = req.raw_text.strip().split("\n")
+    for line in lines:
+        acc_token = line.strip()
+        if not acc_token or len(acc_token) < 50: continue
+        jwt_data = email_jwt(acc_token)
+        real_email = jwt_data.get("email", "") if isinstance(jwt_data, dict) else ""
+        parsed_teams.append({
+            "email": real_email if real_email else "未知邮箱(解析失败)",
+            "access_token": acc_token,
+            "status": 1
+        })
+    if not parsed_teams: return {"status": "error", "message": "未能识别出有效 Token"}
+    count = db_manager.import_team_accounts(parsed_teams)
+    return {"status": "success", "count": count}
+
+
+@router.post("/api/team_accounts/delete")
+async def delete_team_accounts(req: DeleteTeamReq, token: str = Depends(verify_token)):
+    if not req.ids: return {"status": "error", "message": "未收到任何要删除的ID"}
+    if db_manager.delete_team_accounts(req.ids):
+        return {"status": "success", "message": "删除成功"}
+    return {"status": "error", "message": "删除操作失败"}
+
+
+@router.post("/api/team_accounts/clear_all")
+async def clear_all_team_accounts(token: str = Depends(verify_token)):
+    if db_manager.clear_all_team_accounts():
+        return {"status": "success", "message": "Team 库已全部清空"}
+    return {"status": "error", "message": "清空失败"}

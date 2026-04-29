@@ -450,8 +450,10 @@
 
                                     <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
                                         <span class="text-xs text-slate-400 font-bold px-2">推送:</span>
-                                        <button @click="bulkPushCPA" class="px-3 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded transition flex items-center"><span class="mr-1">🚀</span>CPA</button>
-                                        <button @click="bulkPushSub2API" class="px-3 py-1 text-xs font-bold text-purple-600 hover:bg-purple-50 rounded transition flex items-center"><span class="mr-1">🛸</span>Sub</button>
+                                        <template v-if="!selectedAccounts.some(acc => acc.status === 'image2api')">
+                                            <button @click="bulkPushCPA" class="px-3 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded transition flex items-center"><span class="mr-1">🚀</span>CPA</button>
+                                            <button @click="bulkPushSub2API" class="px-3 py-1 text-xs font-bold text-purple-600 hover:bg-purple-50 rounded transition flex items-center"><span class="mr-1">🛸</span>Sub</button>
+                                        </template>
                                         <button @click="bulkPushImage2API" class="px-3 py-1 text-xs font-bold text-pink-600 hover:bg-pink-50 rounded transition flex items-center"><span class="mr-1">🖼️</span>Img2API</button>
                                     </div>
                                     <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
@@ -552,6 +554,7 @@
                                                         <span>❓</span> 未知
                                                     </span>
 
+
                                                     <span v-if="acc.plan_type" class="px-2 py-1 text-[10px] font-black rounded border shadow-sm flex items-center gap-1"
                                                         :class="{
                                                             'bg-purple-50 text-purple-600 border-purple-200': acc.plan_type === 'Team',
@@ -577,7 +580,6 @@
                                                     </template>
                                                 </div>
                                             </td>
-
                                             <td class="px-3 md:px-4 py-3 whitespace-nowrap text-center">
                                                 <div v-if="acc.push_platform" class="flex flex-col gap-1 items-center">
                                                     <span v-for="badge in getPlatformBadges(acc.push_platform)" :key="badge.name"
@@ -595,8 +597,8 @@
 
                                             <td class="px-3 md:px-4 py-3 whitespace-nowrap text-center">
                                                 <div class="flex gap-1.5 justify-center">
-                                                    <button @click="triggerAccountAction(acc, 'push')" class="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1.5 rounded active:scale-95 transition-all shadow-sm">推CPA</button>
-                                                    <button @click="triggerAccountAction(acc, 'push_sub2api')" class="text-[11px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-1.5 rounded active:scale-95 transition-all shadow-sm">推Sub</button>
+                                                    <button v-if="acc.status !== 'image2api'" @click="triggerAccountAction(acc, 'push')" class="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1.5 rounded active:scale-95 transition-all shadow-sm">推CPA</button>
+                                                    <button v-if="acc.status !== 'image2api'" @click="triggerAccountAction(acc, 'push_sub2api')" class="text-[11px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-1.5 rounded active:scale-95 transition-all shadow-sm">推Sub</button>
                                                     <button @click="triggerAccountAction(acc, 'push_image2api')" class="text-[11px] font-bold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 px-2 py-1.5 rounded active:scale-95 transition-all shadow-sm">推Img</button>
                                                 </div>
                                             </td>
@@ -3131,7 +3133,81 @@
                             </div>
                         </div>
 
+                        <div v-show="currentTab === 'team_accounts'" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative animate-fade-in">
+                            <div v-if="showImportTeamModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                                <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col">
+                                    <h3 class="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><span>📥</span> 批量导入 Team Token</h3>
+                                    <p class="text-xs text-slate-500 mb-3 font-bold bg-slate-50 p-2 rounded border border-slate-100">
+                                        支持格式 (每行一个完整的 JWT Token): <br>
+                                        <code class="text-sky-600">eyJhbGciOiJSUzI1...</code>
+                                    </p>
+                                    <textarea v-model="importTeamText" class="w-full h-64 appearance-none bg-slate-50 border border-slate-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-xs leading-relaxed placeholder:text-slate-300 mb-4" placeholder="在此粘贴 access_token 数据..."></textarea>
+                                    <div class="flex justify-end gap-3">
+                                        <button @click="showImportTeamModal = false" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">取消</button>
+                                        <button @click="submitImportTeams" :disabled="isImportingTeam" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md flex items-center gap-2 transition-all disabled:opacity-50">
+                                            <span v-if="isImportingTeam" class="animate-spin">🔄</span>确认导入
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
 
+                            <div class="px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-slate-50/50">
+                                <div class="flex items-center gap-3">
+                                    <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                                        <span>👥</span> Team 团队账号库
+                                    </h2>
+                                    <button @click="fetchTeamAccounts(true)" class="p-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm" title="刷新列表">🔄</button>
+                                </div>
+
+                                <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
+                                    <label v-if="config && config.team_mode" class="relative inline-flex items-center cursor-pointer group bg-white px-3 py-1.5 rounded-xl border border-emerald-200 shadow-sm mr-2 hover:bg-emerald-50 transition-colors">
+                                        <input type="checkbox" v-model="config.team_mode.enable" @change="saveConfig" class="sr-only peer">
+                                        <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner group-hover:shadow-md"></div>
+                                        <span class="ml-2 text-xs font-black text-emerald-700 tracking-wide">启用团队配合注册</span>
+                                    </label>
+
+                                    <button @click="showImportTeamModal = true" class="text-sm bg-sky-50 text-sky-600 border border-sky-200 px-3 py-1.5 rounded-lg hover:bg-sky-100 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                        📥 导入数据
+                                    </button>
+                                    <button @click="showTeamsPlaintext = !showTeamsPlaintext" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                        <span>{{ showTeamsPlaintext ? '🙈' : '👁️' }}</span> {{ showTeamsPlaintext ? '脱敏' : '明文' }}
+                                    </button>
+                                    <div class="flex items-center gap-2 ml-auto xl:ml-2 border-l border-slate-200 pl-3">
+                                        <button @click="clearAllTeamAccounts" class="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 text-sm font-bold rounded-lg hover:bg-rose-100 transition flex items-center gap-1">🗑️ 清空库</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto w-full min-h-[400px]">
+                                <table class="min-w-full divide-y divide-slate-100">
+                                    <thead class="bg-slate-50/80">
+                                        <tr>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest w-16">#</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">解析邮箱</th>
+                                            <th class="px-5 md:px-8 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">Access Token</th>
+                                            <th class="px-5 md:px-8 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-slate-50">
+                                        <tr v-if="teamAccounts.length === 0">
+                                            <td colspan="4" class="px-6 py-16 text-center text-slate-400 font-medium bg-slate-50/30">暂无 Team 库数据，请点击右上角导入</td>
+                                        </tr>
+                                        <tr v-for="(team, index) in teamAccounts" :key="index" class="hover:bg-slate-50 transition duration-200">
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm text-slate-400 font-mono font-medium">{{ index + 1 }}</td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm font-bold text-slate-700">
+                                                {{ showTeamsPlaintext ? team.email : maskEmail(team.email) }}
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 text-xs font-mono text-slate-500 truncate max-w-[200px]" :title="team.access_token">
+                                                {{ showTeamsPlaintext ? team.access_token : 'eyJhbGciOi...' }}
+                                            </td>
+                                            <td class="px-5 md:px-8 py-4 whitespace-nowrap text-center">
+                                                <button @click="deleteSingleTeam(team.id)" class="inline-flex items-center px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-bold transition-colors shadow-sm active:scale-95">🗑️ 删除</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
 
                         <div v-show="currentTab === 'relay'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-emerald-500 bg-gradient-to-br from-emerald-50/20 to-white" v-if="config.cpa_mode">
@@ -3849,6 +3925,23 @@
                                         <label class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" v-model="config.retain_reg_only" @change="saveConfig" class="sr-only peer">
                                             <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 shadow-inner group-hover:shadow-md"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-span-2 md:col-span-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-all group">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex flex-col gap-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs font-black text-slate-700 uppercase tracking-widest">保存 IMG 账号到本地</span>
+                                                <span class="px-1.5 py-0.5 rounded bg-blue-50 text-[10px] text-blue-500 font-bold border border-blue-100">常规模式专属</span>
+                                            </div>
+                                            <p class="text-[11px] text-slate-400 font-medium leading-relaxed max-w-[240px]">
+                                                开启后，常规模式注册成功会自动将 image2api 凭证写入本地数据库。
+                                            </p>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" v-model="config.normal_mode.save_img_to_local" @change="saveConfig" class="sr-only peer">
+                                            <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 shadow-inner group-hover:shadow-md transition-all duration-300"></div>
                                         </label>
                                     </div>
                                 </div>

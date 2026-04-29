@@ -38,7 +38,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Wenfxl Codex Manager", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 拼接出 static 文件夹的绝对路径
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+# 使用绝对路径挂载
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 app.add_middleware(
     CORSMiddleware,

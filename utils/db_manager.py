@@ -97,6 +97,15 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        execute_sql(c, '''
+                    CREATE TABLE IF NOT EXISTS team_accounts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email TEXT,
+                        access_token TEXT,
+                        status INTEGER DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         try:
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN fission_count INTEGER DEFAULT 0;')
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN retry_master INTEGER DEFAULT 0;')
@@ -128,6 +137,10 @@ def init_db():
             )
         ''')
 
+        try:
+            execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN access_token TEXT;')
+        except Exception:
+            pass
     print(f"[{cfg.ts()}] [系统] 数据库模块初始化完成 (引擎: {DB_TYPE.upper()})")
 
 
@@ -590,9 +603,9 @@ def update_account_push_info(emails: list, platform: str, mode: str = "overwrite
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 更新推送状态失败: {e}")
 
-
 def get_inventory_stats() -> dict:
     try:
+        p = "%%" if DB_TYPE == "mysql" else "%"
         with get_db_conn() as conn:
             c = get_cursor(conn)
             execute_sql(c, """
@@ -601,12 +614,12 @@ def get_inventory_stats() -> dict:
                     SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 1 THEN 1 ELSE 0 END) as active_count,
                     SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 0 THEN 1 ELSE 0 END) as disabled_count,
                     SUM(CASE WHEN push_platform IS NULL OR push_platform = '' THEN 1 ELSE 0 END) as unpushed_count,
-                    SUM(CASE WHEN push_platform LIKE '%CPA%' THEN 1 ELSE 0 END) as cpa_total,
-                    SUM(CASE WHEN push_platform LIKE '%CPA%' AND is_active = 1 THEN 1 ELSE 0 END) as cpa_active,
-                    SUM(CASE WHEN push_platform LIKE '%CPA%' AND is_active = 0 THEN 1 ELSE 0 END) as cpa_disabled,
-                    SUM(CASE WHEN push_platform LIKE '%SUB2API%' THEN 1 ELSE 0 END) as sub_total,
-                    SUM(CASE WHEN push_platform LIKE '%SUB2API%' AND is_active = 1 THEN 1 ELSE 0 END) as sub_active,
-                    SUM(CASE WHEN push_platform LIKE '%SUB2API%' AND is_active = 0 THEN 1 ELSE 0 END) as sub_disabled,
+                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' THEN 1 ELSE 0 END) as cpa_total,
+                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' AND is_active = 1 THEN 1 ELSE 0 END) as cpa_active,
+                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' AND is_active = 0 THEN 1 ELSE 0 END) as cpa_disabled,
+                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' THEN 1 ELSE 0 END) as sub_total,
+                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' AND is_active = 1 THEN 1 ELSE 0 END) as sub_active,
+                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' AND is_active = 0 THEN 1 ELSE 0 END) as sub_disabled,
                     SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') THEN 1 ELSE 0 END) as cloud_total
                 FROM accounts
             """)
@@ -647,7 +660,6 @@ def update_account_status_by_truncated_name(truncated_name: str, is_active: int)
             execute_sql(c, "UPDATE accounts SET is_active = ? WHERE SUBSTR(email, 1, 64) = ?", (is_active, truncated_name))
     except Exception as e:
         print(f"[ERROR] 按截断名称更新活跃状态失败: {e}")
-
 
 def remove_account_push_platform(identifier: str, platform: str, exact_match: bool = True):
     if not identifier: return
@@ -810,3 +822,102 @@ def _extract_plan_from_jwt(access_token: str) -> str:
         return str(auth.get("chatgpt_plan_type") or "").strip()
     except Exception:
         return ""
+
+
+# ── Team 账号库管理 ──
+
+def import_team_accounts(team_data_list: list) -> int:
+    count = 0
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            for td in team_data_list:
+                try:
+                    execute_sql(c, '''
+                        INSERT OR IGNORE INTO team_accounts (email, access_token, status)
+                        VALUES (?, ?, ?)
+                    ''', (td['email'], td['access_token'], td.get('status', 1)))
+                    if c.rowcount > 0:
+                        count += 1
+                except Exception as ex:
+                    pass
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 导入 Team 库失败: {e}")
+    return count
+
+
+def get_team_accounts_page(page: int = 1, page_size: int = 50, search: str = None) -> dict:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            conditions = []
+            params = []
+
+            if search:
+                conditions.append("(email LIKE ? OR access_token LIKE ?)")
+                search_term = f"%{search}%"
+                params.extend([search_term, search_term])
+
+            where_clause = ""
+            if conditions:
+                where_clause = " WHERE " + " AND ".join(conditions)
+
+            count_sql = f"SELECT COUNT(1) AS cnt FROM team_accounts{where_clause}"
+            if params:
+                execute_sql(c, count_sql, tuple(params))
+            else:
+                execute_sql(c, count_sql)
+
+            total_row = c.fetchone()
+            total = total_row['cnt'] if DB_TYPE == "mysql" else total_row[0]
+            offset = (page - 1) * page_size
+
+            data_sql = f"SELECT id, email, access_token, status, created_at FROM team_accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            data_params = tuple(params + [page_size, offset])
+            execute_sql(c, data_sql, data_params)
+            rows = c.fetchall()
+
+            return {"total": total, "data": [dict(r) for r in rows]}
+    except Exception as e:
+        print(f"[ERROR] 分页获取 Team 库列表失败: {e}")
+        return {"total": 0, "data": []}
+
+
+def delete_team_accounts(ids: list) -> bool:
+    if not ids: return True
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            placeholders = ','.join(['?'] * len(ids))
+            execute_sql(c, f"DELETE FROM team_accounts WHERE id IN ({placeholders})", tuple(ids))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 删除 Team 账号失败: {e}")
+        return False
+
+
+def clear_all_team_accounts() -> bool:
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "DELETE FROM team_accounts")
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 清空 Team 库失败: {e}")
+        return False
+
+
+def get_random_team_account() -> dict:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            order_clause = "RAND()" if DB_TYPE == "mysql" else "RANDOM()"
+            sql = f"SELECT id, email, access_token FROM team_accounts WHERE status = 1 ORDER BY {order_clause} LIMIT 1"
+            execute_sql(c, sql)
+            row = c.fetchone()
+            if row:
+                return dict(row)
+            return None
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 随机提取 Team 账号失败: {e}")
+        return None

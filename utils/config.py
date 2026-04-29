@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v13.1.0"
+APP_VERSION = "v14.0.2"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -272,6 +272,11 @@ IMAGE2API_URL: str = ""
 IMAGE2API_KEY: str = ""
 IMAGE2API_RETAIN_REG_ONLY: bool = False
 
+ENABLE_IMAGE2API_MODE: bool = False
+IMAGE2API_URL: str = ""
+IMAGE2API_KEY: str = ""
+IMAGE2API_RETAIN_REG_ONLY: bool = False
+
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
 LUCKMAIL_VARIANT_MODE: str = ""
@@ -335,6 +340,7 @@ FIVESIM_POLL_TIMEOUT_SEC = 180
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
 NORMAL_TARGET_COUNT: int = 0
+NORMAL_SAVE_IMG_TO_LOCAL: bool = False
 MAX_LOG_LINES: int = 500
 _clash_enable: bool = False
 _clash_pool_mode: bool = False
@@ -370,7 +376,7 @@ GMAIL_OAUTH_SUFFIX_LEN_MIN: int = 8
 GMAIL_OAUTH_SUFFIX_LEN_MAX: int = 8
 DISABLE_FORCED_TAKEOVER: bool = True
 OPENAI_CPA_WEBHOOK_SECRET = ""
-
+TEAM_MODE_ENABLE: bool = False
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
     with _sub2api_proxy_rotation_lock:
@@ -417,7 +423,7 @@ def reload_all_configs(new_config_dict=None):
     global CPA_API_URL, CPA_API_TOKEN, MIN_ACCOUNTS_THRESHOLD, BATCH_REG_COUNT
     global MIN_REMAINING_WEEKLY_PERCENT, REMOVE_ON_LIMIT_REACHED, REMOVE_DEAD_ACCOUNTS
     global CPA_THREADS, CHECK_INTERVAL_MINUTES, ENABLE_TOKEN_REVIVE
-    global NORMAL_SLEEP_MIN, NORMAL_SLEEP_MAX, NORMAL_TARGET_COUNT
+    global NORMAL_SLEEP_MIN, NORMAL_SLEEP_MAX, NORMAL_TARGET_COUNT, NORMAL_SAVE_IMG_TO_LOCAL
     global _clash_enable, _clash_pool_mode, WARP_PROXY_LIST, PROXY_QUEUE, PROXY_QUEUE_GENERATION
     global _raw_proxy_enable, RAW_PROXY_LIST
     global CLASH_CLUSTER_COUNT, CLASH_SUB_URL
@@ -466,6 +472,7 @@ def reload_all_configs(new_config_dict=None):
     global HERO_SMS_REUSE_PHONE, HERO_SMS_REUSE_MAX
     global FIVESIM_REUSE_PHONE, FIVESIM_REUSE_MAX
     global OPENAI_CPA_WEBHOOK_SECRET
+    global TEAM_MODE_ENABLE
     base_yaml_config = init_config()
 
     _db_conf = base_yaml_config.get("database", {})
@@ -698,7 +705,8 @@ def reload_all_configs(new_config_dict=None):
     NORMAL_SLEEP_MIN = _normal.get("sleep_min", 5)
     NORMAL_SLEEP_MAX = _normal.get("sleep_max", 30)
     NORMAL_TARGET_COUNT = _normal.get("target_count", 0)
-
+    NORMAL_SAVE_IMG_TO_LOCAL = safe_bool(_normal.get("save_img_to_local", False))
+    
     _clash_conf = _c.get("clash_proxy_pool", {})
     _clash_enable = _clash_conf.get("enable", False)
     _clash_pool_mode = _clash_conf.get("pool_mode", False)
@@ -867,6 +875,10 @@ def reload_all_configs(new_config_dict=None):
     GMAIL_OAUTH_SUFFIX_LEN_MAX = int(_gmail.get("suffix_len_max", 8))
 
     DISABLE_FORCED_TAKEOVER = safe_bool(_c.get("disable_forced_takeover", True))
+
+    global TEAM_MODE_ENABLE
+    _team = _c.get("team_mode", {})
+    TEAM_MODE_ENABLE = safe_bool(_team.get("enable", False))
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

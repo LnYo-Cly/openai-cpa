@@ -34,6 +34,7 @@ createApp({
                 { id: 'cluster', name: '集群总控', icon: '🖥️' },
                 { id: 'email', name: '邮箱配置', icon: '📧' },
                 { id: 'mailboxes', name: '微软邮箱库', icon: '📬' },
+                { id: 'team_accounts', name: 'Team 账号库', icon: '👥' },
                 { id: 'accounts', name: '账号库存', icon: '📦' },
                 { id: 'cloud', name: '云端库存', icon: '☁️' },
                 { id: 'sms', name: '手机接码', icon: '📱' },
@@ -236,6 +237,14 @@ createApp({
             isLoadingFivesimPrices: false,
             isRestarting: false,
             isRefreshingAccounts: false,
+            teamAccounts: [],
+            showImportTeamModal: false,
+            importTeamText: '',
+            isImportingTeam: false,
+            showTeamsPlaintext: false,
+            teamPage: 1,
+            teamPageSize: 50,
+            totalTeamAccounts: 0,
         };
     },
     watch: {
@@ -396,6 +405,7 @@ createApp({
             this.initSSE();
             this.fetchAccounts();
             this.fetchCloudAccounts();
+            this.fetchTeamAccounts();
             this.fetchMailboxes();
             this.startStatsPolling();
             this.checkUpdate();
@@ -537,6 +547,10 @@ createApp({
                     };
                 } else if (this.config.image2api_mode.retain_reg_only === undefined) {
                     this.config.image2api_mode.retain_reg_only = false;
+                }
+
+                if (!this.config.team_mode) {
+                    this.config.team_mode = { enable: false };
                 }
                 if (!this.config.fvia) {
                     this.config.fvia = { token: '' };
@@ -774,6 +788,9 @@ createApp({
             }
             if (tabId === 'proxy') {
                 this.fetchClashPool();
+            }
+            if (tabId === 'team_accounts') {
+                this.fetchTeamAccounts();
             }
         },
         async exportSelectedAccounts() {
@@ -3206,6 +3223,93 @@ createApp({
                     return 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white border-transparent shadow-md';
                 default:
                     return 'bg-slate-50 text-slate-600 border-slate-200';
+            }
+        },
+
+        async fetchTeamAccounts(isManual = false) {
+            if (isManual) this.teamPage = 1;
+            let url = `/api/team_accounts?page=${this.teamPage}&page_size=${this.teamPageSize}`;
+
+            try {
+                const res = await this.authFetch(url);
+                const data = await res.json();
+                if(data.status === 'success') {
+                    this.teamAccounts = data.data;
+                    this.totalTeamAccounts = data.total || this.teamAccounts.length;
+                    if (isManual) this.showToast("Team 库已刷新！", "success");
+                }
+            } catch (e) {
+                console.error("获取 Team 库失败:", e);
+            }
+        },
+        changeTeamPage(newPage) {
+            if (!newPage || isNaN(newPage)) newPage = 1;
+            const maxPage = Math.ceil(this.totalTeamAccounts / this.teamPageSize) || 1;
+            newPage = Math.max(1, Math.min(newPage, maxPage));
+            if (this.teamPage === newPage) {
+                this.$forceUpdate();
+                return;
+            }
+            this.teamPage = newPage;
+            this.fetchTeamAccounts();
+        },
+        async submitImportTeams() {
+            if (!this.importTeamText.trim()) return this.showToast("请输入内容", "warning");
+            this.isImportingTeam = true;
+            try {
+                const res = await this.authFetch('/api/team_accounts/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ raw_text: this.importTeamText })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(`成功导入 ${data.count} 个 Team Token！`, "success");
+                    this.showImportTeamModal = false;
+                    this.importTeamText = '';
+                    this.fetchTeamAccounts(true);
+                } else {
+                    this.showToast("导入失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("导入请求失败", "error");
+            } finally {
+                this.isImportingTeam = false;
+            }
+        },
+        async deleteSingleTeam(id) {
+            const confirmed = await this.customConfirm('确定要删除该 Team 账号吗？');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/team_accounts/delete', {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: [id] })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast("删除成功", "success");
+                    this.fetchTeamAccounts();
+                } else {
+                    this.showToast("删除失败: " + data.message, "error");
+                }
+            } catch (e) {
+                this.showToast("请求异常", "error");
+            }
+        },
+        async clearAllTeamAccounts() {
+            const confirmed = await this.customConfirm('⚠️ 危险操作！确定要清空【Team 团队账号库】中的所有数据吗？');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/team_accounts/clear_all', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    this.showToast('Team 库已全部清空', 'success');
+                    this.fetchTeamAccounts();
+                } else {
+                    this.showToast(data.message, 'error');
+                }
+            } catch (e) {
+                this.showToast('清空异常', 'error');
             }
         },
     }

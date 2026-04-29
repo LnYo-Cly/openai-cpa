@@ -10,7 +10,7 @@ from utils.email_providers.mail_service import get_email_and_token, get_oai_code
 from utils.integrations.hero_sms import _try_verify_phone_via_hero_sms
 from utils.integrations.fivesim_sms import try_verify_phone_via_fivesim
 from utils.integrations.smsbower_sms import handle_smsbower_verification
-from utils.auth_core import generate_payload, init_auth, image2api_data
+from utils.auth_core import generate_payload, init_auth, image2api_data, sys_node_allocate, sys_node_release
 from utils.integrations.image2api_client import Image2APIClient
 
 from .http_utils import _ssl_verify, _skip_net_check, _post_with_retry, _oai_headers, _follow_redirect_chain_local
@@ -79,6 +79,7 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
             oauth_reg = generate_oauth_url()
             is_takeover = False
             target_continue_url = ""
+            saved_temp_at = ""
             try:
                 did, current_ua = init_auth(
                     session=s_reg,
@@ -469,24 +470,24 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         print(f"[{cfg.ts()}] [INFO] [{mode_label}] （{mask_email(email)}）账号已注册成功，根据配置提前作为半成品写入本地库。")
                     except Exception as e:
                         pass
+                data = image2api_data(s_reg, target_continue_url, proxies)
                 if mode_label == "常规模式":
-                    try:
-                        from utils import db_manager
-                        import json
-                        data = image2api_data(s_reg, target_continue_url, proxies)
-                        if data:
-                            image2api_token_data = json.dumps({
-                                "status": "image2api",
-                                "access_token": data
-                            })
-                            db_manager.save_account_to_db(email, password, image2api_token_data)
-                            print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，已将 image2api 写回本地库。")
-                    except Exception as e:
-                        print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
+                    if getattr(cfg, "NORMAL_SAVE_IMG_TO_LOCAL", False):
+                        try:
+                            from utils import db_manager
+                            import json
+                            if data:
+                                image2api_token_data = json.dumps({
+                                    "status": "image2api",
+                                    "access_token": data
+                                })
+                                db_manager.save_account_to_db(email, password, image2api_token_data)
+                                print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）账号已注册成功，已将 image2api 写回本地库。")
+                        except Exception as e:
+                            print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
                 else:
                     if getattr(cfg, "ENABLE_IMAGE2API_MODE", False):
                         print(f"[{cfg.ts()}] [INFO] [IMAGE2API] （{mask_email(email)}）根据配置将同步至IMAGE2API平台。")
-                        data = image2api_data(s_reg, target_continue_url, proxies)
                         if data:
                             client = Image2APIClient()
                             ok, msg = client.add_accounts([data])
@@ -507,6 +508,11 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                             else:
                                 print(f"[{cfg.ts()}] [ERROR] [IMAGE2API] （{mask_email(email)}）同步失败: {msg}")
 
+                if data:
+                    saved_temp_at = data
+                    if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                        print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）即将进入团队静默流程")
+                        is_alloc, sys_handle_a, sys_handle_b = sys_node_allocate(data, proxies)
                 time.sleep(wait_time)
 
                 workspace_hint_url = ""
@@ -531,34 +537,40 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                 workspaces = _parse_workspace_from_auth_cookie(auth_cookie)
 
                 if workspaces:
-                    print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）检测到工作区，正在确认并提取最终凭据...")
-                    workspace_id = str((workspaces[0] or {}).get("id") or "").strip()
+                    auth_cookie = s_reg.cookies.get("oai-client-auth-session") or ""
+                    workspaces = _parse_workspace_from_auth_cookie(auth_cookie)
 
-                    if workspace_id:
-                        select_resp = _post_with_retry(
-                            s_reg,
-                            "https://auth.openai.com/api/accounts/workspace/select",
-                            headers=_oai_headers(did, {"Referer": current_url, "content-type": "application/json"}),
-                            json_body={"workspace_id": workspace_id},
-                            proxies=proxies,
-                        )
+                    if workspaces:
+                        print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）检测到工作区，正在确认并提取最终凭据...")
+                        personal_workspace_id = ""
+                        for i, ws in enumerate(workspaces):
+                            ws_id = str(ws.get("id", ""))
+                            ws_title = str(ws.get("title", ws.get("name", "Unknown")))
+                            if "Personal" in ws_title or "个人" in ws_title or ws.get("is_personal"):
+                                personal_workspace_id = ws_id
 
-                        if select_resp.status_code == 200:
-                            try:
-                                next_url = str(select_resp.json().get("continue_url") or "").strip()
-                            except Exception:
-                                next_url = ""
-
-                            if next_url:
-                                _, final_url = _follow_redirect_chain_local(s_reg, next_url, proxies)
-                                if "code=" in final_url and "state=" in final_url:
-                                    print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）凭据提取成功！一气呵成！")
-                                    return submit_callback_url(
-                                        callback_url=final_url,
-                                        expected_state=oauth_reg.state,
-                                        code_verifier=oauth_reg.code_verifier,
-                                        proxies=proxies,
-                                    ), password
+                        if not personal_workspace_id:
+                            personal_workspace_id = str(workspaces[-1].get("id", ""))
+                        if personal_workspace_id:
+                            select_resp = _post_with_retry(
+                                s_reg, "https://auth.openai.com/api/accounts/workspace/select",
+                                headers=_oai_headers(did, {"Referer": current_url, "content-type": "application/json"}),
+                                json_body={"workspace_id": personal_workspace_id}, proxies=proxies,
+                            )
+                            if select_resp.status_code == 200:
+                                try:
+                                    next_url = str(select_resp.json().get("continue_url") or "").strip()
+                                except Exception:
+                                    next_url = ""
+                                if next_url:
+                                    _, final_url = _follow_redirect_chain_local(s_reg, next_url, proxies)
+                                    if "code=" in final_url and "state=" in final_url:
+                                        print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）凭据提取成功！一气呵成！")
+                                        return submit_callback_url(
+                                            callback_url=final_url,
+                                            expected_state=oauth_reg.state,
+                                            code_verifier=oauth_reg.code_verifier,
+                                            proxies=proxies), password
 
                 print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）账号登录完毕，执行静默获取 Token...")
                 s_log = requests.Session(proxies=proxies, impersonate="chrome110")
@@ -569,13 +581,19 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
 
                 resp, current_url = _follow_redirect_chain_local(s_log, oauth_log.auth_url, proxies)
                 if "code=" in current_url and "state=" in current_url:
-                    return submit_callback_url(
+                    token_resp = submit_callback_url(
                         callback_url=current_url,
                         code_verifier=oauth_log.code_verifier,
                         redirect_uri=oauth_log.redirect_uri,
                         expected_state=oauth_log.state,
                         proxies=proxies,
                     ), password
+                    if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                        try:
+                            sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
+                        except:
+                            pass
+                    return token_resp, password
                 log_did = s_log.cookies.get("oai-did") or did
 
                 log_ctx = reg_ctx.copy() if reg_ctx else {}
@@ -834,13 +852,19 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                 error_reason = ""
                 while True:
                     if "code=" in current_url:
-                        return submit_callback_url(
+                        token_resp = submit_callback_url(
                             callback_url=current_url,
                             code_verifier=oauth_log.code_verifier,
                             redirect_uri=oauth_log.redirect_uri,
                             expected_state=oauth_log.state,
                             proxies=proxies,
-                        ), password
+                        )
+                        if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                            try:
+                                sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
+                            except:
+                                pass
+                        return token_resp, password
                     elif current_url.endswith("/about-you"):
                         _, create_account_resp = _create_account_about_you(
                             session=s_log, email=email, did=did, current_ua=current_ua,
@@ -853,21 +877,31 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         auth_cookie2 = s_log.cookies.get("oai-client-auth-session") or ""
                         workspaces2 = _parse_workspace_from_auth_cookie(auth_cookie2)
                         if workspaces2:
+                            print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）检测到工作区，正在确认并提取最终凭据...")
+                            personal_ws_id2 = ""
+                            for i, ws in enumerate(workspaces2):
+                                ws_id = str(ws.get("id", ""))
+                                ws_title = str(ws.get("title", ws.get("name", "Unknown")))
+                                if "Personal" in ws_title or "个人" in ws_title or ws.get("is_personal"):
+                                    personal_ws_id2 = ws_id
+
+                            if not personal_ws_id2:
+                                personal_ws_id2 = str(workspaces2[-1].get("id", ""))
+
                             select_resp = _post_with_retry(
-                                s_log,
-                                "https://auth.openai.com/api/accounts/workspace/select",
-                                headers=_oai_headers(s_log.cookies.get("oai-did") or "", {
-                                    "Referer": current_url, "content-type": "application/json"
-                                }),
-                                json_body={"workspace_id": str(workspaces2[0].get("id"))},
-                                proxies=proxies,
+                                s_log, "https://auth.openai.com/api/accounts/workspace/select",
+                                headers=_oai_headers(s_log.cookies.get("oai-did") or "",
+                                                     {"Referer": current_url, "content-type": "application/json"}),
+                                json_body={"workspace_id": personal_ws_id2}, proxies=proxies,
                             )
-                            final_url = (
-                                _extract_next_url(select_resp.json())
-                                if select_resp.status_code == 200 else ""
-                            )
+                            final_url = _extract_next_url(select_resp.json()) if select_resp.status_code == 200 else ""
                             _, final_loc = _follow_redirect_chain_local(s_log, final_url, proxies)
                             current_url = final_loc
+                            if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                                try:
+                                    sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
+                                except:
+                                    pass
                             continue
                         else:
                             break
@@ -900,7 +934,11 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                             break
                     else:
                         break
-
+                if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                    try:
+                        sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
+                    except:
+                        pass
                 if run_ctx is not None: run_ctx['phone_verify'] = True
                 try:
                     url_code = url_code.get("error", {}).get("code")
@@ -925,13 +963,18 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                 return None, None
         return None, None
     finally:
+        if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+            try:
+                sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
+            except Exception:
+                pass
         if s_reg is not None:
             try:
                 s_reg.close()
-            except:
+            except Exception:
                 pass
         if s_log is not None:
             try:
                 s_log.close()
-            except:
+            except Exception:
                 pass
