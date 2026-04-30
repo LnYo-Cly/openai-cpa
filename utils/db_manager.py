@@ -82,7 +82,7 @@ def init_db():
         ''')
         execute_sql(c, '''
             CREATE TABLE IF NOT EXISTS system_kv (
-                `key` TEXT PRIMARY KEY,
+                `key` TEXT PRIMARY KEY, 
                 value TEXT
             )
         ''')
@@ -118,25 +118,6 @@ def init_db():
             execute_sql(c, 'ALTER TABLE accounts ADD COLUMN push_time VARCHAR(50) DEFAULT NULL;')
         except Exception:
             pass
-
-        try:
-            execute_sql(c, 'ALTER TABLE accounts ADD COLUMN plan_type VARCHAR(50) DEFAULT NULL;')
-        except Exception:
-            pass
-
-        execute_sql(c, '''
-            CREATE TABLE IF NOT EXISTS team_invite_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                manager_email TEXT,
-                target_email TEXT,
-                workspace_id TEXT,
-                state TEXT DEFAULT 'pending',
-                last_error TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
         try:
             execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN access_token TEXT;')
         except Exception:
@@ -146,20 +127,12 @@ def init_db():
 
 def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
     try:
-        # 从 token_data 提取 plan_type
-        plan_type = ""
-        try:
-            td = json.loads(token_json_str)
-            plan_type = td.get("plan_type", "")
-        except Exception:
-            pass
-
         with get_db_conn() as conn:
             c = get_cursor(conn)
             execute_sql(c, '''
-                INSERT OR REPLACE INTO accounts (email, password, token_data, plan_type)
-                VALUES (?, ?, ?, ?)
-            ''', (email, password, token_json_str, plan_type or None))
+                INSERT OR REPLACE INTO accounts (email, password, token_data)
+                VALUES (?, ?, ?)
+            ''', (email, password, token_json_str))
             return True
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 数据库保存失败: {e}")
@@ -260,34 +233,14 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
             total = c.fetchone()[0]
 
             offset = (page - 1) * page_size
-            data_sql = f"SELECT email, password, created_at, token_data, is_active, push_platform, push_time, plan_type FROM accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            data_sql = f"SELECT email, password, created_at, token_data, is_active, push_platform, push_time FROM accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
 
             data_params = tuple(params + [page_size, offset])
             execute_sql(c, data_sql, data_params)
             rows = c.fetchall()
 
-            data = []
-            for r in rows:
-                pt = r[7] or ""
-                if not pt and r[3]:
-                    try:
-                        td = json.loads(r[3])
-                        pt = td.get("plan_type", "")
-                        if not pt and td.get("access_token"):
-                            pt = _extract_plan_from_jwt(td["access_token"])
-                    except Exception:
-                        pass
-                # 归一化 plan_type
-                pt_lower = (pt or "").lower()
-                if "team" in pt_lower:
-                    pt_display = "Team"
-                elif "plus" in pt_lower or "pro" in pt_lower:
-                    pt_display = "Plus"
-                elif "free" in pt_lower or "basic" in pt_lower:
-                    pt_display = "Free"
-                else:
-                    pt_display = pt if pt else ""
-                data.append({
+            data = [
+                {
                     "email": r[0],
                     "password": r[1],
                     "created_at": r[2],
@@ -296,9 +249,10 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
                         "仅注册成功" if '"仅注册成功"' in str(r[3] or "") else "未知")),
                     "is_active": r[4] if r[4] is not None else 1,
                     "push_platform": r[5],
-                    "push_time": r[6],
-                    "plan_type": pt_display,
-                })
+                    "push_time": r[6]
+                }
+                for r in rows
+            ]
             return {"total": total, "data": data}
 
     except Exception as e:
@@ -490,8 +444,8 @@ def update_local_mailbox_refresh_token(email: str, new_rt: str):
 
 def update_pool_fission_result(email: str, is_blocked: bool, is_raw: bool):
     try:
-        with get_db_conn(as_dict=True) as conn:
-            c = get_cursor(conn, as_dict=True)
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
             if not is_blocked:
                 execute_sql(c, "UPDATE local_mailboxes SET retry_master = 0 WHERE email = ?", (email,))
             else:
@@ -499,7 +453,6 @@ def update_pool_fission_result(email: str, is_blocked: bool, is_raw: bool):
                     execute_sql(c, "UPDATE local_mailboxes SET retry_master = 1 WHERE email = ?", (email,))
                 else:
                     execute_sql(c, "UPDATE local_mailboxes SET status = 3, retry_master = 0 WHERE email = ?", (email,))
-
     except Exception as e:
         print(f"[{cfg.ts()}] [DB_ERROR] 结果更新失败: {e}")
 
@@ -712,120 +665,6 @@ def update_account_token_only(email: str, token_json_str: str) -> bool:
         print(f"[ERROR] 仅更新 Token 失败: {e}")
         return False
 
-
-# ── Team 邀请记录管理 ──
-
-def save_team_invite_record(manager_email: str, target_email: str,
-                            workspace_id: str, state: str, last_error: str = ""):
-    """保存或更新一条邀请记录"""
-    try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
-            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # 查找已有记录
-            execute_sql(c,
-                "SELECT id FROM team_invite_records WHERE manager_email = ? AND target_email = ? AND workspace_id = ?",
-                (manager_email, target_email, workspace_id))
-            row = c.fetchone()
-            if row:
-                execute_sql(c,
-                    "UPDATE team_invite_records SET state = ?, last_error = ?, updated_at = ? WHERE id = ?",
-                    (state, last_error, now_str, row[0]))
-            else:
-                execute_sql(c,
-                    "INSERT INTO team_invite_records (manager_email, target_email, workspace_id, state, last_error, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (manager_email, target_email, workspace_id, state, last_error, now_str))
-    except Exception as e:
-        print(f"[ERROR] 保存邀请记录失败: {e}")
-
-
-def get_team_invite_records(manager_email: str = None, workspace_id: str = None,
-                            limit: int = 200) -> list:
-    """获取邀请记录"""
-    try:
-        with get_db_conn(as_dict=True) as conn:
-            c = get_cursor(conn, as_dict=True)
-            conditions = []
-            params = []
-            if manager_email:
-                conditions.append("manager_email = ?")
-                params.append(manager_email)
-            if workspace_id:
-                conditions.append("workspace_id = ?")
-                params.append(workspace_id)
-            where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-            execute_sql(c,
-                f"SELECT * FROM team_invite_records{where} ORDER BY id DESC LIMIT ?",
-                tuple(params + [limit]))
-            return [dict(r) for r in c.fetchall()]
-    except Exception as e:
-        print(f"[ERROR] 获取邀请记录失败: {e}")
-        return []
-
-
-def clear_team_invite_records():
-    """清空所有邀请记录"""
-    try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
-            execute_sql(c, "DELETE FROM team_invite_records")
-            return True
-    except Exception as e:
-        print(f"[ERROR] 清空邀请记录失败: {e}")
-        return False
-
-
-def get_accounts_with_token() -> list:
-    """获取所有有 access_token 的账号（供 Team 管理选择）"""
-    try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
-            execute_sql(c,
-                "SELECT email, token_data, plan_type FROM accounts "
-                "WHERE token_data IS NOT NULL AND token_data != '' "
-                "AND token_data LIKE '%access_token%' "
-                "ORDER BY id DESC")
-            results = []
-            for r in c.fetchall():
-                try:
-                    td = json.loads(r[1])
-                    if td.get("access_token"):
-                        # plan_type: 优先用列值，否则从 token_data 取
-                        pt = r[2] or td.get("plan_type", "")
-                        if not pt:
-                            # 尝试从 access_token JWT 解码
-                            pt = _extract_plan_from_jwt(td.get("access_token", ""))
-                        results.append({
-                            "email": r[0],
-                            "account_id": td.get("account_id", ""),
-                            "plan_type": pt,
-                        })
-                except Exception:
-                    pass
-            return results
-    except Exception as e:
-        print(f"[ERROR] 获取有 token 的账号列表失败: {e}")
-        return []
-
-
-def _extract_plan_from_jwt(access_token: str) -> str:
-    """从 access_token JWT payload 中提取 plan_type"""
-    if not access_token or access_token.count(".") < 2:
-        return ""
-    import base64
-    payload_b64 = access_token.split(".")[1]
-    pad = "=" * ((4 - (len(payload_b64) % 4)) % 4)
-    try:
-        claims = json.loads(
-            base64.urlsafe_b64decode((payload_b64 + pad).encode("ascii")).decode("utf-8"))
-        auth = claims.get("https://api.openai.com/auth") or {}
-        return str(auth.get("chatgpt_plan_type") or "").strip()
-    except Exception:
-        return ""
-
-
-# ── Team 账号库管理 ──
-
 def import_team_accounts(team_data_list: list) -> int:
     count = 0
     try:
@@ -921,3 +760,14 @@ def get_random_team_account() -> dict:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 随机提取 Team 账号失败: {e}")
         return None
+
+def get_all_team_accounts() -> list:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, "SELECT id, email, access_token FROM team_accounts WHERE status = 1")
+            rows = c.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取所有 Team 账号失败: {e}")
+        return []
