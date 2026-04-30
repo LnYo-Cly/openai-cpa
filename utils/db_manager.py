@@ -119,6 +119,24 @@ def init_db():
         except Exception:
             pass
         try:
+            execute_sql(c, 'ALTER TABLE accounts ADD COLUMN plan_type VARCHAR(50) DEFAULT NULL;')
+        except Exception:
+            pass
+
+        execute_sql(c, '''
+            CREATE TABLE IF NOT EXISTS team_invite_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                manager_email TEXT,
+                target_email TEXT,
+                workspace_id TEXT,
+                state TEXT DEFAULT 'pending',
+                last_error TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        try:
             execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN access_token TEXT;')
         except Exception:
             pass
@@ -127,12 +145,19 @@ def init_db():
 
 def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
     try:
+        # 从 token_data 提取 plan_type
+        plan_type = ""
+        try:
+            td = json.loads(token_json_str)
+            plan_type = td.get("plan_type", "")
+        except Exception:
+            pass
         with get_db_conn() as conn:
             c = get_cursor(conn)
             execute_sql(c, '''
-                INSERT OR REPLACE INTO accounts (email, password, token_data)
-                VALUES (?, ?, ?)
-            ''', (email, password, token_json_str))
+                INSERT OR REPLACE INTO accounts (email, password, token_data, plan_type)
+                VALUES (?, ?, ?, ?)
+            ''', (email, password, token_json_str, plan_type))
             return True
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 数据库保存失败: {e}")
@@ -771,3 +796,95 @@ def get_all_team_accounts() -> list:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 获取所有 Team 账号失败: {e}")
         return []
+
+
+def _extract_plan_from_jwt(access_token: str) -> str:
+    """从 access_token JWT 中提取 chatgpt_plan_type"""
+    try:
+        payload = access_token.split('.')[1]
+        import base64
+        padding = 4 - len(payload) % 4
+        if padding != 4:
+            payload += '=' * padding
+        data = json.loads(base64.urlsafe_b64decode(payload))
+        auth_claims = data.get("https://api.openai.com/auth", {})
+        plan_type = str(auth_claims.get("chatgpt_plan_type") or "").strip().lower()
+        return plan_type
+    except Exception:
+        return ""
+
+
+def get_accounts_with_token() -> list:
+    """获取有 token_data 的账号列表（含 plan_type），供 Team 管理下拉使用"""
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, """
+                SELECT email, token_data, plan_type FROM accounts
+                WHERE token_data IS NOT NULL AND token_data != ''
+                ORDER BY id DESC
+            """)
+            rows = c.fetchall()
+            results = []
+            for r in rows:
+                td = r.get("token_data", "")
+                plan = r.get("plan_type") or ""
+                if not plan and td:
+                    try:
+                        d = json.loads(td)
+                        at = d.get("access_token", "")
+                        if at:
+                            plan = _extract_plan_from_jwt(at)
+                    except Exception:
+                        pass
+                plan_display = {"chatgptteamplan": "Team", "chatgptplusplan": "Plus", "chatgptproplan": "Pro"}.get(plan, "Free" if plan else "")
+                results.append({"email": r["email"], "plan_type": plan_display})
+            return results
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取有 token 的账号列表失败: {e}")
+        return []
+
+
+def save_team_invite_record(manager_email: str, target_email: str, workspace_id: str, state: str, error: str = "") -> bool:
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                INSERT INTO team_invite_records (manager_email, target_email, workspace_id, state, last_error)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (manager_email, target_email, workspace_id, state, error))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 保存 Team 邀请记录失败: {e}")
+        return False
+
+
+def get_team_invite_records(manager_email: str = None, workspace_id: str = None) -> list:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            sql = "SELECT * FROM team_invite_records WHERE 1=1"
+            params = []
+            if manager_email:
+                sql += " AND manager_email = ?"
+                params.append(manager_email)
+            if workspace_id:
+                sql += " AND workspace_id = ?"
+                params.append(workspace_id)
+            sql += " ORDER BY created_at DESC"
+            execute_sql(c, sql, params)
+            return [dict(r) for r in c.fetchall()]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取 Team 邀请记录失败: {e}")
+        return []
+
+
+def clear_team_invite_records() -> bool:
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "DELETE FROM team_invite_records")
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 清除 Team 邀请记录失败: {e}")
+        return False
