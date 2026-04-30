@@ -1691,7 +1691,8 @@ class RegEngine:
             self.loop.close()
             self.loop = None
         self.async_stop_event = None
-        self._shutdown_executor()
+        if self.current_thread is threading.current_thread():
+            self._shutdown_executor()
 
     def start_normal(self, args):
         if self.is_running():
@@ -1699,11 +1700,11 @@ class RegEngine:
         self._force_stopped = False
         cfg.GLOBAL_STOP = False
         cfg.POOL_EXHAUSTED = False
-        self.thread_stop_event.clear()
-        args.check_stop = lambda: self.thread_stop_event.is_set()
+        self.thread_stop_event = threading.Event()
+
+        current_evt = self.thread_stop_event
+        args.check_stop = lambda: current_evt.is_set()
         self._start_maintenance_if_needed()
-
-
         self._ensure_executor()
         self.current_thread = threading.Thread(
             target=self._run_normal_in_thread,
@@ -1718,7 +1719,7 @@ class RegEngine:
         self._force_stopped = False
         cfg.GLOBAL_STOP = False
         cfg.POOL_EXHAUSTED = False
-        self.thread_stop_event.clear()
+        self.thread_stop_event = threading.Event()
         self._start_maintenance_if_needed()
 
         self._ensure_executor()
@@ -1733,7 +1734,7 @@ class RegEngine:
         self._force_stopped = False
         cfg.GLOBAL_STOP = False
         cfg.POOL_EXHAUSTED = False
-        self.thread_stop_event.clear()
+        self.thread_stop_event = threading.Event()
         self._start_maintenance_if_needed()
 
         self._ensure_executor()
@@ -1799,7 +1800,7 @@ class RegEngine:
         self._force_stopped = False
         cfg.GLOBAL_STOP = False
         cfg.POOL_EXHAUSTED = False
-        self.thread_stop_event.clear()
+        self.thread_stop_event = threading.Event()
         self._ensure_executor()
         self.current_thread = threading.Thread(
             target=self._run_check_in_thread, args=(args,), daemon=True
@@ -1832,7 +1833,8 @@ class RegEngine:
             time.sleep(1)
         print(f"[{cfg.ts()}] [系统] 🛡️ 智能清洁进程已启动，即将执行全局清洗。")
         is_first_run = True
-        while not self.thread_stop_event.is_set() and not getattr(cfg, 'GLOBAL_STOP', False):
+        current_evt = self.thread_stop_event
+        while not current_evt.is_set() and not getattr(cfg, 'GLOBAL_STOP', False):
             raw_proxy_item = None
             clash_proxy_item = None
             borrowed_generation = None

@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import httpx
+import json
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from cloudflare import Cloudflare
@@ -17,8 +18,6 @@ from utils.auth_core import code_pool, cache_lock
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GMAIL_CLIENT_SECRETS = os.path.join(BASE_DIR, "data", "credentials.json")
-GMAIL_TOKEN_PATH = os.path.join(BASE_DIR, "data", "token.json")
 GMAIL_VERIFIER_PATH = os.path.join(BASE_DIR, "data", "temp_verifier.txt")
 
 class CFSyncExistingReq(BaseModel): sub_domains: str; api_email: str; api_key: str
@@ -26,7 +25,8 @@ class LuckMailBulkBuyReq(BaseModel): quantity: int; auto_tag: bool; config: dict
 class GmailExchangeReq(BaseModel): code: str
 class ClashDeployReq(BaseModel): count: int
 class ClashUpdateReq(BaseModel): sub_url: str; target: str = "all"
-
+class TestTgReq(BaseModel):token: str; chat_id: str
+class GmailCredentialsReq(BaseModel):content: str
 
 @router.post("/api/config/add_wildcard_dns")
 async def add_wildcard_dns(req: CFSyncExistingReq, token: str = Depends(verify_token)):
@@ -142,12 +142,35 @@ def api_luckmail_bulk_buy(req: LuckMailBulkBuyReq, token: str = Depends(verify_t
         return {"status": "error", "message": str(e)}
 
 
+
+@router.post("/api/gmail/upload_credentials")
+async def upload_gmail_credentials(req: GmailCredentialsReq, token: str = Depends(verify_token)):
+    if not req.content:
+        return {"status": "error", "message": "内容为空"}
+    try:
+        json.loads(req.content)
+        from utils import db_manager
+        db_manager.set_sys_kv('gmail_credentials_json', req.content)
+        return {"status": "success", "message": "Gmail 凭据已成功存入数据库！"}
+    except Exception as e:
+        return {"status": "error", "message": f"非法的 JSON 格式: {str(e)}"}
+
+@router.post("/api/gmail/clear_credentials")
+async def clear_gmail_credentials(token: str = Depends(verify_token)):
+    from utils import db_manager
+    if db_manager.delete_sys_kvs(['gmail_credentials_json']):
+        return {"status": "success", "message": "Gmail 凭据已从数据库清除"}
+    return {"status": "error", "message": "清除失败"}
+
 @router.get("/api/gmail/auth_url")
 async def get_gmail_auth_url(token: str = Depends(verify_token)):
-    if not os.path.exists(GMAIL_CLIENT_SECRETS): return {"status": "error",
-                                                         "message": f"❌ 未找到凭证文件！请上传至: {GMAIL_CLIENT_SECRETS}"}
+    from utils import db_manager
+    creds_str = db_manager.get_sys_kv('gmail_credentials_json')
+    if not creds_str:
+        return {"status": "error", "message": "❌ 未在云端数据库找到凭证！请先上传 credentials.json"}
     try:
-        url, verifier = GmailOAuthHandler.get_authorization_url(GMAIL_CLIENT_SECRETS)
+        creds_dict = json.loads(creds_str)
+        url, verifier = GmailOAuthHandler.get_authorization_url(creds_dict)
         with open(GMAIL_VERIFIER_PATH, "w") as f:
             f.write(verifier)
         return {"status": "success", "url": url}
@@ -158,20 +181,37 @@ async def get_gmail_auth_url(token: str = Depends(verify_token)):
 @router.post("/api/gmail/exchange_code")
 async def exchange_gmail_code(req: GmailExchangeReq, token: str = Depends(verify_token)):
     if not req.code: return {"status": "error", "message": "授权码不能为空"}
+
+    from utils import db_manager
+    creds_str = db_manager.get_sys_kv('gmail_credentials_json')
+    if not creds_str:
+        return {"status": "error", "message": "❌ 请先上传 credentials.json"}
+
     try:
-        if not os.path.exists(GMAIL_VERIFIER_PATH): return {"status": "error", "message": "会话已过期，请重新生成链接"}
+        if not os.path.exists(GMAIL_VERIFIER_PATH): return {"status": "error", "message": "会话已过期"}
         with open(GMAIL_VERIFIER_PATH, "r") as f:
             stored_verifier = f.read().strip()
-        success, msg = GmailOAuthHandler.save_token_from_code(GMAIL_CLIENT_SECRETS, req.code, GMAIL_TOKEN_PATH,
-                                                              code_verifier=stored_verifier,
-                                                              proxy=getattr(core_engine.cfg, 'DEFAULT_PROXY', None))
-        if success and os.path.exists(GMAIL_VERIFIER_PATH):
-            os.remove(GMAIL_VERIFIER_PATH)
-            return {"status": "success", "message": "✨ 授权成功！token.json 已保存在 data 目录。"}
-        return {"status": "error", "message": msg}
+        success, result_data = GmailOAuthHandler.save_token_from_code(
+            json.loads(creds_str), req.code, None,
+            code_verifier=stored_verifier,
+            proxy=getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
+        )
+
+        if success:
+            db_manager.set_sys_kv('gmail_token_json', result_data)
+            if os.path.exists(GMAIL_VERIFIER_PATH): os.remove(GMAIL_VERIFIER_PATH)
+            return {"status": "success", "message": "🎉 Gmail 永久授权成功并已存入云端数据库！"}
+
+        return {"status": "error", "message": result_data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@router.post("/api/gmail/clear_token")
+async def clear_gmail_token(token: str = Depends(verify_token)):
+    from utils import db_manager
+    if db_manager.delete_sys_kvs(['gmail_token_json']):
+        return {"status": "success", "message": "Gmail 授权 Token 已从数据库清除"}
+    return {"status": "error", "message": "清除失败"}
 
 @router.get("/api/sub2api/groups")
 def get_sub2api_groups(token: str = Depends(verify_token)):
@@ -323,3 +363,28 @@ async def clear_codes(req: ClearCodesReq, token: str = Depends(verify_token)):
             _code_meta.pop(addr, None)
             _seen_keys.discard(addr)
     return {"status": "success", "cleared": len(to_remove)}
+
+
+@router.post("/api/notify/test_tg")
+async def test_tg_notification(req: TestTgReq, token: str = Depends(verify_token)):
+    if not req.token or not req.chat_id:
+        return {"status": "error", "message": "请先填写 Bot Token 和 Chat ID"}
+    proxy_url = getattr(cfg, 'DEFAULT_PROXY', None)
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+    url = f"https://api.telegram.org/bot{req.token}/sendMessage"
+    payload = {
+        "chat_id": req.chat_id,
+        "text": "🎉 *Wenfxl Manager*\n\n✅ 恭喜！Telegram 机器人通信完全正常。\n您的代理和参数配置正确！",
+        "parse_mode": "Markdown"
+    }
+
+    try:
+        res = cffi_requests.post(url, json=payload, proxies=proxies, timeout=15, impersonate="chrome110")
+        data = res.json()
+        if data.get("ok"):
+            return {"status": "success", "message": "测试消息已成功发出！请检查 Telegram。"}
+        else:
+            return {"status": "error", "message": f"TG 接口报错: {data.get('description', '未知错误')}"}
+    except Exception as e:
+        return {"status": "error", "message": f"网络通信异常，请检查代理: {str(e)}"}

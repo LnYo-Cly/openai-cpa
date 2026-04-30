@@ -28,6 +28,8 @@ class Image2APIStatusReq(BaseModel): access_token: str; status: str; type: str =
 class Image2APIRefreshReq(BaseModel):tokens: list[str]
 class ImportTeamReq(BaseModel): raw_text: str
 class DeleteTeamReq(BaseModel): ids: list[int]
+class ResetAuthReq(BaseModel):clear_license: bool = False; clear_hwid: bool = False; clear_lease: bool = False;
+class LicenseUploadReq(BaseModel):content: str
 
 def parse_cpa_usage_to_details(raw_usage: dict) -> dict:
     details = {"is_cpa": True}
@@ -805,3 +807,32 @@ async def clear_all_team_accounts(token: str = Depends(verify_token)):
     if db_manager.clear_all_team_accounts():
         return {"status": "success", "message": "Team 库已全部清空"}
     return {"status": "error", "message": "清空失败"}
+
+
+@router.post("/api/auth/upload_license")
+async def upload_license(req: LicenseUploadReq, token: str = Depends(verify_token)):
+    if not req.content or not req.content.strip():
+        return {"status": "error", "message": "上传的授权内容为空"}
+    try:
+        db_manager.set_sys_kv('auth_license_file', req.content.strip())
+
+        return {"status": "success", "message": "授权文件已成功上传至数据库！请重启程序生效。"}
+    except Exception as e:
+        return {"status": "error", "message": f"处理异常: {str(e)}"}
+
+@router.post("/api/auth/reset")
+async def reset_auth(req: ResetAuthReq, token: str = Depends(verify_token)):
+    keys_to_delete = []
+    if req.clear_license:
+        keys_to_delete.append('auth_license_file')
+    if req.clear_hwid:
+        keys_to_delete.append('auth_hwid_data')
+    if req.clear_lease:
+        keys_to_delete.append('auth_lease_data')
+
+    if not keys_to_delete:
+        return {"status": "error", "message": "未选择任何需要清除的项目"}
+    if db_manager.delete_sys_kvs(keys_to_delete):
+        return {"status": "success", "message": "选中的授权凭据已成功重置，请重启程序。"}
+    else:
+        return {"status": "error", "message": "数据库删除操作失败"}

@@ -245,6 +245,12 @@ createApp({
             teamPage: 1,
             teamPageSize: 50,
             totalTeamAccounts: 0,
+            authResetModal: {
+                show: false,
+                clearLicense: true,
+                clearHwid: true,
+                clearLease: true
+            },
         };
     },
     watch: {
@@ -3311,6 +3317,150 @@ createApp({
             } catch (e) {
                 this.showToast('清空异常', 'error');
             }
+        },
+        async uploadLicenseFile() {
+            const fileInput = document.getElementById('licenseFileInput');
+            if (!fileInput || !fileInput.files.length) {
+                this.showToast('请先选择一个授权文件！', 'warning');
+                return;
+            }
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const fileContent = e.target.result;
+
+                try {
+                    const response = await this.authFetch('/api/auth/upload_license', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            content: fileContent
+                        })
+                    });
+
+                    const res = await response.json();
+                    if (res.status === 'success') {
+                        this.showToast(res.message, 'success');
+                        fileInput.value = '';
+                    } else {
+                        this.showToast(res.message, 'error');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    this.showToast('上传授权文件发生网络错误', 'error');
+                }
+            };
+            reader.readAsText(file);
+        },
+
+        async submitAuthReset() {
+            if (!this.authResetModal.clearLicense && !this.authResetModal.clearHwid && !this.authResetModal.clearLease) {
+                this.showToast('请至少勾选一项需要清除的数据！', 'warning');
+                return;
+            }
+            const confirmed = await this.customConfirm('⚠️ 危险操作：清除授权数据后可能导致程序异常或需要重新绑定授权！\n\n确定继续吗？');
+            if (!confirmed) return;
+            try {
+                const response = await this.authFetch('/api/auth/reset', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        clear_license: this.authResetModal.clearLicense,
+                        clear_hwid: this.authResetModal.clearHwid,
+                        clear_lease: this.authResetModal.clearLease
+                    })
+                });
+
+                const res = await response.json();
+                if (res.status === 'success') {
+                    this.showToast(res.message, 'success');
+                    this.authResetModal.show = false;
+                } else {
+                    this.showToast(res.message, 'error');
+                }
+            } catch (error) {
+                this.showToast('执行重置操作发生网络错误', 'error');
+            }
+        },
+        async testTgNotification() {
+            if (!this.config.tg_bot.token || !this.config.tg_bot.chat_id) {
+                this.showToast('请先填写完整的 Bot Token 和 Chat ID', 'warning');
+                return;
+            }
+            this.isTestingTg = true;
+            this.showToast('正在发送测试消息，请稍候...', 'info');
+            try {
+                const res = await this.authFetch('/api/notify/test_tg', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: this.config.tg_bot.token,
+                        chat_id: this.config.tg_bot.chat_id
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message, 'success');
+                } else {
+                    this.showToast(data.message, 'error');
+                }
+            } catch (e) {
+                this.showToast('测试请求异常，请检查后端网络或全局代理设置', 'error');
+            } finally {
+                this.isTestingTg = false;
+            }
+        },
+        async clearGmailToken() {
+            const confirmed = await this.customConfirm('确定要清除已保存的 Gmail 授权 Token 吗？\n清除后系统将无法读取邮件，直到你重新完成 OAuth 授权。');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/gmail/clear_token', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message, 'success');
+                } else {
+                    this.showToast(data.message, 'error');
+                }
+            } catch (error) {
+                this.showToast('清理授权失败', 'error');
+            }
+        },
+        async uploadGmailCredentials() {
+            const fileInput = document.getElementById('gmailCredentialsInput');
+            if (!fileInput || !fileInput.files.length) {
+                this.showToast('请先选择从 Google 下载的 JSON 凭据文件！', 'warning');
+                return;
+            }
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                const jsonContent = e.target.result;
+
+                try {
+                    JSON.parse(jsonContent);
+                } catch (err) {
+                    this.showToast('非法格式：请确保上传的是正确的 JSON 文件！', 'error');
+                    return;
+                }
+                this.showToast('正在同步凭据至云端...', 'info');
+
+                try {
+                    const response = await this.authFetch('/api/gmail/upload_credentials', {
+                        method: 'POST',
+                        body: JSON.stringify({ content: jsonContent })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        this.showToast(data.message, 'success');
+                        fileInput.value = '';
+                    } else {
+                        this.showToast(data.message, 'error');
+                    }
+                } catch (error) {
+                    this.showToast('上传失败，请检查后端 API 连通性', 'error');
+                }
+            };
+            reader.readAsText(file);
         },
     }
 }).mount('#app');

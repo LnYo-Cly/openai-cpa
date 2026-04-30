@@ -1359,14 +1359,40 @@
                                                 <p>2. 点击左侧 <b class="text-slate-800">"数据访问" > "添加或移除范围" > "右边手动添加范围"</b>。填入 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs text-rose-600 break-all border border-slate-200">https://www.googleapis.com/auth/gmail.modify</code>，点击 “添加到表” 并 “更新”</p>
                                                 <p>3. 点击左侧 <b class="text-slate-800">"客户端" > "创建客户端" > "选择桌面应用程序"</b>。创建</p>
                                                 <p>4. 创建成功后，页面会弹出一个包含客户端 ID 和密钥的窗口。直接点击旁边的 “下载 JSON” 按钮。</p>
-                                                <p>5. 下载生成的 JSON 文件，改名为 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold border border-slate-200">credentials.json</code>，上传至本项目 <code class="bg-slate-100 px-1.5 py-0.5 rounded font-bold border border-slate-200">/data/</code> 目录。</p>
+                                                <p>5. 下载生成的 JSON 文件，改名为 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold border border-slate-200">credentials.json</code>，下方上传。</p>
                                             </div>
                                         </div>
 
                                         <div class="relative pl-8">
                                             <div class="absolute -left-[11px] top-0 w-5 h-5 bg-white border-4 border-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.4)]"></div>
                                             <p class="text-xs font-black text-emerald-600 uppercase tracking-widest mb-3">Step 4: 最终激活授权</p>
+<div class="mt-4 p-5 bg-slate-50/80 rounded-2xl border border-slate-200 shadow-inner">
+    <label class="block text-slate-700 text-xs font-black uppercase tracking-wider mb-3 flex items-center gap-2">
+        <span>📂</span> 凭据云端化管理 (credentials.json)
+    </label>
 
+    <div class="flex flex-col sm:flex-row gap-3">
+        <input type="file" id="gmailCredentialsInput" accept=".json"
+               class="flex-1 appearance-none bg-white border border-slate-200 text-slate-700 rounded-xl py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-emerald-100 cursor-pointer">
+
+        <div class="flex gap-2">
+            <button @click="uploadGmailCredentials"
+                    class="px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5">
+                <span>📤</span> 确认上传
+            </button>
+
+            <button @click="clearGmailCredentials"
+                    class="px-4 py-2 bg-rose-50 text-rose-600 border border-rose-200 text-xs font-black rounded-xl hover:bg-rose-100 active:scale-95 transition-all flex items-center gap-1.5"
+                    title="从数据库删除 credentials 配置">
+                <span>🗑️</span> 清理
+            </button>
+        </div>
+    </div>
+
+    <p class="text-[10px] text-slate-400 mt-2 font-medium">
+        💡 提示：将 Google 下载的 JSON 直接上传即可，系统会自动将其存入数据库，无需再手动操作服务器文件。
+    </p>
+</div>
                                             <div class="flex flex-col gap-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-md">
                                                 <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                                     <p class="text-sm text-slate-600 flex-1 font-bold">点击生成按钮并在浏览器完成登录，复制地址栏 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-rose-500 border border-slate-200">code=</code> 后的字符。</p>
@@ -3738,7 +3764,16 @@
                                                     {{ showPwd.tg_chatid ? '👁️' : '🙈' }}
                                                 </button>
                                             </div>
-                                            <p class="text-[11px] text-sky-600/80 mt-2 font-medium bg-sky-50/50 p-2 rounded inline-block">* 系统在推送消息时会自动走全局配置里的网络代理</p>
+                                            <div class="flex items-center justify-between mt-3">
+                                                <p class="text-[11px] text-sky-600/80 font-medium bg-sky-50/50 p-2 rounded inline-block">* 系统在推送消息时会自动走全局配置里的网络代理</p>
+
+                                                <button @click="testTgNotification" :disabled="isTestingTg || !config.tg_bot.token || !config.tg_bot.chat_id"
+                                                        class="px-4 py-1.5 bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-xs font-bold shadow-sm hover:bg-sky-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                                                    <span v-if="isTestingTg" class="animate-spin text-sm">⏳</span>
+                                                    <span v-else class="text-sm">🔔</span>
+                                                    {{ isTestingTg ? '发送中...' : '发送测试通知' }}
+                                                </button>
+                                            </div>
                                         </div>
                                         <div class="mt-4 border-t border-sky-200/60 pt-6">
                                             <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
@@ -3894,7 +3929,38 @@
                                     <input type="number" v-model.number="config.max_otp_retries" class="w-24 appearance-none bg-slate-50 border border-slate-200 text-slate-800 font-bold rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors shadow-inner text-center">
                                 </div>
                             </div>
+                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-emerald-500 bg-gradient-to-br from-emerald-50/10 to-white lg:col-span-2">
+                                <h3 class="text-lg md:text-xl font-black text-emerald-700 mb-6 flex items-center gap-2 tracking-tight">
+                                    <span>🛡️</span> 云端授权管理控制台
+                                    <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 shadow-sm ml-2">容器部署必备</span>
+                                </h3>
 
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-stretch">
+                                    <div class="bg-emerald-50/50 p-5 md:p-6 rounded-2xl border border-emerald-200/60 shadow-inner flex flex-col justify-center">
+                                        <label class="block text-emerald-800 text-xs font-black uppercase tracking-wider mb-3">请加入官方群获取授权凭证后，上传 wenfxl.license 然后左下角重启项目</label>
+                                        <div class="flex flex-col xl:flex-row gap-3 mt-auto">
+                                            <input type="file" id="licenseFileInput" accept=".license,.txt"
+                                                   class="flex-1 appearance-none bg-white border border-emerald-200 text-slate-700 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-colors shadow-sm text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer">
+                                            <button @click="uploadLicenseFile"
+                                                    class="px-5 py-2.5 bg-emerald-600 text-white text-sm font-black rounded-xl hover:bg-emerald-700 active:scale-95 transition-all shadow-md shadow-emerald-500/30 whitespace-nowrap flex items-center justify-center gap-2">
+                                                <span>📤</span> 确认上传
+                                            </button>
+                                        </div>
+                                        <p class="text-[11px] text-emerald-600/80 mt-3 font-medium">支持上传 .license 授权文件，自动保存至 MySQL/SQLite 系统库。</p>
+                                    </div>
+
+                                    <div class="bg-rose-50/50 p-5 md:p-6 rounded-2xl border border-rose-200/60 shadow-inner flex flex-col justify-center">
+                                        <label class="block text-rose-800 text-xs font-black uppercase tracking-wider mb-3">授权与设备状态重置</label>
+                                        <div class="mt-auto">
+                                            <button @click="authResetModal.show = true"
+                                                    class="w-full px-6 py-3 md:py-3.5 bg-white border-2 border-rose-200 text-rose-600 text-sm font-black rounded-xl hover:bg-rose-50 active:scale-95 transition-all shadow-sm flex items-center justify-center gap-2 group">
+                                                <span class="group-hover:rotate-12 transition-transform text-lg">⚠️</span> 一键重置系统授权与设备绑定
+                                            </button>
+                                        </div>
+                                        <p class="text-[11px] text-rose-500/80 mt-3 font-medium">如果连数据库一起迁移新机，那么首次运行时，一定要在这里清理数据库旧机器码与租约数据。可以不清理(License)。</p>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-blue-500 bg-gradient-to-br from-blue-50/20 to-white lg:col-span-2" v-if="config.normal_mode">
                                 <h3 class="text-lg md:text-xl font-black text-blue-700 mb-6 flex items-center gap-2 tracking-tight pb-4 border-b border-blue-100"><span>⚙️</span> 常规量产模式边界控制</h3>
                                 <div class="flex flex-col md:flex-row gap-6 md:gap-8 items-start md:items-stretch">
@@ -3952,68 +4018,115 @@
                 </div>
             </main>
         </div>
-     <div v-if="outlookAuth && outlookAuth.showModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200">
-        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
-                <span>🔑</span> 为账号授权 (OAuth 2.0)
-            </h3>
-            <button @click="outlookAuth.showModal = false" class="text-slate-400 hover:text-rose-500 focus:outline-none transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-
-        <div class="p-6 space-y-6">
-            <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                <span class="text-xs font-bold text-indigo-700 uppercase tracking-wider">正在授权账号</span>
-                <span class="text-base font-mono font-black text-indigo-900">{{ outlookAuth.mailbox?.email }}</span>
-            </div>
-
-            <div class="space-y-3">
-                <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">1</div>
-                    <span class="text-sm font-bold text-slate-800">获取并在浏览器中打开授权链接</span>
-                </div>
-                <div v-if="!outlookAuth.authUrl">
-                    <button @click="generateOutlookAuthUrl" :disabled="outlookAuth.isGenerating" class="w-full py-3 bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-[0.98] disabled:opacity-50 flex justify-center items-center gap-2">
-                        <span v-if="outlookAuth.isGenerating" class="animate-spin">🔄</span>
-                        {{ outlookAuth.isGenerating ? '生成中...' : '👉 点击生成专属授权链接' }}
+        <div v-if="outlookAuth && outlookAuth.showModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200">
+                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
+                        <span>🔑</span> 为账号授权 (OAuth 2.0)
+                    </h3>
+                    <button @click="outlookAuth.showModal = false" class="text-slate-400 hover:text-rose-500 focus:outline-none transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
-                <div v-else class="relative animate-fade-in">
-                    <textarea readonly class="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-600 focus:outline-none resize-none shadow-inner">{{ outlookAuth.authUrl }}</textarea>
-                    <a :href="outlookAuth.authUrl" target="_blank" class="absolute bottom-3 right-3 px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-md flex items-center gap-1">
-                        在浏览器中打开 ↗
-                    </a>
+
+                <div class="p-6 space-y-6">
+                    <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                        <span class="text-xs font-bold text-indigo-700 uppercase tracking-wider">正在授权账号</span>
+                        <span class="text-base font-mono font-black text-indigo-900">{{ outlookAuth.mailbox?.email }}</span>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">1</div>
+                            <span class="text-sm font-bold text-slate-800">获取并在浏览器中打开授权链接</span>
+                        </div>
+                        <div v-if="!outlookAuth.authUrl">
+                            <button @click="generateOutlookAuthUrl" :disabled="outlookAuth.isGenerating" class="w-full py-3 bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-[0.98] disabled:opacity-50 flex justify-center items-center gap-2">
+                                <span v-if="outlookAuth.isGenerating" class="animate-spin">🔄</span>
+                                {{ outlookAuth.isGenerating ? '生成中...' : '👉 点击生成专属授权链接' }}
+                            </button>
+                        </div>
+                        <div v-else class="relative animate-fade-in">
+                            <textarea readonly class="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-600 focus:outline-none resize-none shadow-inner">{{ outlookAuth.authUrl }}</textarea>
+                            <a :href="outlookAuth.authUrl" target="_blank" class="absolute bottom-3 right-3 px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-md flex items-center gap-1">
+                                在浏览器中打开 ↗
+                            </a>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start gap-2 ml-8 shadow-sm">
+                            <span class="text-amber-500 mt-0.5">💡</span>
+                            <p class="text-[11px] text-amber-800 font-medium leading-relaxed">
+                                请确保在浏览器中登录的是上方指定的邮箱账号。授权后浏览器会跳转到一个<span class="text-rose-600 font-bold">无法访问的错误页面</span>，这是正常的！
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">2</div>
+                            <span class="text-sm font-bold text-slate-800">粘贴回传网址换取 Token</span>
+                        </div>
+                        <div class="ml-8">
+                            <input type="text" v-model="outlookAuth.pastedUrl" placeholder="请将跳转后浏览器地址栏的网址完整粘贴到这里" class="w-full bg-white border-2 border-slate-200 text-slate-800 rounded-xl py-3 px-4 focus:outline-none focus:ring-0 focus:border-indigo-500 text-sm font-mono shadow-sm transition-colors">
+                        </div>
+                    </div>
                 </div>
-                <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start gap-2 ml-8 shadow-sm">
-                    <span class="text-amber-500 mt-0.5">💡</span>
-                    <p class="text-[11px] text-amber-800 font-medium leading-relaxed">
-                        请确保在浏览器中登录的是上方指定的邮箱账号。授权后浏览器会跳转到一个<span class="text-rose-600 font-bold">无法访问的错误页面</span>，这是正常的！
+
+                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                    <button @click="outlookAuth.showModal = false" class="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-100 transition-colors shadow-sm active:scale-95">取消</button>
+                    <button @click="submitOutlookAuthCode" :disabled="outlookAuth.isLoading || !outlookAuth.pastedUrl" class="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 active:scale-95">
+                        <span v-if="outlookAuth.isLoading" class="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+                        确认换取并保存 Token
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div v-if="authResetModal.show" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200 transform transition-all">
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <h3 class="text-lg font-black text-rose-600 flex items-center gap-2">
+                        <span>⚠️</span> 一键重置授权
+                    </h3>
+                    <button @click="authResetModal.show = false" class="text-slate-400 hover:text-rose-500 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <div class="p-6">
+                    <p class="text-sm text-slate-600 mb-6 font-medium bg-rose-50 p-3 rounded-lg border border-rose-100">
+                        请勾选需要从数据库彻底清除的凭据数据：
                     </p>
-                </div>
-            </div>
 
-            <div class="space-y-3">
-                <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">2</div>
-                    <span class="text-sm font-bold text-slate-800">粘贴回传网址换取 Token</span>
+                    <div class="space-y-4">
+                        <label class="flex items-start gap-3 cursor-pointer group">
+                            <input type="checkbox" v-model="authResetModal.clearLicense" class="mt-0.5 w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500 transition-all">
+                            <div>
+                                <span class="block text-sm font-bold text-slate-800 group-hover:text-rose-600 transition-colors">清除授权文件 (License)</span>
+                                <span class="block text-xs text-slate-500 mt-0.5">清空上传的卡密凭证内容</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer group">
+                            <input type="checkbox" v-model="authResetModal.clearHwid" class="mt-0.5 w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500 transition-all">
+                            <div>
+                                <span class="block text-sm font-bold text-slate-800 group-hover:text-rose-600 transition-colors">清除机器码 (HWID)</span>
+                                <span class="block text-xs text-slate-500 mt-0.5">清空当前生成的设备硬件特征码</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer group">
+                            <input type="checkbox" v-model="authResetModal.clearLease" class="mt-0.5 w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500 transition-all">
+                            <div>
+                                <span class="block text-sm font-bold text-slate-800 group-hover:text-rose-600 transition-colors">清除租约数据 (Lease)</span>
+                                <span class="block text-xs text-slate-500 mt-0.5">清空与服务端通讯的Token</span>
+                            </div>
+                        </label>
+                    </div>
                 </div>
-                <div class="ml-8">
-                    <input type="text" v-model="outlookAuth.pastedUrl" placeholder="请将跳转后浏览器地址栏的网址完整粘贴到这里" class="w-full bg-white border-2 border-slate-200 text-slate-800 rounded-xl py-3 px-4 focus:outline-none focus:ring-0 focus:border-indigo-500 text-sm font-mono shadow-sm transition-colors">
+
+                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                    <button @click="authResetModal.show = false" class="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-100 transition-colors shadow-sm active:scale-95">取消</button>
+                    <button @click="submitAuthReset" class="px-5 py-2.5 bg-rose-500 text-white rounded-xl text-sm font-bold shadow-md hover:bg-rose-600 transition-all active:scale-95">确认清除</button>
                 </div>
             </div>
         </div>
-
-        <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-            <button @click="outlookAuth.showModal = false" class="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-100 transition-colors shadow-sm active:scale-95">取消</button>
-            <button @click="submitOutlookAuthCode" :disabled="outlookAuth.isLoading || !outlookAuth.pastedUrl" class="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 active:scale-95">
-                <span v-if="outlookAuth.isLoading" class="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
-                确认换取并保存 Token
-            </button>
-        </div>
-    </div>
-</div>
     </div>
     <script>
         (function () {
