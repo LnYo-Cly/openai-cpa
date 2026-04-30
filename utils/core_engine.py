@@ -75,9 +75,9 @@ def _aggregate_check_results(results: list, trigger: str, start_time: float) -> 
         "total": total,
         "healthy": counts.get("ok", 0) + counts.get("revived", 0),
         "revived": counts.get("revived", 0),
-        "rate_limited": counts.get("quota_limited", 0) + counts.get("quota_deleted", 0),
+        "rate_limited": counts.get("quota_skipped", 0),
         "disabled": counts.get("dead_disabled", 0),
-        "deleted": counts.get("dead_deleted", 0) + counts.get("quota_deleted", 0),
+        "deleted": counts.get("dead_deleted", 0),
         "dead_kept": counts.get("dead_kept", 0),
         "duration_seconds": round(time.time() - start_time, 1),
     }
@@ -981,19 +981,15 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
         return "ok"
 
     if result == "quota":
-        try:
-            db_manager.update_account_status_by_truncated_name(name, 0)
-        except Exception:
-            pass
-        if cfg.SUB2API_REMOVE_ON_LIMIT_REACHED:
-            print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度耗尽，执行物理删除...")
-            if account_id:
-                client.delete_account(account_id)
-            return "quota_deleted"
-        print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，禁用账号避免 Sub2API 无效调度")
-        if account_id:
-            client.set_account_status(account_id, disabled=True)
-        return "quota_limited"
+        # 限流账号交由 Sub2API 内部管理，不做禁用/删除
+        # 如果之前被 openai-cpa 禁用过，恢复为 active 让 Sub2API 接管
+        is_disabled = item.get("disabled", False) or item.get("status") == "inactive"
+        if is_disabled and account_id:
+            print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，恢复为 active 交由 Sub2API 自动管理")
+            client.set_account_status(account_id, disabled=False)
+        else:
+            print(f"[{ts()}] [WARNING] Sub2API测活: {mask_email(name)} 额度限流，跳过（由 Sub2API 自动管理恢复）")
+        return "quota_skipped"
 
     print(f"[{ts()}] [ERROR] Sub2API测活: {mask_email(name)} 测活失败 ({reason})")
 
@@ -1046,14 +1042,8 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
         return "revived"
 
     if result2 == "quota":
-        print(f"[{ts()}] [WARNING] {mask_email(name)} 二次验证失败 (quota limited)，禁用账号避免无效调度")
-        if account_id:
-            client.set_account_status(account_id, disabled=True)
-        try:
-            db_manager.update_account_status_by_truncated_name(name, 0)
-        except Exception:
-            pass
-        return "quota_limited"
+        print(f"[{ts()}] [WARNING] {mask_email(name)} 二次验证仍为限流状态，跳过（由 Sub2API 自动管理恢复）")
+        return "quota_skipped"
 
     print(f"[{ts()}] [ERROR] {mask_email(name)} 二次验证失败 ({reason2})，账号确认已死")
     try:
