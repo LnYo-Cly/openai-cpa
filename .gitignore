@@ -26,6 +26,7 @@ utils/auth_core/
 test.py
 test_register.py
 test_register2.py
+test_register3.py
 aitest.py
 data.zip
 register.py.bak
