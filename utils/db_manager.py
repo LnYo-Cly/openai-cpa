@@ -771,3 +771,15 @@ def get_all_team_accounts() -> list:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 获取所有 Team 账号失败: {e}")
         return []
+
+def delete_sys_kvs(keys: list) -> bool:
+    if not keys: return True
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            placeholders = ','.join(['?'] * len(keys))
+            execute_sql(c, f"DELETE FROM system_kv WHERE `key` IN ({placeholders})", tuple(keys))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 批量删除系统 KV 异常: {e}")
+        return False
