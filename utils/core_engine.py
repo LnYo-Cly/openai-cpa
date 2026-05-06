@@ -931,7 +931,7 @@ def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> 
     name = item.get("name", "unknown")
     account_id = item.get("id")
 
-    if cfg.SUB2API_REMOVE_DEAD_ACCOUNTS:
+    if _should_remove_sub2api_account(item):
         print(f"[{ts()}] [ERROR] 凭证 {mask_email(name)} 彻底死亡，执行物理剔除...")
         if hasattr(client, "delete_account") and account_id:
             client.delete_account(account_id)
@@ -949,6 +949,56 @@ def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> 
     else:
         print(f"[{ts()}] [ERROR] 凭证 {mask_email(name)} 已死亡，当前已是禁用状态，根据配置保留不删除。")
         return "dead_kept"
+
+def _extract_sub2api_group_ids(item: dict) -> list[int]:
+    group_ids = []
+    raw_group_ids = item.get("group_ids")
+    if isinstance(raw_group_ids, list):
+        for value in raw_group_ids:
+            try:
+                group_ids.append(int(value))
+            except (TypeError, ValueError):
+                pass
+
+    raw_groups = item.get("groups")
+    if isinstance(raw_groups, list):
+        for group in raw_groups:
+            if not isinstance(group, dict):
+                continue
+            for key in ("id", "group_id"):
+                try:
+                    group_ids.append(int(group.get(key)))
+                    break
+                except (TypeError, ValueError):
+                    pass
+
+    deduped = []
+    seen = set()
+    for group_id in group_ids:
+        if group_id in seen:
+            continue
+        seen.add(group_id)
+        deduped.append(group_id)
+    return deduped
+
+def _should_remove_sub2api_account(item: dict) -> bool:
+    if not cfg.SUB2API_REMOVE_DEAD_ACCOUNTS:
+        return False
+
+    configured_group_ids = set(getattr(cfg, "SUB2API_ACCOUNT_GROUP_IDS", []) or [])
+    if not configured_group_ids:
+        return True
+
+    account_group_ids = set(_extract_sub2api_group_ids(item))
+    if account_group_ids & configured_group_ids:
+        return True
+
+    name = item.get("name", "unknown")
+    print(
+        f"[{ts()}] [INFO] 凭证 {mask_email(name)} 未命中绑定分组 {sorted(configured_group_ids)}，"
+        "跳过物理删除并按保留策略处理"
+    )
+    return False
 
 def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: Any) -> str:
     """Sub2API 测活 Worker（使用 Sub2API /test SSE 接口），返回结果类别"""

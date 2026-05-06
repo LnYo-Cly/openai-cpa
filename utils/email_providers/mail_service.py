@@ -828,6 +828,7 @@ def get_oai_code(
         max_attempts: int = 20,
 ) -> str:
     """轮询各邮箱服务商收取 OpenAI 验证码，返回 6 位字符串或空串。"""
+    max_attempts = getattr(cfg, 'OTP_POLL_MAX_ATTEMPTS', 20)
     mailbox_id = jwt
     mail_proxies = proxies if cfg.USE_PROXY_FOR_EMAIL else None
     proxy_str = None
@@ -1905,7 +1906,7 @@ def get_oai_code(
             traceback.print_exc()
 
         if attempt > 0 and attempt % 3 == 0:
-            print(f"[{cfg.ts()}] [INFO] 仍在查询({mask_email(email)})邮箱，暂未收到验证码 (已尝试 {attempt + 1}/20)...")
+            print(f"[{cfg.ts()}] [INFO] 仍在查询({mask_email(email)})邮箱，暂未收到验证码 (已尝试 {attempt + 1}/{max_attempts})...")
         time.sleep(3)
 
     print(f"\n[{cfg.ts()}] [ERROR] ({mask_email(email)})邮箱接收验证码超时")

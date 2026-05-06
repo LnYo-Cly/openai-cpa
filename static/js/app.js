@@ -30,20 +30,21 @@ createApp({
 			showAccountsPlaintext: false,
             isRunning: false,
             tabs: [
-                { id: 'console', name: '运行主页', icon: '💻' },
-                { id: 'cluster', name: '集群总控', icon: '🖥️' },
-                { id: 'email', name: '邮箱配置', icon: '📧' },
-                { id: 'mailboxes', name: '微软邮箱库', icon: '📬' },
-                { id: 'team_accounts', name: 'Team 账号库', icon: '👥' },
-                { id: 'accounts', name: '账号库存', icon: '📦' },
-                { id: 'cloud', name: '云端库存', icon: '☁️' },
-                { id: 'sms', name: '手机接码', icon: '📱' },
-				{ id: 'team', name: 'Team管理', icon: '👥' },
+                    { id: 'console', name: '运行主页', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
+                    { id: 'cluster', name: '集群总控', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
+                    { id: 'email', name: '邮箱配置', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
+                    { id: 'mailboxes', name: '微软邮箱库', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
+                    { id: 'team_accounts', name: 'Team 账号库', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>' },
+                    { id: 'accounts', name: '账号库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>' },
+                    { id: 'cloud', name: '云端库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
+                    { id: 'sms', name: '手机接码', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>' },
+					{ id: 'team', name: 'Team管理', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>' },
+                    { id: 'proxy', name: '网络代理', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>' },
+                    { id: 'relay', name: '中转管仓', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
+                    { id: 'notify', name: '消息通知', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h6a3 3 0 013 3v1a3 3 0 01-3 3H9.436c-1.532 0-2.22.24-2.893.542z"></path></svg>' },
+                    { id: 'concurrency', name: '并发与系统', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>' },
 				// { id: 'cf_routes', name: 'CF 路由', icon: '🌍' },
-                { id: 'proxy', name: '网络代理', icon: '🌐' },
-                { id: 'relay', name: '中转管仓', icon: '☁️' },
-                { id: 'notify', name: '消息通知', icon: '📢' },
-                { id: 'concurrency', name: '并发与系统', icon: '⚙️' }
+
             ],
 			cfGlobalStatus: null,
 			isLoadingSync: false,
@@ -124,48 +125,6 @@ createApp({
             confirmModal: { show: false, message: '', resolve: null },
             updateInfo: { hasUpdate: false, version: '', url: '', changelog: '' },
             sub2apiGroups: [],
-            sub2apiProxies: [],
-            selectedSub2apiProxyId: '',
-            checkHistory: [],
-            isLoadingCheckHistory: false,
-            webhookCodes: [],
-            isLoadingWebhookCodes: false,
-            webhookCodeFilter: '',
-            clearOlderHours: 1,
-            webhookCodesTimer: null,
-            viewCodeDetail: null,
-            codeViewMode: 'preview',
-            // Team 管理
-            teamAccounts: [],
-            teamSelectedManager: '',
-            teamWorkspaces: [],
-            teamMembers: [],
-            teamInvites: [],
-            teamSelectedWorkspace: '',
-            teamSelectedWorkspaceName: '',
-            teamInviteEmails: '',
-            teamInviteRecords: [],
-            isLoadingTeam: false,
-            cronPresets: [
-                { label: '每30分钟', expr: '*/30 * * * *' },
-                { label: '每1小时', expr: '0 * * * *' },
-                { label: '每2小时', expr: '0 */2 * * *' },
-                { label: '每6小时', expr: '0 */6 * * *' },
-                { label: '每12小时', expr: '0 */12 * * *' },
-                { label: '每天0点', expr: '0 0 * * *' },
-            ],
-            cronFields: { minute: '*/30', hour: '*', day: '*', month: '*', weekday: '*' },
-            cronMinuteOptions: ['*', '*/5', '*/10', '*/15', '*/30', '0', '15', '30', '45'],
-            cronHourOptions: ['*', '*/2', '*/3', '*/4', '*/6', '*/8', '*/12', '0', '6', '12', '18'],
-            cronDayOptions: ['*', '1', '2', '3', '5', '10', '15', '20', '25'],
-            cronMonthOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
-            cronWeekdayOptions: ['*', '0', '1', '2', '3', '4', '5', '6'],
-            checkFilterOptions: [
-                { value: 'all', label: '全部账号' },
-                { value: 'active', label: '仅正常' },
-                { value: 'inactive', label: '仅停用' },
-                { value: 'rate_limited', label: '仅限流' },
-            ],
             gmailOAuth: {
                 authUrl: '',
                 pastedCode: '',
@@ -273,12 +232,6 @@ createApp({
         searchMailboxes() {
             this.mailboxPage = 1;
             this.fetchMailboxes();
-        },
-        currentTab(val) {
-            if (val === 'team') {
-                this.fetchTeamAccounts();
-                this.fetchTeamInviteRecords();
-            }
         }
     },
     mounted() {
@@ -333,11 +286,6 @@ createApp({
         },
         mailboxTotalPages() {
             return Math.ceil(this.totalMailboxes / this.mailboxPageSize) || 1;
-        },
-        filteredWebhookCodes() {
-            if (!this.webhookCodeFilter) return this.webhookCodes;
-            const term = this.webhookCodeFilter.toLowerCase();
-            return this.webhookCodes.filter(c => c.email.toLowerCase().includes(term));
         }
     },
     methods: {
@@ -562,7 +510,6 @@ createApp({
                 } else if (this.config.image2api_mode.retain_reg_only === undefined) {
                     this.config.image2api_mode.retain_reg_only = false;
                 }
-
                 if (!this.config.team_mode) {
                     this.config.team_mode = { enable: false };
                 }
@@ -620,9 +567,6 @@ createApp({
                 if (this.config.sub2api_mode.enable_ws_mode === undefined) {
                     this.config.sub2api_mode.enable_ws_mode = true;
                 }
-                if (this.config.sub2api_mode.check_filter === undefined) {
-                    this.config.sub2api_mode.check_filter = 'all';
-                }
                 if(this.config.clash_proxy_pool && Array.isArray(this.config.clash_proxy_pool.blacklist)) {
                     this.blacklistStr = this.config.clash_proxy_pool.blacklist.join('\n');
                 } else {
@@ -652,21 +596,6 @@ createApp({
                 if (this.config.cluster_node_name === undefined) this.config.cluster_node_name = '';
                 if (this.config.cluster_master_url === undefined) this.config.cluster_master_url = '';
                 if (this.config.cluster_secret === undefined) this.config.cluster_secret = 'wenfxl666';
-                // 自动获取 Sub2API 代理列表
-                if (this.config.sub2api_mode && this.config.sub2api_mode.enable && this.config.sub2api_mode.api_url && this.config.sub2api_mode.api_key) {
-                    this.fetchSub2apiProxies();
-                }
-                // Cron 默认值
-                if (this.config.sub2api_mode) {
-                    if (!this.config.sub2api_mode.check_cron) {
-                        const interval = this.config.sub2api_mode.check_interval_minutes || 60;
-                        this.config.sub2api_mode.check_cron = `*/${interval} * * * *`;
-                    }
-                    this.parseCronToFields(this.config.sub2api_mode.check_cron);
-                    this.fetchCheckHistory();
-                }
-                // 启动验证码内存池轮询
-                this.startWebhookCodesPolling();
             } catch (e) {}
         },
         async saveConfig() {
@@ -896,11 +825,6 @@ createApp({
                 return name + '***@' + maskedDomain;
             }
             return name.substring(0, 3) + '***@' + maskedDomain;
-        },
-        isHtmlContent(text) {
-            if (!text) return false;
-            const lower = text.toLowerCase().trim();
-            return lower.startsWith('<!doctype') || lower.startsWith('<html') || lower.includes('<body') || (lower.includes('<div') && lower.includes('</div>'));
         },
 		exportAccountsToTxt() {
 			if (this.selectedAccounts.length === 0) return;
@@ -1707,46 +1631,6 @@ createApp({
             else ids.push(value);
             this.config.sub2api_mode.account_group_ids = ids.join(',');
         },
-        async fetchSub2apiProxies() {
-            if (!this.config || !this.config.sub2api_mode) return;
-            if (!this.config.sub2api_mode.api_url || !this.config.sub2api_mode.api_key) {
-                this.showToast('Please save the Sub2API URL and API key first.', 'warning');
-                return;
-            }
-            try {
-                const res = await this.authFetch('/api/sub2api/proxies');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    const raw = data.data;
-                    let proxies = [];
-                    if (Array.isArray(raw)) proxies = raw;
-                    else if (raw && Array.isArray(raw.list)) proxies = raw.list;
-                    else if (raw && Array.isArray(raw.data)) proxies = raw.data;
-                    this.sub2apiProxies = proxies;
-                    // 回显当前配置中的 proxy_id
-                    if (this.config && this.config.sub2api_mode && this.config.sub2api_mode.account_proxy_id) {
-                        this.selectedSub2apiProxyId = String(this.config.sub2api_mode.account_proxy_id);
-                    }
-                    if (proxies.length === 0) {
-                        this.showToast('Sub2API 中没有代理', 'warning');
-                    } else {
-                        this.showToast(`获取到 ${proxies.length} 个代理`, 'success');
-                    }
-                } else {
-                    this.showToast(data.message || '获取代理列表失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('获取代理失败: ' + e.message, 'error');
-            }
-        },
-        onSub2apiProxySelect() {
-            if (!this.config || !this.config.sub2api_mode) return;
-            if (this.selectedSub2apiProxyId) {
-                this.config.sub2api_mode.account_proxy_id = parseInt(this.selectedSub2apiProxyId);
-                this.config.sub2api_mode.default_proxy = '';
-                this.showToast(`已选择代理 ID: ${this.selectedSub2apiProxyId}`, 'success');
-            }
-        },
         async startManualCheck() {
             if(this.isRunning) {
                 this.showToast('请先停止当前运行的任务', 'warning');
@@ -1762,254 +1646,12 @@ createApp({
                 if(data.code === 200) {
                     this.showToast(data.message, 'success');
                     this.pollStats();
-                    setTimeout(() => this.fetchCheckHistory(), 10000);
                 } else {
                     this.showToast(data.message || '启动测活失败', 'error');
                 }
             } catch (err) {
                 this.showToast('网络请求异常', 'error');
             }
-        },
-        async fetchCheckHistory() {
-            this.isLoadingCheckHistory = true;
-            try {
-                const res = await this.authFetch('/api/sub2api/check_history');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.checkHistory = data.data;
-                }
-            } catch (e) {
-                console.error('Fetch check history failed:', e);
-            } finally {
-                this.isLoadingCheckHistory = false;
-            }
-        },
-        async fetchWebhookCodes() {
-            this.isLoadingWebhookCodes = true;
-            try {
-                const email = this.webhookCodeFilter ? `&email=${encodeURIComponent(this.webhookCodeFilter)}` : '';
-                const res = await this.authFetch(`/api/webhook/codes?${email}`);
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.webhookCodes = data.data;
-                }
-            } catch (e) {
-                console.error('Fetch webhook codes failed:', e);
-            } finally {
-                this.isLoadingWebhookCodes = false;
-            }
-        },
-        async deleteWebhookCode(email) {
-            try {
-                const res = await this.authFetch(`/api/webhook/codes/${encodeURIComponent(email)}`, { method: 'DELETE' });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.webhookCodes = this.webhookCodes.filter(c => c.email !== email);
-                }
-            } catch (e) {
-                console.error('Delete webhook code failed:', e);
-            }
-        },
-        async clearWebhookCodes(hours) {
-            try {
-                const res = await this.authFetch('/api/webhook/codes/clear', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ older_than_hours: hours || 0 }),
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast(`已清空 ${data.cleared} 条记录`, 'success');
-                    this.fetchWebhookCodes();
-                }
-            } catch (e) {
-                console.error('Clear webhook codes failed:', e);
-            }
-        },
-        startWebhookCodesPolling() {
-            this.stopWebhookCodesPolling();
-            if (['freemail','cloudmail','openai_cpa'].includes(this.config?.email_api_mode)) {
-                this.fetchWebhookCodes();
-                this.webhookCodesTimer = setInterval(() => this.fetchWebhookCodes(), 5000);
-            }
-        },
-        stopWebhookCodesPolling() {
-            if (this.webhookCodesTimer) {
-                clearInterval(this.webhookCodesTimer);
-                this.webhookCodesTimer = null;
-            }
-        },
-
-        // ── Team 管理 ──
-        async fetchTeamAccounts() {
-            try {
-                const res = await this.authFetch('/api/team/accounts');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamAccounts = data.data;
-                }
-            } catch (e) { console.error('fetchTeamAccounts', e); }
-        },
-        async discoverTeamWorkspaces() {
-            if (!this.teamSelectedManager) return;
-            this.isLoadingTeam = true;
-            this.teamWorkspaces = [];
-            this.teamMembers = [];
-            this.teamInvites = [];
-            this.teamSelectedWorkspace = '';
-            try {
-                const res = await this.authFetch('/api/team/discover', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: this.teamSelectedManager })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamWorkspaces = data.data;
-                    if (this.teamWorkspaces.length === 0) {
-                        alert('该账号未发现 Team 工作区');
-                    }
-                } else {
-                    alert(data.message || '发现工作区失败');
-                }
-            } catch (e) { alert('请求失败: ' + e.message); }
-            finally { this.isLoadingTeam = false; }
-        },
-        async fetchTeamMembers(wsId, wsName) {
-            this.teamSelectedWorkspace = wsId;
-            this.teamSelectedWorkspaceName = wsName || wsId;
-            this.isLoadingTeam = true;
-            try {
-                const res = await this.authFetch('/api/team/members', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: this.teamSelectedManager, workspace_id: wsId })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamMembers = data.data.members || [];
-                    this.teamInvites = data.data.invites || [];
-                } else {
-                    alert(data.message || '获取成员失败');
-                }
-            } catch (e) { alert('请求失败: ' + e.message); }
-            finally { this.isLoadingTeam = false; }
-        },
-        async inviteTeamMembers() {
-            if (!this.teamSelectedWorkspace || !this.teamInviteEmails.trim()) return;
-            const emails = this.teamInviteEmails
-                .split(/[\n,;]+/)
-                .map(e => e.trim())
-                .filter(e => e.includes('@'));
-            if (emails.length === 0) { alert('请输入有效的邮箱地址'); return; }
-            if (!confirm(`确定要邀请 ${emails.length} 个邮箱到工作区 ${this.teamSelectedWorkspaceName} 吗？`)) return;
-            this.isLoadingTeam = true;
-            try {
-                const res = await this.authFetch('/api/team/invite', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        target_emails: emails
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    alert(data.message);
-                    this.teamInviteEmails = '';
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                    this.fetchTeamInviteRecords();
-                } else {
-                    alert(data.message || '邀请失败');
-                }
-            } catch (e) { alert('请求失败: ' + e.message); }
-            finally { this.isLoadingTeam = false; }
-        },
-        async revokeTeamInvite(email) {
-            if (!confirm(`确定撤回对 ${email} 的邀请吗？`)) return;
-            try {
-                const res = await this.authFetch('/api/team/revoke', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        target_email: email
-                    })
-                });
-                const data = await res.json();
-                alert(data.message);
-                if (data.status === 'success') {
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                }
-            } catch (e) { alert('请求失败: ' + e.message); }
-        },
-        async removeTeamMember(userId, userEmail) {
-            if (!confirm(`确定移除成员 ${userEmail} 吗？`)) return;
-            try {
-                const res = await this.authFetch('/api/team/remove', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        user_id: userId
-                    })
-                });
-                const data = await res.json();
-                alert(data.message);
-                if (data.status === 'success') {
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                }
-            } catch (e) { alert('请求失败: ' + e.message); }
-        },
-        async fetchTeamInviteRecords() {
-            try {
-                const params = new URLSearchParams();
-                if (this.teamSelectedManager) params.set('manager_email', this.teamSelectedManager);
-                if (this.teamSelectedWorkspace) params.set('workspace_id', this.teamSelectedWorkspace);
-                const res = await this.authFetch('/api/team/invite-records?' + params.toString());
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamInviteRecords = data.data;
-                }
-            } catch (e) { console.error('fetchTeamInviteRecords', e); }
-        },
-        async clearTeamInviteRecords() {
-            if (!confirm('确定清空所有邀请记录吗？')) return;
-            try {
-                const res = await this.authFetch('/api/team/invite-records/clear', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message);
-                if (data.status === 'success') this.teamInviteRecords = [];
-            } catch (e) { alert('请求失败: ' + e.message); }
-        },
-
-        assembleCron() {
-            const f = this.cronFields;
-            this.config.sub2api_mode.check_cron = `${f.minute} ${f.hour} ${f.day} ${f.month} ${f.weekday}`;
-        },
-        parseCronToFields(expr) {
-            if (!expr || typeof expr !== 'string') return;
-            const parts = expr.trim().split(/\s+/);
-            if (parts.length === 5) {
-                this.cronFields.minute = parts[0];
-                this.cronFields.hour = parts[1];
-                this.cronFields.day = parts[2];
-                this.cronFields.month = parts[3];
-                this.cronFields.weekday = parts[4];
-            }
-        },
-        selectCronPreset(preset) {
-            this.config.sub2api_mode.check_cron = preset.expr;
-            this.parseCronToFields(preset.expr);
-        },
-        onCronFieldChange() {
-            this.assembleCron();
-        },
-        onCronExprInput() {
-            this.parseCronToFields(this.config.sub2api_mode.check_cron);
         },
         async checkUpdate(isManual = false) {
             try {
@@ -3239,7 +2881,6 @@ createApp({
                     return 'bg-slate-50 text-slate-600 border-slate-200';
             }
         },
-
         async fetchTeamAccounts(isManual = false) {
             if (isManual) this.teamPage = 1;
             let url = `/api/team_accounts?page=${this.teamPage}&page_size=${this.teamPageSize}`;

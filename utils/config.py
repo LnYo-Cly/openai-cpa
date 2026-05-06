@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v14.2.2"
+APP_VERSION = "v14.2.3"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -216,6 +216,7 @@ DEFAULT_PROXY: str = ""
 ENABLE_MULTI_THREAD_REG: bool = False
 REG_THREADS: int = 3
 MAX_OTP_RETRIES: int = 5
+OTP_POLL_MAX_ATTEMPTS: int = 20
 USE_PROXY_FOR_EMAIL: bool = False
 ENABLE_EMAIL_MASKING: bool = True
 LOGIN_DELAY_MIN: int = 20
@@ -416,7 +417,7 @@ def reload_all_configs(new_config_dict=None):
     global MC_API_BASE, MC_KEY
     global DEFAULT_PROXY
     global SUB_DOMAIN_LEVEL, RANDOM_SUB_DOMAIN_LEVEL
-    global ENABLE_MULTI_THREAD_REG, REG_THREADS, MAX_OTP_RETRIES
+    global ENABLE_MULTI_THREAD_REG, REG_THREADS, MAX_OTP_RETRIES, OTP_POLL_MAX_ATTEMPTS
     global USE_PROXY_FOR_EMAIL, ENABLE_EMAIL_MASKING
     global LOGIN_DELAY_MIN, LOGIN_DELAY_MAX
     global ENABLE_CPA_MODE, SAVE_TO_LOCAL_IN_CPA_MODE
@@ -629,6 +630,7 @@ def reload_all_configs(new_config_dict=None):
     ENABLE_MULTI_THREAD_REG = _c.get("enable_multi_thread_reg", False)
     REG_THREADS = _c.get("reg_threads", 3)
     MAX_OTP_RETRIES = _c.get("max_otp_retries", 5)
+    OTP_POLL_MAX_ATTEMPTS = _c.get("otp_poll_max_attempts", 20)
     USE_PROXY_FOR_EMAIL = _c.get("use_proxy_for_email", False)
     ENABLE_EMAIL_MASKING = _c.get("enable_email_masking", True)
 

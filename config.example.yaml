@@ -210,6 +210,8 @@ warp_proxy_list:
 
 # [验证码重发次数配置，默认5次]
 max_otp_retries: 5
+# 验证码轮询次数
+otp_poll_max_attempts: 20
 
 # [邮箱代理专项配置]
 # 【开关】true 表示获取邮箱（谷歌）也用代理，false 表示直连（推荐先试 false）如果是国外服务器此项可以保持false
