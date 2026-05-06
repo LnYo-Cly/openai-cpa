@@ -959,8 +959,8 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                         try:
                             time.sleep(random.uniform(0.1, 0.5))
                             sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
-                        except:
-                            pass
+                        except Exception as _e:
+                            print(f"[{cfg.ts()}] [WARNING] （{mask_email(email)}） add-phone释放Team席位异常: {_e}")
                     if run_ctx is not None: run_ctx['phone_verify'] = True
                     try:
                         url_code = url_code.get("error", {}).get("code")
@@ -989,8 +989,8 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
             try:
                 time.sleep(random.uniform(0.1, 0.5))
                 sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, proxies)
-            except Exception:
-                pass
+            except Exception as _e:
+                print(f"[{cfg.ts()}] [WARNING] finally释放Team席位异常: {_e}")
         if s_reg is not None:
             try:
                 s_reg.close()
