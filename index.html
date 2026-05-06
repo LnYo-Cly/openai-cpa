@@ -3898,9 +3898,10 @@
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 gap-6 md:gap-8" :class="{'opacity-50 pointer-events-none grayscale-[50%] transition-opacity duration-300': !config.image2api_mode.enable}">
+                                <div class="grid grid-cols-1 gap-6 md:gap-8">
                                     <div class="col-span-1 space-y-5 bg-slate-50/80 p-5 md:p-6 rounded-2xl border border-slate-200 shadow-inner">
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5" :class="{'opacity-50 pointer-events-none grayscale-[50%] transition-opacity duration-300': !config.image2api_mode.enable}">
                                             <div>
                                                 <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">image2api 接口地址 (URL)</label>
                                                 <div class="relative">
@@ -3926,14 +3927,16 @@
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div class="md:col-span-2 mt-1 border-t border-slate-100 pt-4">
-                                                <label class="relative inline-flex items-center cursor-pointer group w-full sm:w-auto">
-                                                    <input type="checkbox" v-model="config.image2api_mode.retain_reg_only" class="sr-only peer">
-                                                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner group-hover:shadow-md"></div>
-                                                    <span class="ml-3 text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">同步备份到账号库</span>
-                                                </label>
-                                            </div>
                                         </div>
+
+                                        <div class="mt-1 border-t border-slate-100 pt-4">
+                                            <label class="relative inline-flex items-center cursor-pointer group w-full sm:w-auto">
+                                                <input type="checkbox" v-model="config.image2api_mode.retain_reg_only" class="sr-only peer">
+                                                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner group-hover:shadow-md"></div>
+                                                <span class="ml-3 text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">同步备份到账号库</span>
+                                            </label>
+                                        </div>
+
                                     </div>
                                 </div>
                             </div>
@@ -3980,7 +3983,7 @@
                                         </div>
                                         <div class="mt-4 border-t border-sky-200/60 pt-6">
                                             <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
-                                                <label class="block text-sky-900 text-sm font-black uppercase tracking-wider mb-0 flex items-center gap-1.5"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M2 21L23 12L2 3V10L17 12L2 14V21Z"></path></svg> 單號產出通知模板</label>
+                                                <label class="block text-sky-900 text-sm font-black uppercase tracking-wider mb-0 flex items-center gap-1.5"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M2 21L23 12L2 3V10L17 12L2 14V21Z"></path></svg> 单号产出通知模板</label>
                                                 <div class="flex gap-5 bg-white p-2.5 rounded-xl border border-sky-100 shadow-sm">
                                                     <div class="flex items-center gap-2.5">
                                                         <span class="text-[11px] font-black text-sky-700 uppercase">邮箱脱敏</span>
