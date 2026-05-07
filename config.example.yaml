@@ -295,8 +295,9 @@ newapi_mode:
   api_url: ""           # NewAPI 地址，如 http://127.0.0.1:3001
   api_token: ""         # admin access token
   user_id: 1            # admin 用户数字 ID
-  models: ""  # 留空使用默认全量 Codex 模型列表，也可手动指定逗号分隔的模型
+  models: ""  # 留空自动从ChatGPT获取每个账号的可用模型
   group: "default"      # 渠道分组
+  channel_name: "cpa-codex-pool"  # 统一渠道名称，所有账号追加到同一渠道（多Key模式）
   save_to_local: true   # 是否同时保存到本地数据库
 
 hero_sms:

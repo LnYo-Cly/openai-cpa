@@ -176,7 +176,8 @@ def account_action(data: dict, token: str = Depends(verify_token)):
             if not getattr(core_engine.cfg, 'NEWAPI_MODE_ENABLE', False):
                 return {"status": "error", "message": "🚫 推送失败：未开启 NewAPI 模式！"}
             newapi_client = NewAPIClient()
-            print(f"[{cfg.ts()}] [系统] 收到指令，准备将 {len(target_emails)} 个账号推送至 NewAPI...")
+            newapi_channel_ids = data.get("channel_ids", [])  # 手动选择追加到哪些渠道
+            print(f"[{cfg.ts()}] [系统] 收到指令，准备将 {len(target_emails)} 个账号推送至 NewAPI (渠道: {newapi_channel_ids or '自动'})...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -212,7 +213,20 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
                 elif action == "push_newapi":
-                    success, resp = newapi_client.add_account(token_data)
+                    if newapi_channel_ids:
+                        # 手动选择渠道：追加到每个选中的渠道
+                        all_ok = True
+                        msgs = []
+                        for cid in newapi_channel_ids:
+                            ok, msg = newapi_client.add_key_to_channel(int(cid), token_data)
+                            msgs.append(msg)
+                            if not ok:
+                                all_ok = False
+                        success = all_ok
+                        resp = "; ".join(msgs)
+                    else:
+                        # 未选渠道：追加到默认渠道
+                        success, resp = newapi_client.add_account(token_data)
                     if not success:
                         last_error = resp
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 NewAPI 失败 ({mask_email(email)}): {resp}")
@@ -848,3 +862,15 @@ async def reset_auth(req: ResetAuthReq, token: str = Depends(verify_token)):
         return {"status": "success", "message": "选中的授权凭据已成功重置，请重启程序。"}
     else:
         return {"status": "error", "message": "数据库删除操作失败"}
+
+
+@router.get("/api/newapi/channels")
+def list_newapi_channels(token: str = Depends(verify_token)):
+    """获取 NewAPI 中所有 Codex 渠道列表（供前端选择）"""
+    if not getattr(core_engine.cfg, 'NEWAPI_MODE_ENABLE', False):
+        return {"status": "error", "message": "未开启 NewAPI 模式"}
+    client = NewAPIClient()
+    ok, result = client.list_codex_channels()
+    if ok:
+        return {"status": "success", "data": result}
+    return {"status": "error", "message": str(result)}

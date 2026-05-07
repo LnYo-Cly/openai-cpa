@@ -154,6 +154,12 @@ createApp({
             showImportMailboxModal: false,
             importMailboxText: '',
             isImportingMailbox: false,
+            showNewapiChannelModal: false,
+            newapiChannels: [],
+            newapiSelectedChannels: [],
+            newapiPendingAccount: null,
+            newapiPendingEmails: [],
+            isLoadingNewapiChannels: false,
             outlookAuth: {
                 showModal: false,
                 mailbox: null,
@@ -1127,6 +1133,12 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 if (account.push_platform && account.push_platform.toUpperCase().includes('NEWAPI')) {
                     this.showToast("该账号已在 NewAPI 平台，无需重复推送！", "warning"); return;
                 }
+                // 打开渠道选择器
+                this.newapiPendingAccount = account;
+                this.newapiPendingEmails = [account.email];
+                this.newapiSelectedChannels = [];
+                this.openNewapiChannelModal();
+                return;
             }
             this.currentTab = 'console';
             try {
@@ -1135,12 +1147,51 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 });
                 const result = await res.json();
                 this.showToast(result.message, result.status);
-                if (action === 'push' || action === 'push_sub2api' || action === 'push_image2api' || action === 'push_newapi') {
+                if (action === 'push' || action === 'push_sub2api' || action === 'push_image2api') {
                     if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
                     if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
                 }
             } catch (e) {
                 this.showToast("请求异常", "error");
+            }
+        },
+        async openNewapiChannelModal() {
+            this.showNewapiChannelModal = true;
+            this.isLoadingNewapiChannels = true;
+            this.newapiChannels = [];
+            try {
+                const res = await this.authFetch('/api/newapi/channels');
+                const json = await res.json();
+                if (json.status === 'success') {
+                    this.newapiChannels = json.data || [];
+                } else {
+                    this.showToast(json.message || '获取渠道列表失败', 'warning');
+                }
+            } catch (e) {
+                this.showToast('获取渠道列表异常', 'error');
+            }
+            this.isLoadingNewapiChannels = false;
+        },
+        async confirmNewapiPush() {
+            const emails = this.newapiPendingEmails;
+            const channelIds = this.newapiSelectedChannels;
+            this.showNewapiChannelModal = false;
+            this.currentTab = 'console';
+            try {
+                const res = await this.authFetch('/api/account/action', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        emails: emails,
+                        action: 'push_newapi',
+                        channel_ids: channelIds
+                    })
+                });
+                const result = await res.json();
+                this.showToast(result.message, result.status);
+                if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
+                if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
+            } catch (e) {
+                this.showToast("推送请求异常", "error");
             }
         },
         async fetchInventoryStats() {

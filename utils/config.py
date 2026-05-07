@@ -282,8 +282,9 @@ NEWAPI_MODE_ENABLE: bool = False
 NEWAPI_URL: str = ""
 NEWAPI_TOKEN: str = ""
 NEWAPI_USER_ID: str = "1"
-NEWAPI_MODELS: str = "gpt-5,gpt-5-codex,gpt-5-codex-mini,gpt-5.1,gpt-5.1-codex,gpt-5.1-codex-max,gpt-5.1-codex-mini,gpt-5.2,gpt-5.2-codex,gpt-5.3-codex,gpt-5.3-codex-spark,gpt-5.4"
+NEWAPI_MODELS: str = ""
 NEWAPI_GROUP: str = "default"
+NEWAPI_CHANNEL_NAME: str = "cpa-codex-pool"
 NEWAPI_SAVE_TO_LOCAL: bool = True
 
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
@@ -444,7 +445,7 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_DEFAULT_PROXY_POOL
     global SUB2API_ACCOUNT_RATE_MULTIPLIER, SUB2API_ACCOUNT_GROUP_IDS, SUB2API_ACCOUNT_PROXY_ID, SUB2API_ENABLE_WS_MODE
     global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY
-    global NEWAPI_MODE_ENABLE, NEWAPI_URL, NEWAPI_TOKEN, NEWAPI_USER_ID, NEWAPI_MODELS, NEWAPI_GROUP, NEWAPI_SAVE_TO_LOCAL
+    global NEWAPI_MODE_ENABLE, NEWAPI_URL, NEWAPI_TOKEN, NEWAPI_USER_ID, NEWAPI_MODELS, NEWAPI_GROUP, NEWAPI_CHANNEL_NAME, NEWAPI_SAVE_TO_LOCAL
 
     global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
     global HERO_SMS_ENABLED, HERO_SMS_API_KEY, HERO_SMS_BASE_URL, HERO_SMS_COUNTRY, HERO_SMS_SERVICE
@@ -718,6 +719,7 @@ def reload_all_configs(new_config_dict=None):
     NEWAPI_USER_ID = str(_newapi.get("user_id", "1")).strip()
     NEWAPI_MODELS = str(_newapi.get("models", "gpt-5,gpt-5-codex,gpt-5-codex-mini,gpt-5.1,gpt-5.1-codex,gpt-5.1-codex-max,gpt-5.1-codex-mini,gpt-5.2,gpt-5.2-codex,gpt-5.3-codex,gpt-5.3-codex-spark,gpt-5.4")).strip()
     NEWAPI_GROUP = str(_newapi.get("group", "default")).strip()
+    NEWAPI_CHANNEL_NAME = str(_newapi.get("channel_name", "cpa-codex-pool")).strip()
     NEWAPI_SAVE_TO_LOCAL = safe_bool(_newapi.get("save_to_local", True))
 
     reset_sub2api_proxy_rotation()
