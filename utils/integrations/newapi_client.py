@@ -162,7 +162,7 @@ class NewAPIClient:
             ok, result = self._do_request("post", "/api/channel/", json={
                 "type": self.CODEX_CHANNEL_TYPE,
                 "key": self._build_codex_key(token_data),
-                "name": f"cpa-{email}",
+                "name": email,
                 "base_url": self.CODEX_BASE_URL,
                 "models": models,
                 "group": self.group,
