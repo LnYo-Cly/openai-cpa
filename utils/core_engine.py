@@ -751,6 +751,7 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
 
                 else:
                     # multi 模式：追加到指定渠道或默认渠道
+                    logger.warning("NewAPI multi 模式: Codex 渠道的 Token 自动刷新和用量查询不可用 (NewAPI 源码限制)，建议使用 single 模式")
                     _configured_ids = getattr(cfg, "NEWAPI_CHANNEL_IDS", [])
                     if _configured_ids:
                         for _cid in _configured_ids:

@@ -288,6 +288,7 @@ NEWAPI_CHANNEL_NAME: str = "cpa-codex-pool"
 NEWAPI_CHANNEL_MODE: str = "single"   # single=一账号一渠道, multi=多Key合并到一个渠道
 NEWAPI_CHANNEL_IDS: list = []
 NEWAPI_SAVE_TO_LOCAL: bool = True
+NEWAPI_PROXY: str = ""  # 渠道代理，用于 NewAPI 转发请求到 chatgpt.com
 
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
@@ -447,7 +448,7 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_DEFAULT_PROXY_POOL
     global SUB2API_ACCOUNT_RATE_MULTIPLIER, SUB2API_ACCOUNT_GROUP_IDS, SUB2API_ACCOUNT_PROXY_ID, SUB2API_ENABLE_WS_MODE
     global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY
-    global NEWAPI_MODE_ENABLE, NEWAPI_URL, NEWAPI_TOKEN, NEWAPI_USER_ID, NEWAPI_MODELS, NEWAPI_GROUP, NEWAPI_CHANNEL_NAME, NEWAPI_CHANNEL_MODE, NEWAPI_CHANNEL_IDS, NEWAPI_SAVE_TO_LOCAL
+    global NEWAPI_MODE_ENABLE, NEWAPI_URL, NEWAPI_TOKEN, NEWAPI_USER_ID, NEWAPI_MODELS, NEWAPI_GROUP, NEWAPI_CHANNEL_NAME, NEWAPI_CHANNEL_MODE, NEWAPI_CHANNEL_IDS, NEWAPI_SAVE_TO_LOCAL, NEWAPI_PROXY
 
     global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
     global HERO_SMS_ENABLED, HERO_SMS_API_KEY, HERO_SMS_BASE_URL, HERO_SMS_COUNTRY, HERO_SMS_SERVICE
@@ -726,6 +727,7 @@ def reload_all_configs(new_config_dict=None):
     _raw_ids = _newapi.get("channel_ids", [])
     NEWAPI_CHANNEL_IDS = [int(x) for x in _raw_ids if str(x).strip().isdigit()]
     NEWAPI_SAVE_TO_LOCAL = safe_bool(_newapi.get("save_to_local", True))
+    NEWAPI_PROXY = str(_newapi.get("proxy", "")).strip()
 
     reset_sub2api_proxy_rotation()
     _normal = _c.get("normal_mode", {})

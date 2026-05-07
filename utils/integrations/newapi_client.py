@@ -21,6 +21,7 @@ class NewAPIClient:
         self.models = getattr(cfg, "NEWAPI_MODELS", "")
         self.group = getattr(cfg, "NEWAPI_GROUP", "default")
         self.channel_name = getattr(cfg, "NEWAPI_CHANNEL_NAME", self.DEFAULT_CHANNEL_NAME)
+        self.proxy = getattr(cfg, "NEWAPI_PROXY", "")
 
     def _build_headers(self) -> dict:
         return {
@@ -28,6 +29,12 @@ class NewAPIClient:
             "Authorization": f"Bearer {self.api_token}",
             "New-Api-User": self.user_id,
         }
+
+    def _build_channel_setting(self) -> str:
+        """构建渠道 setting JSON（包含代理等配置）"""
+        if not self.proxy:
+            return ""
+        return json.dumps({"proxy": self.proxy}, ensure_ascii=False)
 
     def _build_codex_key(self, token_data: dict) -> str:
         key_obj = {
@@ -54,6 +61,13 @@ class NewAPIClient:
         """从 ChatGPT 动态获取该账号可用的 Codex 模型列表"""
         try:
             from curl_cffi import requests as cffi_requests
+            req_kwargs = {
+                "timeout": 15,
+                "impersonate": "chrome120",
+                "verify": False,
+            }
+            if self.proxy:
+                req_kwargs["proxies"] = {"http": self.proxy, "https": self.proxy}
             resp = cffi_requests.get(
                 self.CODEX_MODELS_API,
                 headers={
@@ -61,9 +75,7 @@ class NewAPIClient:
                     "chatgpt-account-id": account_id,
                     "Accept": "application/json",
                 },
-                timeout=15,
-                impersonate="chrome120",
-                verify=False,
+                **req_kwargs,
             )
             if resp.status_code != 200:
                 logger.warning(f"获取 Codex 模型列表失败: HTTP {resp.status_code}")
@@ -167,6 +179,7 @@ class NewAPIClient:
                 "models": models,
                 "group": self.group,
                 "status": 1,
+                "setting": self._build_channel_setting(),
             })
             if ok:
                 logger.info(f"NewAPI 独立渠道创建成功: {email}")
@@ -204,6 +217,7 @@ class NewAPIClient:
         new_models = set(models.split(",")) if models else set()
         merged_models = ",".join(sorted(old_models | new_models)) if (old_models | new_models) else channel.get("models", "")
 
+        channel_setting = channel.get("setting", "") or self._build_channel_setting()
         try:
             ok, result = self._do_request("put", "/api/channel/", json={
                 "id": channel_id,
@@ -214,6 +228,7 @@ class NewAPIClient:
                 "models": merged_models,
                 "group": channel.get("group", self.group),
                 "status": channel.get("status", 1),
+                "setting": channel_setting,
             })
             if ok:
                 key_count = len(merged_keys.strip().split("\n"))
@@ -269,6 +284,7 @@ class NewAPIClient:
                     "models": merged_models,
                     "group": self.group,
                     "status": 1,
+                    "setting": existing.get("setting", "") or self._build_channel_setting(),
                 })
                 if ok:
                     key_count = len(merged_keys.strip().split("\n"))
@@ -287,6 +303,7 @@ class NewAPIClient:
                     "models": models,
                     "group": self.group,
                     "status": 1,
+                    "setting": self._build_channel_setting(),
                 })
                 if ok:
                     logger.info(f"NewAPI 渠道创建成功: {self.channel_name}, 首个 Key: {email}")

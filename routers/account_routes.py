@@ -216,6 +216,8 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                     newapi_mode = getattr(core_engine.cfg, 'NEWAPI_CHANNEL_MODE', 'single')
                     if newapi_channel_ids:
                         # 手动选了渠道：追加到每个选中的渠道（multi）
+                        import logging as _log
+                        _log.getLogger(__name__).warning("NewAPI multi 模式: Codex 渠道的 Token 自动刷新和用量查询不可用")
                         all_ok = True
                         msgs = []
                         for cid in newapi_channel_ids:
