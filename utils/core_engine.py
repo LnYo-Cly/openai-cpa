@@ -739,22 +739,32 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             try:
                 from utils.integrations.newapi_client import NewAPIClient
                 _newapi_client = NewAPIClient()
-                _configured_ids = getattr(cfg, "NEWAPI_CHANNEL_IDS", [])
-                if _configured_ids:
-                    # 推送到配置的指定渠道
-                    for _cid in _configured_ids:
-                        ok, msg = _newapi_client.add_key_to_channel(_cid, token_data)
-                        if ok:
-                            print(f"[{ts()}] [SUCCESS] NewAPI 渠道 {_cid} 追加成功: {mask_email(account_email)}")
-                        else:
-                            print(f"[{ts()}] [ERROR] NewAPI 渠道 {_cid} 追加失败: {msg}")
-                else:
-                    # 未配置指定渠道：追加到默认渠道
-                    ok, msg = _newapi_client.add_account(token_data)
+                _mode = getattr(cfg, "NEWAPI_CHANNEL_MODE", "single")
+
+                if _mode == "single":
+                    # 一账号一渠道
+                    ok, msg = _newapi_client.add_account_single(token_data)
                     if ok:
-                        print(f"[{ts()}] [SUCCESS] NewAPI 渠道创建成功: {mask_email(account_email)}")
+                        print(f"[{ts()}] [SUCCESS] NewAPI 独立渠道创建成功: {mask_email(account_email)}")
                     else:
                         print(f"[{ts()}] [ERROR] NewAPI 渠道创建失败: {msg}")
+
+                else:
+                    # multi 模式：追加到指定渠道或默认渠道
+                    _configured_ids = getattr(cfg, "NEWAPI_CHANNEL_IDS", [])
+                    if _configured_ids:
+                        for _cid in _configured_ids:
+                            ok, msg = _newapi_client.add_key_to_channel(_cid, token_data)
+                            if ok:
+                                print(f"[{ts()}] [SUCCESS] NewAPI 渠道 {_cid} 追加成功: {mask_email(account_email)}")
+                            else:
+                                print(f"[{ts()}] [ERROR] NewAPI 渠道 {_cid} 追加失败: {msg}")
+                    else:
+                        ok, msg = _newapi_client.add_account_multi(token_data)
+                        if ok:
+                            print(f"[{ts()}] [SUCCESS] NewAPI 渠道创建成功: {mask_email(account_email)}")
+                        else:
+                            print(f"[{ts()}] [ERROR] NewAPI 渠道创建失败: {msg}")
             except Exception as _e:
                 print(f"[{ts()}] [ERROR] NewAPI 推送异常: {_e}")
 

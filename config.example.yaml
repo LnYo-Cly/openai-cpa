@@ -297,8 +297,9 @@ newapi_mode:
   user_id: 1            # admin 用户数字 ID
   models: ""  # 留空自动从ChatGPT获取每个账号的可用模型
   group: "default"      # 渠道分组
-  channel_name: "cpa-codex-pool"  # 默认渠道名称（未配置 channel_ids 时使用）
-  channel_ids: []                # 指定自动推送的渠道ID列表，如 [1, 3, 5]；留空则使用默认渠道
+  channel_name: "cpa-codex-pool"  # multi 模式的默认渠道名称
+  channel_mode: "single"         # single=一账号一渠道(默认), multi=多Key合并到一个渠道
+  channel_ids: []                # multi 模式下指定渠道ID列表，如 [1, 3, 5]；留空则用默认渠道
   save_to_local: true   # 是否同时保存到本地数据库
 
 hero_sms:

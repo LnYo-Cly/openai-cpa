@@ -213,8 +213,9 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
                 elif action == "push_newapi":
+                    newapi_mode = getattr(core_engine.cfg, 'NEWAPI_CHANNEL_MODE', 'single')
                     if newapi_channel_ids:
-                        # 手动选择渠道：追加到每个选中的渠道
+                        # 手动选了渠道：追加到每个选中的渠道（multi）
                         all_ok = True
                         msgs = []
                         for cid in newapi_channel_ids:
@@ -224,9 +225,12 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                                 all_ok = False
                         success = all_ok
                         resp = "; ".join(msgs)
+                    elif newapi_mode == "single":
+                        # single 模式：为该账号创建独立渠道
+                        success, resp = newapi_client.add_account_single(token_data)
                     else:
-                        # 未选渠道：追加到默认渠道
-                        success, resp = newapi_client.add_account(token_data)
+                        # multi 模式：追加到默认渠道
+                        success, resp = newapi_client.add_account_multi(token_data)
                     if not success:
                         last_error = resp
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 NewAPI 失败 ({mask_email(email)}): {resp}")
