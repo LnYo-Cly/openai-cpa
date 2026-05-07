@@ -39,8 +39,9 @@ class NewAPIClient:
     def _build_codex_key(self, token_data: dict) -> str:
         key_obj = {
             "access_token": token_data.get("access_token", ""),
-            "account_id": token_data.get("account_id", ""),
             "refresh_token": token_data.get("refresh_token", ""),
+            "account_id": token_data.get("account_id", ""),
+            "last_refresh": token_data.get("last_refresh", ""),
             "email": token_data.get("email", ""),
             "type": token_data.get("type", "codex"),
             "expired": token_data.get("expired", ""),
@@ -125,6 +126,21 @@ class NewAPIClient:
             error_msg = f"{error_msg} - {resp.text[:200]}"
         return False, error_msg
 
+    # ── 分组列表 ──────────────────────────────────────
+
+    def fetch_groups(self) -> Tuple[bool, Any]:
+        """从 NewAPI 获取所有可用分组列表"""
+        if not self.api_url or not self.api_token:
+            return False, "NewAPI 配置缺失"
+        try:
+            ok, data = self._do_request("get", "/api/group/")
+            if not ok:
+                return False, data
+            groups = data.get("data", []) if isinstance(data, dict) else data
+            return True, groups
+        except Exception as exc:
+            return False, f"获取分组列表失败: {exc}"
+
     # ── 渠道列表 ──────────────────────────────────────
 
     def list_codex_channels(self) -> Tuple[bool, Any]:
@@ -172,14 +188,17 @@ class NewAPIClient:
 
         try:
             ok, result = self._do_request("post", "/api/channel/", json={
-                "type": self.CODEX_CHANNEL_TYPE,
-                "key": self._build_codex_key(token_data),
-                "name": email,
-                "base_url": self.CODEX_BASE_URL,
-                "models": models,
-                "group": self.group,
-                "status": 1,
-                "setting": self._build_channel_setting(),
+                "mode": "single",
+                "channel": {
+                    "type": self.CODEX_CHANNEL_TYPE,
+                    "key": self._build_codex_key(token_data),
+                    "name": email,
+                    "base_url": "",
+                    "models": models,
+                    "group": self.group,
+                    "status": 1,
+                    "setting": self._build_channel_setting(),
+                },
             })
             if ok:
                 logger.info(f"NewAPI 独立渠道创建成功: {email}")
@@ -191,7 +210,7 @@ class NewAPIClient:
     # ── multi 模式：追加 Key 到指定渠道 ───────────────
 
     def add_key_to_channel(self, channel_id: int, token_data: dict) -> Tuple[bool, str]:
-        """追加 key 到指定渠道"""
+        """追加 key 到指定渠道（使用 key_mode: append，服务端自动合并）"""
         if not self.api_url or not self.api_token:
             return False, "NewAPI 配置缺失"
         access_token = token_data.get("access_token", "")
@@ -203,40 +222,24 @@ class NewAPIClient:
         new_key = self._build_codex_key(token_data)
 
         try:
-            ok, channel = self._do_request("get", f"/api/channel/{channel_id}")
-            if not ok:
-                return False, f"获取渠道 {channel_id} 失败: {channel}"
-        except Exception as exc:
-            return False, f"获取渠道失败: {exc}"
-
-        old_keys = channel.get("key", "")
-        merged_keys = old_keys + "\n" + new_key if old_keys else new_key
-
-        models = self._resolve_models(token_data)
-        old_models = set(channel.get("models", "").split(",")) if channel.get("models") else set()
-        new_models = set(models.split(",")) if models else set()
-        merged_models = ",".join(sorted(old_models | new_models)) if (old_models | new_models) else channel.get("models", "")
-
-        channel_setting = channel.get("setting", "") or self._build_channel_setting()
-        try:
             ok, result = self._do_request("put", "/api/channel/", json={
                 "id": channel_id,
-                "type": channel.get("type", self.CODEX_CHANNEL_TYPE),
-                "key": merged_keys,
-                "name": channel.get("name", ""),
-                "base_url": channel.get("base_url", self.CODEX_BASE_URL),
-                "models": merged_models,
-                "group": channel.get("group", self.group),
-                "status": channel.get("status", 1),
-                "setting": channel_setting,
+                "type": self.CODEX_CHANNEL_TYPE,
+                "key": new_key,
+                "key_mode": "append",
+                "name": "",
+                "base_url": self.CODEX_BASE_URL,
+                "models": "",
+                "group": self.group,
+                "status": 1,
+                "setting": self._build_channel_setting(),
             })
             if ok:
-                key_count = len(merged_keys.strip().split("\n"))
-                logger.info(f"NewAPI 追加 Key 到渠道 {channel_id}: {email} (共 {key_count} 个Key)")
-                return True, f"追加成功 (渠道共 {key_count} 个Key)"
+                logger.info(f"NewAPI 追加 Key 到渠道 {channel_id}: {email}")
+                return True, "追加成功"
             return False, str(result)
         except Exception as exc:
-            return False, f"更新渠道失败: {exc}"
+            return False, f"追加渠道 Key 失败: {exc}"
 
     # ── multi 模式：追加到默认渠道（自动创建） ─────────
 
@@ -296,14 +299,18 @@ class NewAPIClient:
         else:
             try:
                 ok, result = self._do_request("post", "/api/channel/", json={
-                    "type": self.CODEX_CHANNEL_TYPE,
-                    "key": new_key,
-                    "name": self.channel_name,
-                    "base_url": self.CODEX_BASE_URL,
-                    "models": models,
-                    "group": self.group,
-                    "status": 1,
-                    "setting": self._build_channel_setting(),
+                    "mode": "multi_to_single",
+                    "multi_key_mode": "random",
+                    "channel": {
+                        "type": self.CODEX_CHANNEL_TYPE,
+                        "key": new_key,
+                        "name": self.channel_name,
+                        "base_url": "",
+                        "models": models,
+                        "group": self.group,
+                        "status": 1,
+                        "setting": self._build_channel_setting(),
+                    },
                 })
                 if ok:
                     logger.info(f"NewAPI 渠道创建成功: {self.channel_name}, 首个 Key: {email}")

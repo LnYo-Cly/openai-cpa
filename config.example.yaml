@@ -295,7 +295,7 @@ newapi_mode:
   api_url: ""           # NewAPI 地址，如 http://127.0.0.1:3001
   api_token: ""         # admin access token
   user_id: 1            # admin 用户数字 ID
-  models: ""  # 留空自动从ChatGPT获取每个账号的可用模型
+  models: "gpt-5.3-codex,gpt-5.3-codex-spark,gpt-5.4,gpt-5.4-mini,gpt-5.5"  # 留空自动从ChatGPT获取每个账号的可用模型
   group: "default"      # 渠道分组
   proxy: ""             # 渠道代理，NewAPI 转发请求到 chatgpt.com 时使用，如 http://127.0.0.1:7897
   channel_name: "cpa-codex-pool"  # multi 模式的默认渠道名称

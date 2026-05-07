@@ -373,10 +373,33 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
         except Exception as e:
             print(f"[{cfg.ts()}] [IMAGE2API] 拉取 Image2API 数据异常，如果未填写相关数据可忽略该提示，将跳过: {e}")
 
+    if "newapi" in type_list and getattr(cfg, 'NEWAPI_MODE_ENABLE', False):
+        try:
+            from utils.integrations.newapi_client import NewAPIClient
+            newapi_client = NewAPIClient()
+            ok, channels = newapi_client.list_codex_channels()
+            if ok and isinstance(channels, list):
+                for ch in channels:
+                    combined_data.append({
+                        "id": str(ch.get("id", "")),
+                        "account_type": "newapi",
+                        "credential": ch.get("name", "未知渠道"),
+                        "status": "active" if ch.get("status", 1) == 1 else "disabled",
+                        "last_check": "-",
+                        "details": {
+                            "key_count": ch.get("key_count", 0),
+                            "group": ch.get("group", "default"),
+                            "models": ch.get("models", "")
+                        }
+                    })
+        except Exception as e:
+            print(f"[{cfg.ts()}] [NEWAPI] 拉取 NewAPI 数据异常，如果未填写相关数据可忽略该提示，将跳过: {e}")
+
     try:
         cpa_emails = [x["credential"] for x in combined_data if x["account_type"] == "cpa"]
         sub_emails = [x["credential"] for x in combined_data if x["account_type"] == "sub2api"]
         img2_emails = [x["credential"] for x in combined_data if x["account_type"] == "image2api"]
+        newapi_emails = [x["credential"] for x in combined_data if x["account_type"] == "newapi"]
 
         if cpa_emails:
             db_manager.update_account_push_info(cpa_emails, "CPA", mode="sync")
@@ -384,6 +407,8 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
             db_manager.update_account_push_info(sub_emails, "SUB2API", mode="sync")
         if img2_emails:
             db_manager.update_account_push_info(img2_emails, "IMAGE2API", mode="sync")
+        if newapi_emails:
+            db_manager.update_account_push_info(newapi_emails, "NEWAPI", mode="sync")
 
 
         active_emails = [x["credential"] for x in combined_data if x["status"] == "active"]
@@ -397,6 +422,7 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
         cpa_list = [x for x in combined_data if x["account_type"] == "cpa"]
         sub2api_list = [x for x in combined_data if x["account_type"] == "sub2api"]
         image2api_list = [x for x in combined_data if x["account_type"] == "image2api"]
+        newapi_list = [x for x in combined_data if x["account_type"] == "newapi"]
 
         cloud_stats = {
             "total": len(combined_data),
@@ -409,7 +435,10 @@ def get_cloud_accounts(types: str = "sub2api,cpa", status_filter: str = Query("a
             "sub2api_disabled": sum(1 for x in sub2api_list if x["status"] != "active"),
             "image2api": len(image2api_list),
             "image2api_active": sum(1 for x in image2api_list if x["status"] == "active"),
-            "image2api_disabled": sum(1 for x in image2api_list if x["status"] != "active")
+            "image2api_disabled": sum(1 for x in image2api_list if x["status"] != "active"),
+            "newapi": len(newapi_list),
+            "newapi_active": sum(1 for x in newapi_list if x["status"] == "active"),
+            "newapi_disabled": sum(1 for x in newapi_list if x["status"] != "active")
         }
 
         if status_filter != "all":
@@ -877,6 +906,16 @@ def list_newapi_channels(token: str = Depends(verify_token)):
         return {"status": "error", "message": "未开启 NewAPI 模式"}
     client = NewAPIClient()
     ok, result = client.list_codex_channels()
+    if ok:
+        return {"status": "success", "data": result}
+    return {"status": "error", "message": str(result)}
+
+
+@router.get("/api/newapi/groups")
+def list_newapi_groups(token: str = Depends(verify_token)):
+    """获取 NewAPI 中所有可用分组列表"""
+    client = NewAPIClient()
+    ok, result = client.fetch_groups()
     if ok:
         return {"status": "success", "data": result}
     return {"status": "error", "message": str(result)}

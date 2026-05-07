@@ -113,11 +113,11 @@ createApp({
                 tmailor_token: false,
                 fvia_token: false,
                 subUrl: false,
-                showMailboxesPlaintext: false,
                 db_pass: false,
                 master_rt: false,
                 image2api_url: true,
-                image2api_key: false
+                image2api_key: false,
+                newapi: false
             },
 
             toasts: [],
@@ -134,7 +134,7 @@ createApp({
             isLoadingSub2APIGroups: false,
             cloudAccounts: [],
             selectedCloud: [],
-            cloudFilters: ['sub2api', 'cpa', "image2api"],
+            cloudFilters: ['sub2api', 'cpa', "image2api", "newapi"],
             showCloudPlaintext: false,
             cloudPage: 1,
             cloudPageSize: 10,
@@ -154,12 +154,14 @@ createApp({
             showImportMailboxModal: false,
             importMailboxText: '',
             isImportingMailbox: false,
+            showMailboxesPlaintext: false,
             showNewapiChannelModal: false,
             newapiChannels: [],
             newapiSelectedChannels: [],
             newapiPendingAccount: null,
             newapiPendingEmails: [],
             isLoadingNewapiChannels: false,
+            newapiGroups: [],
             outlookAuth: {
                 showModal: false,
                 mailbox: null,
@@ -216,6 +218,26 @@ createApp({
                 clearHwid: true,
                 clearLease: true
             },
+            checkFilterOptions: [
+                { label: '全部账号', value: 'all' },
+                { label: '仅存活', value: 'active' },
+                { label: '仅限流', value: 'rate_limited' },
+                { label: '仅失效', value: 'inactive' },
+            ],
+            cronPresets: [
+                { label: '每30分钟', expr: '*/30 * * * *' },
+                { label: '每小时', expr: '0 * * * *' },
+                { label: '每2小时', expr: '0 */2 * * *' },
+                { label: '每6小时', expr: '0 */6 * * *' },
+                { label: '每天0点', expr: '0 0 * * *' },
+                { label: '每天8点', expr: '0 8 * * *' },
+            ],
+            cronFields: { minute: '*', hour: '*', day: '*', month: '*', weekday: '*' },
+            cronMinuteOptions: ['*', '*/5', '*/10', '*/15', '*/30', '0', '5', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
+            cronHourOptions: ['*', '*/2', '*/3', '*/4', '*/6', '*/8', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'],
+            cronDayOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'],
+            cronMonthOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+            cronWeekdayOptions: ['*', '0', '1', '2', '3', '4', '5', '6'],
             cfTools: {
                 workerName: 'openai-cpa',
                 results: [],
@@ -378,6 +400,9 @@ createApp({
             this.startStatsPolling();
             this.checkUpdate();
             this.fetchInventoryStats();
+            if (this.config?.newapi_mode?.enable) {
+                this.fetchNewapiGroups();
+            }
             if (this.config && this.config.reg_mode === 'extension') {
                 this.listenToExtension();
             }
@@ -1194,6 +1219,36 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 this.showToast("推送请求异常", "error");
             }
         },
+        async fetchNewapiGroups() {
+            try {
+                const res = await this.authFetch('/api/newapi/groups');
+                const json = await res.json();
+                if (json.status === 'success' && Array.isArray(json.data)) {
+                    this.newapiGroups = json.data;
+                    // 确保 config.newapi_mode.group 存在
+                    if (!this.config.newapi_mode.group) {
+                        this.config.newapi_mode.group = '';
+                    }
+                } else {
+                    this.showToast(json.message || '获取分组失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('获取 NewAPI 分组失败', 'error');
+            }
+        },
+        toggleNewapiGroup(group) {
+            if (!this.config.newapi_mode.group) {
+                this.config.newapi_mode.group = '';
+            }
+            const current = this.config.newapi_mode.group.split(',').filter(g => g.trim());
+            const idx = current.indexOf(group);
+            if (idx >= 0) {
+                current.splice(idx, 1);
+            } else {
+                current.push(group);
+            }
+            this.config.newapi_mode.group = current.join(',');
+        },
         async fetchInventoryStats() {
             try {
                 const res = await this.authFetch('/api/accounts/stats');
@@ -1690,6 +1745,24 @@ this.showToast('解析成功...', 'success');
             else ids.push(value);
             this.config.sub2api_mode.account_group_ids = ids.join(',');
         },
+        onCronExprInput() {
+            if (!this.config.sub2api_mode) return;
+            const parts = (this.config.sub2api_mode.check_cron || '').split(/\s+/);
+            if (parts.length === 5) {
+                this.cronFields = {
+                    minute: parts[0], hour: parts[1], day: parts[2], month: parts[3], weekday: parts[4]
+                };
+            }
+        },
+        onCronFieldChange() {
+            if (!this.config.sub2api_mode) return;
+            this.config.sub2api_mode.check_cron = [this.cronFields.minute, this.cronFields.hour, this.cronFields.day, this.cronFields.month, this.cronFields.weekday].join(' ');
+        },
+        selectCronPreset(preset) {
+            if (!this.config.sub2api_mode) return;
+            this.config.sub2api_mode.check_cron = preset.expr;
+            this.onCronExprInput();
+        },
         async startManualCheck() {
             if(this.isRunning) {
                 this.showToast('请先停止当前运行的任务', 'warning');
@@ -2015,20 +2088,22 @@ if (action === 'delete' && !confirm('危险操作：确认在远端彻底删除�
         },
         filterByCard(platformType, status) {
             if (platformType === 'all') {
-                this.cloudFilters = ['sub2api', 'cpa'];
+                this.cloudFilters = ['sub2api', 'cpa', 'image2api', 'newapi'];
             } else if (platformType === 'cpa') {
                 this.cloudFilters = ['cpa'];
             } else if (platformType === 'sub2api') {
                 this.cloudFilters = ['sub2api'];
-            }else if (platformType === 'image2api') {
-                this.cloudFilters = ['image2api']
+            } else if (platformType === 'image2api') {
+                this.cloudFilters = ['image2api'];
+            } else if (platformType === 'newapi') {
+                this.cloudFilters = ['newapi'];
             }
             this.cloudStatusFilter = status || 'all';
             this.cloudPage = 1;
             this.fetchCloudAccounts();
-            const typeName = platformType === 'all' ? '全部平台' : (platformType === 'cpa' ? 'CPA' : (platformType === 'sub2api' ? 'Sub2API' : 'Image2API'));
+            const nameMap = { all: '全部平台', cpa: 'CPA', sub2api: 'Sub2API', image2api: 'Image2API', newapi: 'NewAPI' };
             const statusName = status === 'active' ? '存活' : (status === 'disabled' ? '失效' : '全部');
-            this.showToast(`已筛选: ${typeName} - ${statusName}账号`, 'info');
+            this.showToast(`已筛选: ${nameMap[platformType] || platformType} - ${statusName}账号`, 'info');
         },
         async bulkCloudAction(action) {
             if (this.selectedCloud.length === 0) {

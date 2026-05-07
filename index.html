@@ -3087,6 +3087,10 @@
                                             <input type="checkbox" v-model="cloudFilters" value="image2api" @change="fetchCloudAccounts" class="sr-only">
                                             <span class="w-2 h-2 rounded-full shadow-inner" :class="cloudFilters.includes('image2api') ? 'bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> Image2API
                                         </label>
+                                        <label :class="cloudFilters.includes('newapi') ? 'bg-white shadow-sm border border-slate-200 text-amber-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-300/30'" class="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs font-bold rounded-lg transition-all border border-transparent">
+                                            <input type="checkbox" v-model="cloudFilters" value="newapi" @change="fetchCloudAccounts" class="sr-only">
+                                            <span class="w-2 h-2 rounded-full shadow-inner" :class="cloudFilters.includes('newapi') ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-slate-300 shadow-slate-400/50'"></span> NewAPI
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
@@ -3125,7 +3129,7 @@
                                 </div>
                             </div>
                             <div class="p-5 md:px-8 bg-slate-50/50 border-b border-slate-100">
-                                <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 w-full">
+                                <div class="grid grid-cols-2 lg:grid-cols-6 gap-4 w-full">
                                     <div @click="filterByCard('all', 'active')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-center group">
                                         <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-emerald-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
                                         <div class="text-[10px] font-black text-emerald-500/80 mb-1 uppercase tracking-widest z-10 relative">云端启用</div>
@@ -3178,6 +3182,21 @@
                                             </span>
                                         </div>
                                     </div>
+                                    <div @click="filterByCard('newapi', 'all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between group">
+                                        <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-amber-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
+                                        <div>
+                                            <div class="text-[10px] font-black text-amber-400 mb-1 uppercase tracking-widest z-10 relative">NewAPI</div>
+                                            <div class="text-2xl font-black text-amber-600 z-10 relative">{{ inventoryStats?.cloud?.newapi || 0 }}</div>
+                                        </div>
+                                        <div class="flex gap-2 mt-2.5 z-10 relative">
+                                            <span @click.stop="filterByCard('newapi', 'active')" class="cursor-pointer hover:bg-emerald-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-inner"></span>{{ inventoryStats?.cloud?.newapi_active || 0 }} 存活
+                                            </span>
+                                            <span @click.stop="filterByCard('newapi', 'disabled')" class="cursor-pointer hover:bg-rose-100 transition-colors text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded border border-rose-100 shadow-sm flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-inner"></span>{{ inventoryStats?.cloud?.newapi_disabled || 0 }} 失效
+                                            </span>
+                                        </div>
+                                    </div>
                                     <div @click="filterByCard('all', 'all')" class="cursor-pointer active:scale-95 bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-center group">
                                         <div class="absolute right-0 top-0 w-16 h-16 bg-gradient-to-bl from-blue-100 to-transparent opacity-50 pointer-events-none rounded-bl-full transition-transform group-hover:scale-110"></div>
                                         <div class="text-[10px] font-black text-blue-400 mb-1 uppercase tracking-widest z-10 relative">总计推送</div>
@@ -3211,6 +3230,7 @@
                                             <td class="px-5 md:px-8 py-4 whitespace-nowrap">
                                                 <span v-if="acc.account_type === 'sub2api'" class="px-2.5 py-1 rounded-md text-[10px] md:text-xs font-black bg-purple-50 text-purple-600 border border-purple-200 shadow-sm uppercase tracking-widest">Sub2API</span>
                                                 <span v-else-if="acc.account_type === 'image2api'" class="px-2.5 py-1 rounded-md text-[10px] md:text-xs font-black bg-pink-50 text-pink-600 border border-pink-200 shadow-sm uppercase tracking-widest">Img2API</span>
+                                                <span v-else-if="acc.account_type === 'newapi'" class="px-2.5 py-1 rounded-md text-[10px] md:text-xs font-black bg-amber-50 text-amber-600 border border-amber-200 shadow-sm uppercase tracking-widest">NewAPI</span>
                                                 <span v-else class="px-2.5 py-1 rounded-md text-[10px] md:text-xs font-black bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-sm uppercase tracking-widest">CPA</span>
                                             </td>
                                             <td class="px-5 md:px-8 py-4 whitespace-nowrap text-sm font-bold text-slate-700">
@@ -3967,6 +3987,85 @@
                                         </div>
 
                                     </div>
+                                </div>
+                            </div>
+
+                            <div v-if="config.newapi_mode" class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-amber-500 bg-gradient-to-br from-amber-50/20 to-white">
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
+                                    <h3 class="text-xl md:text-2xl font-black text-amber-700 tracking-tight flex items-center gap-2">
+                                        <span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></span> NewAPI 渠道中心
+                                    </h3>
+                                    <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                                        <label class="relative inline-flex bg-white px-4 py-2.5 md:px-5 md:py-3 rounded-xl cursor-pointer hover:bg-amber-50 transition-colors shadow-sm border border-amber-200 w-full sm:w-auto items-center justify-center group">
+                                            <input type="checkbox" v-model="config.newapi_mode.enable" class="sr-only peer">
+                                            <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-amber-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
+                                            <span class="font-black text-amber-900 text-sm md:text-base ml-3 tracking-wide">主开关：开启 NewAPI</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5" :class="{'opacity-50 pointer-events-none grayscale-[50%] transition-opacity duration-300': !config.newapi_mode.enable}">
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">NewAPI 接口地址</label>
+                                        <input type="text" v-model="config.newapi_mode.api_url" autocomplete="off" placeholder="http://127.0.0.1:3001"
+                                               class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">Admin Access Token</label>
+                                        <div class="relative">
+                                            <input :type="showPwd.newapi ? 'text' : 'password'" v-model="config.newapi_mode.api_token" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-sm" placeholder="access token">
+                                            <button @click="showPwd.newapi = !showPwd.newapi" class="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-slate-400 hover:text-amber-600 focus:outline-none transition-transform hover:scale-110">
+                                                <svg v-if="showPwd.newapi" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg><svg v-else xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.67-3.835m2.89-2.89A9.97 9.97 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-1.875 3.175m-2.89 2.89l-1.414-1.414M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">Admin 用户 ID</label>
+                                        <input type="number" v-model.number="config.newapi_mode.user_id" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm text-sm" placeholder="1">
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">渠道模型列表</label>
+                                        <input type="text" v-model="config.newapi_mode.models" placeholder="留空自动从 ChatGPT 获取" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">渠道分组 <button @click="fetchNewapiGroups" class="text-[10px] font-bold text-amber-500 hover:text-amber-700 ml-1 cursor-pointer">⟳ 刷新分组</button></label>
+                                        <div v-if="newapiGroups.length > 0" class="flex flex-wrap gap-2 min-h-[44px] p-3 bg-white border border-amber-200 rounded-xl">
+                                            <label v-for="g in newapiGroups" :key="g" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-colors"
+                                                   :class="config.newapi_mode.group && config.newapi_mode.group.split(',').includes(g) ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300'">
+                                                <input type="checkbox" :checked="config.newapi_mode.group && config.newapi_mode.group.split(',').includes(g)"
+                                                       @change="toggleNewapiGroup(g)" class="sr-only">
+                                                {{ g }}
+                                            </label>
+                                        </div>
+                                        <div v-else class="text-xs text-slate-400 mt-1">点击"刷新分组"从 NewAPI 拉取可用分组</div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">渠道代理</label>
+                                        <input type="text" v-model="config.newapi_mode.proxy" placeholder="http://127.0.0.1:7897（留空不代理）" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">渠道模式</label>
+                                        <select v-model="config.newapi_mode.channel_mode" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm text-sm font-bold cursor-pointer">
+                                            <option value="single">single（一账号一渠道）</option>
+                                            <option value="multi">multi（多Key合并渠道）</option>
+                                        </select>
+                                        <p v-if="config.newapi_mode.channel_mode === 'multi'" class="text-[10px] text-rose-500 font-bold mt-1.5 flex items-center gap-1">
+                                            <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                            multi 模式下 Codex 渠道的 Token 自动刷新和用量查询不可用
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">默认渠道名称</label>
+                                        <input type="text" v-model="config.newapi_mode.channel_name" placeholder="cpa-codex-pool" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm text-sm">
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                                    <label class="relative inline-flex items-center cursor-pointer group">
+                                        <input type="checkbox" v-model="config.newapi_mode.save_to_local" @change="saveConfig" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600 shadow-inner group-hover:shadow-md"></div>
+                                        <span class="ml-3 text-sm font-bold text-slate-700 group-hover:text-amber-600 transition-colors">同步备份到账号库</span>
+                                    </label>
                                 </div>
                             </div>
 
