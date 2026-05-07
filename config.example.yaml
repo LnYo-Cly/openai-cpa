@@ -289,6 +289,16 @@ image2api_mode:
   api_key: ""
   retain_reg_only: true
 
+# NewAPI配置 (注册完成后自动推送为Codex渠道)
+newapi_mode:
+  enable: false
+  api_url: ""           # NewAPI 地址，如 http://127.0.0.1:3001
+  api_token: ""         # admin access token
+  user_id: 1            # admin 用户数字 ID
+  models: ""  # 留空使用默认全量 Codex 模型列表，也可手动指定逗号分隔的模型
+  group: "default"      # 渠道分组
+  save_to_local: true   # 是否同时保存到本地数据库
+
 hero_sms:
   enabled: false
   api_key: 

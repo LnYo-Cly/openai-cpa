@@ -734,6 +734,19 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             else:
                 print(f"[{ts()}] [ERROR] 云端上传失败: {up_msg}")
 
+        # NewAPI 推送
+        if getattr(cfg, "NEWAPI_MODE_ENABLE", False):
+            try:
+                from utils.integrations.newapi_client import NewAPIClient
+                _newapi_client = NewAPIClient()
+                ok, msg = _newapi_client.add_account(token_data)
+                if ok:
+                    print(f"[{ts()}] [SUCCESS] NewAPI 渠道创建成功: {mask_email(account_email)}")
+                else:
+                    print(f"[{ts()}] [ERROR] NewAPI 渠道创建失败: {msg}")
+            except Exception as _e:
+                print(f"[{ts()}] [ERROR] NewAPI 推送异常: {_e}")
+
         if getattr(cfg, "LOCAL_MS_POOL_FISSION", False) and cfg.EMAIL_API_MODE == "local_microsoft":
             db_manager.update_pool_fission_result(master_email, is_blocked=False, is_raw=is_raw)
         elif not getattr(cfg, "LOCAL_MS_ENABLE_FISSION", False) and cfg.EMAIL_API_MODE == "local_microsoft":

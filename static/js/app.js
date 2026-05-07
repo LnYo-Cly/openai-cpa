@@ -1120,6 +1120,14 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                     this.showToast("该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
                 }
             }
+            if (action === 'push_newapi') {
+                if (!this.config.newapi_mode || !this.config.newapi_mode.enable) {
+                    this.showToast("无法推送：请先配置 NewAPI 参数！", "warning"); return;
+                }
+                if (account.push_platform && account.push_platform.toUpperCase().includes('NEWAPI')) {
+                    this.showToast("该账号已在 NewAPI 平台，无需重复推送！", "warning"); return;
+                }
+            }
             this.currentTab = 'console';
             try {
                 const res = await this.authFetch('/api/account/action', {
@@ -1127,7 +1135,7 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 });
                 const result = await res.json();
                 this.showToast(result.message, result.status);
-                if (action === 'push' || action === 'push_sub2api' || action === 'push_image2api') {
+                if (action === 'push' || action === 'push_sub2api' || action === 'push_image2api' || action === 'push_newapi') {
                     if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
                     if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
                 }

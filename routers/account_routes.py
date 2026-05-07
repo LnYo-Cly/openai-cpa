@@ -10,6 +10,7 @@ from utils import core_engine, db_manager
 import utils.config as cfg
 from utils.integrations.sub2api_client import Sub2APIClient, build_sub2api_export_bundle, get_sub2api_push_settings
 from utils.integrations.image2api_client import Image2APIClient
+from utils.integrations.newapi_client import NewAPIClient
 from utils.auth_core import email_jwt
 router = APIRouter()
 
@@ -171,6 +172,11 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 return {"status": "error", "message": "🚫 推送失败：未开启 Image2API 模式！"}
             img_client = Image2APIClient()
             print(f"[{cfg.ts()}] [系统] 🖼️ 收到指令，准备将 {len(target_emails)} 个账号推送至 Image2API...")
+        elif action == "push_newapi":
+            if not getattr(core_engine.cfg, 'NEWAPI_MODE_ENABLE', False):
+                return {"status": "error", "message": "🚫 推送失败：未开启 NewAPI 模式！"}
+            newapi_client = NewAPIClient()
+            print(f"[{cfg.ts()}] [系统] 收到指令，准备将 {len(target_emails)} 个账号推送至 NewAPI...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -205,6 +211,13 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                         last_error = resp
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
+                elif action == "push_newapi":
+                    success, resp = newapi_client.add_account(token_data)
+                    if not success:
+                        last_error = resp
+                        print(f"[{cfg.ts()}] [错误] ❌ 推送 NewAPI 失败 ({mask_email(email)}): {resp}")
+                    else:
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 NewAPI！")
                 if success:
                     success_emails.append(email)
                 else:
@@ -220,7 +233,8 @@ def account_action(data: dict, token: str = Depends(verify_token)):
             platform_map = {
                 "push": "CPA",
                 "push_sub2api": "SUB2API",
-                "push_image2api": "IMAGE2API"
+                "push_image2api": "IMAGE2API",
+                "push_newapi": "NEWAPI"
             }
             platform_marker = platform_map.get(action, "UNKNOWN")
             db_manager.update_account_push_info(success_emails, platform_marker)
