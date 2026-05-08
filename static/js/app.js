@@ -1,5 +1,17 @@
 const { createApp } = Vue;
 
+// Debug: catch initial render errors
+const origCreateApp = Vue.createApp;
+Vue.createApp = function(rootComponent) {
+    const app = origCreateApp.call(this, rootComponent);
+    app.config.errorHandler = (err, instance, info) => {
+        console.error('[Vue Render Error]', err.message);
+        console.error('[Vue Error Info]', info);
+        console.error('[Stack]', err.stack);
+    };
+    return app;
+};
+
 function normalizeBooleanLike(value, defaultValue = false) {
     if (value === true || value === false) {
         return value;
@@ -219,7 +231,18 @@ createApp({
             teamMembers: [],
             teamInvites: [],
             teamInviteEmails: '',
+            teamInviteRecords: [],
             isLoadingTeam: false,
+            checkHistory: [],
+            isLoadingCheckHistory: false,
+            webhookCodeFilter: '',
+            webhookCodes: [],
+            isLoadingWebhookCodes: false,
+            viewCodeDetail: null,
+            codeViewMode: 'preview',
+            isTestingTg: false,
+            sub2apiProxies: [],
+            selectedSub2apiProxyId: null,
             authResetModal: {
                 show: false,
                 clearLicense: true,
@@ -322,6 +345,11 @@ createApp({
         },
         mailboxTotalPages() {
             return Math.ceil(this.totalMailboxes / this.mailboxPageSize) || 1;
+        },
+        filteredWebhookCodes() {
+            if (!this.webhookCodeFilter) return this.webhookCodes;
+            const term = this.webhookCodeFilter.toLowerCase();
+            return this.webhookCodes.filter(c => c.email && c.email.toLowerCase().includes(term));
         }
     },
     methods: {
@@ -3230,6 +3258,135 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 this.showToast('撤回异常', 'error');
             }
         },
+        async fetchCheckHistory() {
+            this.isLoadingCheckHistory = true;
+            try {
+                const res = await this.authFetch('/api/sub2api/check_history');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.checkHistory = data.data || [];
+                }
+            } catch (e) {
+                // silent
+            } finally {
+                this.isLoadingCheckHistory = false;
+            }
+        },
+        async fetchWebhookCodes() {
+            this.isLoadingWebhookCodes = true;
+            try {
+                const res = await this.authFetch('/api/webhook/codes');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.webhookCodes = data.data || [];
+                }
+            } catch (e) {
+                // silent
+            } finally {
+                this.isLoadingWebhookCodes = false;
+            }
+        },
+        async deleteWebhookCode(email) {
+            try {
+                const res = await this.authFetch(`/api/webhook/codes/${encodeURIComponent(email)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast('已删除', 'success');
+                    this.fetchWebhookCodes();
+                } else {
+                    this.showToast(data.message || '删除失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('删除异常', 'error');
+            }
+        },
+        async clearWebhookCodes(olderHours) {
+            try {
+                const res = await this.authFetch('/api/webhook/codes/clear', {
+                    method: 'POST',
+                    body: JSON.stringify({ older_hours: olderHours || 0 })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || '已清除', 'success');
+                    this.fetchWebhookCodes();
+                } else {
+                    this.showToast(data.message || '清除失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('清除异常', 'error');
+            }
+        },
+        async clearGmailCredentials() {
+            const confirmed = await this.customConfirm('确定要清除 Gmail 凭据吗？');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/gmail/clear-credentials', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message || (data.status === 'success' ? '已清除' : '清除失败'), data.status);
+            } catch (e) {
+                this.showToast('清除异常', 'error');
+            }
+        },
+        async fetchSub2apiProxies() {
+            try {
+                const res = await this.authFetch('/api/sub2api/proxies');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.sub2apiProxies = data.data || [];
+                }
+            } catch (e) {
+                // silent
+            }
+        },
+        onSub2apiProxySelect(proxyId) {
+            this.selectedSub2apiProxyId = proxyId;
+        },
+        async fetchTeamInviteRecords() {
+            try {
+                const res = await this.authFetch('/api/team/invite_records');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamInviteRecords = data.data || [];
+                }
+            } catch (e) {
+                // silent
+            }
+        },
+        async clearTeamInviteRecords() {
+            const confirmed = await this.customConfirm('确定要清除所有邀请记录吗？');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/team/invite_records/clear', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamInviteRecords = [];
+                    this.showToast('已清除', 'success');
+                } else {
+                    this.showToast(data.message || '清除失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('清除异常', 'error');
+            }
+        },
+        async testTgNotification() {
+            this.isTestingTg = true;
+            try {
+                const res = await this.authFetch('/api/notify/test_tg', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        token: this.config.tg_bot.token,
+                        chat_id: this.config.tg_bot.chat_id
+                    })
+                });
+                const data = await res.json();
+                this.showToast(data.message || (data.status === 'success' ? '发送成功' : '发送失败'), data.status);
+            } catch (e) {
+                this.showToast('发送异常', 'error');
+            } finally {
+                this.isTestingTg = false;
+            }
+        },
         async uploadLicenseFile() {
             const fileInput = document.getElementById('licenseFileInput');
             if (!fileInput || !fileInput.files.length) {
@@ -3479,3 +3636,13 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
     }
 }).mount('#app');
+
+// Debug: catch render errors to pinpoint missing properties
+window.__vueApp__ = document.querySelector('#app').__vue_app__;
+const origWarn = console.warn;
+console.warn = function(...args) {
+    if (args[0] && args[0].includes && args[0].includes('not defined on instance')) {
+        console.error('[Vue MISSING PROP]', args[0]);
+    }
+    origWarn.apply(console, args);
+};
