@@ -212,6 +212,14 @@ createApp({
             teamPage: 1,
             teamPageSize: 50,
             totalTeamAccounts: 0,
+            teamSelectedManager: '',
+            teamSelectedWorkspace: null,
+            teamSelectedWorkspaceName: '',
+            teamWorkspaces: [],
+            teamMembers: [],
+            teamInvites: [],
+            teamInviteEmails: '',
+            isLoadingTeam: false,
             authResetModal: {
                 show: false,
                 clearLicense: true,
@@ -3099,6 +3107,127 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 }
             } catch (e) {
                 this.showToast('清空异常', 'error');
+            }
+        },
+        async discoverTeamWorkspaces() {
+            if (!this.teamSelectedManager) {
+                this.showToast('请先选择管理者账号', 'warning');
+                return;
+            }
+            this.isLoadingTeam = true;
+            this.teamWorkspaces = [];
+            this.teamSelectedWorkspace = null;
+            try {
+                const res = await this.authFetch('/api/team/workspaces', {
+                    method: 'POST',
+                    body: JSON.stringify({ manager_email: this.teamSelectedManager })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamWorkspaces = data.data || [];
+                    this.showToast(`发现 ${this.teamWorkspaces.length} 个工作区`, 'success');
+                } else {
+                    this.showToast(data.message || '发现工作区失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('发现工作区异常', 'error');
+            } finally {
+                this.isLoadingTeam = false;
+            }
+        },
+        async fetchTeamMembers(workspaceId, workspaceName) {
+            this.teamSelectedWorkspace = workspaceId;
+            this.teamSelectedWorkspaceName = workspaceName;
+            this.isLoadingTeam = true;
+            this.teamMembers = [];
+            this.teamInvites = [];
+            try {
+                const res = await this.authFetch('/api/team/members', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        manager_email: this.teamSelectedManager,
+                        workspace_id: workspaceId
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamMembers = data.members || [];
+                    this.teamInvites = data.invites || [];
+                } else {
+                    this.showToast(data.message || '获取成员失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('获取成员异常', 'error');
+            } finally {
+                this.isLoadingTeam = false;
+            }
+        },
+        async inviteTeamMembers() {
+            if (!this.teamInviteEmails.trim()) return;
+            this.isLoadingTeam = true;
+            try {
+                const res = await this.authFetch('/api/team/invite', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        manager_email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        emails: this.teamInviteEmails
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || '邀请已发送', 'success');
+                    this.teamInviteEmails = '';
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                } else {
+                    this.showToast(data.message || '邀请失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('邀请异常', 'error');
+            } finally {
+                this.isLoadingTeam = false;
+            }
+        },
+        async removeTeamMember(userId, email) {
+            try {
+                const res = await this.authFetch('/api/team/member/remove', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        manager_email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        user_id: userId
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(`${email} 已移除`, 'success');
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                } else {
+                    this.showToast(data.message || '移除失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('移除异常', 'error');
+            }
+        },
+        async revokeTeamInvite(email) {
+            try {
+                const res = await this.authFetch('/api/team/invite/revoke', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        manager_email: this.teamSelectedManager,
+                        workspace_id: this.teamSelectedWorkspace,
+                        email: email
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(`${email} 邀请已撤回`, 'success');
+                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
+                } else {
+                    this.showToast(data.message || '撤回失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('撤回异常', 'error');
             }
         },
         async uploadLicenseFile() {
