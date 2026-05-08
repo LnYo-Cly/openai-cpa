@@ -3342,6 +3342,16 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
         onSub2apiProxySelect(proxyId) {
             this.selectedSub2apiProxyId = proxyId;
+            if (proxyId && this.config && this.config.sub2api_mode) {
+                this.config.sub2api_mode.account_proxy_id = proxyId;
+                // Also build the proxy URL and fill default_proxy
+                const proxy = this.sub2apiProxies.find(p => p.id === proxyId);
+                if (proxy) {
+                    const auth = proxy.username ? `${proxy.username}:${proxy.password}@` : '';
+                    this.config.sub2api_mode.default_proxy = `${proxy.protocol}://${auth}${proxy.host}:${proxy.port}`;
+                }
+                this.saveConfig();
+            }
         },
         async fetchTeamInviteRecords() {
             try {
