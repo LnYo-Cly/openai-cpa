@@ -243,6 +243,7 @@ createApp({
             isTestingTg: false,
             sub2apiProxies: [],
             selectedSub2apiProxyId: null,
+            clearOlderHours: 24,
             authResetModal: {
                 show: false,
                 clearLicense: true,
