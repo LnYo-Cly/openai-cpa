@@ -294,6 +294,7 @@ image2api_mode:
   api_url: ""
   api_key: ""
   retain_reg_only: true
+  img_only_mode: false
 
 # NewAPI配置 (注册完成后自动推送为Codex渠道)
 newapi_mode:

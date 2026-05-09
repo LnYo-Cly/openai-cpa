@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v14.3.2"
+APP_VERSION = "v14.3.3"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -277,6 +277,7 @@ ENABLE_IMAGE2API_MODE: bool = False
 IMAGE2API_URL: str = ""
 IMAGE2API_KEY: str = ""
 IMAGE2API_RETAIN_REG_ONLY: bool = False
+IMAGE2API_IMG_ONLY_MODE: bool = False
 
 ENABLE_IMAGE2API_MODE: bool = False
 IMAGE2API_URL: str = ""
@@ -457,7 +458,7 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_ACCOUNT_CONCURRENCY, SUB2API_ACCOUNT_LOAD_FACTOR, SUB2API_ACCOUNT_PRIORITY, SUB2API_DEFAULT_PROXY
     global SUB2API_DEFAULT_PROXY_POOL
     global SUB2API_ACCOUNT_RATE_MULTIPLIER, SUB2API_ACCOUNT_GROUP_IDS, SUB2API_ACCOUNT_PROXY_ID, SUB2API_ENABLE_WS_MODE
-    global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY
+    global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY, IMAGE2API_IMG_ONLY_MODE
     global NEWAPI_MODE_ENABLE, NEWAPI_URL, NEWAPI_TOKEN, NEWAPI_USER_ID, NEWAPI_MODELS, NEWAPI_GROUP, NEWAPI_CHANNEL_NAME, NEWAPI_CHANNEL_MODE, NEWAPI_CHANNEL_IDS, NEWAPI_SAVE_TO_LOCAL, NEWAPI_PROXY
 
     global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
@@ -745,6 +746,7 @@ def reload_all_configs(new_config_dict=None):
     IMAGE2API_URL = format_docker_url(str(_image2api.get("api_url", "")).strip()).rstrip("/")
     IMAGE2API_KEY = str(_image2api.get("api_key", "")).strip()
     IMAGE2API_RETAIN_REG_ONLY = safe_bool(_image2api.get("retain_reg_only", False))
+    IMAGE2API_IMG_ONLY_MODE = safe_bool(_image2api.get("img_only_mode", False))
 
     _newapi = _c.get("newapi_mode", {})
     NEWAPI_MODE_ENABLE = safe_bool(_newapi.get("enable", False))

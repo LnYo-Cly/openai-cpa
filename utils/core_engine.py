@@ -1331,6 +1331,7 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
         item for item in account_list
         if item.get("platform") == "openai"
            and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+           and (item.get("extra") or {}).get("codex_5h_window_minutes", 0) == 0
     ]
 
     _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
@@ -1577,6 +1578,7 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     item for item in account_list
                     if item.get("platform") == "openai"
                        and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+                       and (item.get("extra") or {}).get("codex_5h_window_minutes", 0) == 0
                 ]
 
                 _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
@@ -1620,6 +1622,7 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     item for item in account_list
                     if item.get("platform") == "openai"
                        and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+                       and (item.get("extra") or {}).get("codex_5h_window_minutes", 0) == 0
                 ]
                 total_files = len(filtered_list)
                 valid_count = total_files
