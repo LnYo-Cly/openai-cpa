@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v14.2.4"
+APP_VERSION = "v14.3.2"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -186,6 +186,11 @@ ENABLE_SUB_DOMAINS: bool = False
 SUB_DOMAIN_COUNT: int = 10
 EMAIL_API_MODE: str = ""
 MAIL_DOMAINS: str = ""
+DISABLED_MAIL_DOMAINS: list[str] = []
+ENABLE_MAIL_DOMAIN_RUNTIME_CONTROL: bool = False
+MAIL_DOMAIN_FAILURE_TYPES: list[str] = ["discarded_email"]
+MAIL_DOMAIN_FAIL_THRESHOLD: int = 3
+MAIL_DOMAIN_FAIL_COOLDOWN_SEC: int = 600
 GPTMAIL_BASE: str = ""
 ADMIN_AUTH: str = ""
 IMAP_SERVER: str = ""
@@ -335,6 +340,7 @@ SMSBOWER_MIN_BALANCE = 0.0
 SMSBOWER_MAX_TRIES = 3
 SMSBOWER_POLL_TIMEOUT_SEC = 180
 SMSBOWER_MIN_PRICE = 0.05
+SMSBOWER_OPERATOR = ""
 
 # 5SIM
 FIVESIM_ENABLED = False
@@ -349,6 +355,7 @@ FIVESIM_MIN_PRICE = 0.0
 FIVESIM_MIN_BALANCE = 10.0
 FIVESIM_MAX_TRIES = 3
 FIVESIM_POLL_TIMEOUT_SEC = 180
+FIVESIM_OPERATOR = ""
 
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
@@ -422,6 +429,9 @@ def reload_all_configs(new_config_dict=None):
     global _c
     global WEB_PASSWORD
     global EMAIL_API_MODE, MAIL_DOMAINS, GPTMAIL_BASE, ADMIN_AUTH
+    global DISABLED_MAIL_DOMAINS
+    global ENABLE_MAIL_DOMAIN_RUNTIME_CONTROL
+    global MAIL_DOMAIN_FAILURE_TYPES, MAIL_DOMAIN_FAIL_THRESHOLD, MAIL_DOMAIN_FAIL_COOLDOWN_SEC
     global ENABLE_SUB_DOMAINS, SUB_DOMAIN_COUNT
     global IMAP_SERVER, IMAP_PORT, IMAP_USER, IMAP_PASS
     global FREEMAIL_API_URL, FREEMAIL_API_TOKEN, FREEMAIL_LOCAL_WEBHOOK, FREEMAIL_WEBHOOK_SECRET
@@ -476,11 +486,11 @@ def reload_all_configs(new_config_dict=None):
     global GMAIL_OAUTH_SUFFIX_MODE, GMAIL_OAUTH_SUFFIX_LEN_MIN, GMAIL_OAUTH_SUFFIX_LEN_MAX
     global DISABLE_FORCED_TAKEOVER
     global SMSBOWER_ENABLED, SMSBOWER_API_KEY, SMSBOWER_BASE_URL, SMSBOWER_COUNTRY, SMSBOWER_SERVICE
-    global SMSBOWER_AUTO_PICK_COUNTRY, SMSBOWER_VERIFY_ON_REGISTER, SMSBOWER_REUSE_PHONE
+    global SMSBOWER_AUTO_PICK_COUNTRY, SMSBOWER_VERIFY_ON_REGISTER, SMSBOWER_REUSE_PHONE, SMSBOWER_OPERATOR
     global SMSBOWER_MAX_PRICE, SMSBOWER_MIN_BALANCE, SMSBOWER_MAX_TRIES, SMSBOWER_POLL_TIMEOUT_SEC, SMSBOWER_MIN_PRICE
     global FIVESIM_ENABLED, FIVESIM_API_KEY, FIVESIM_SERVICE, FIVESIM_COUNTRY
     global FIVESIM_AUTO_PICK_COUNTRY, FIVESIM_VERIFY_ON_REGISTER, FIVESIM_REUSE_PHONE
-    global FIVESIM_MAX_PRICE, FIVESIM_MIN_PRICE, FIVESIM_MIN_BALANCE
+    global FIVESIM_MAX_PRICE, FIVESIM_MIN_PRICE, FIVESIM_MIN_BALANCE, FIVESIM_OPERATOR
     global FIVESIM_MAX_TRIES, FIVESIM_POLL_TIMEOUT_SEC
     global SMSBOWER_REUSE_PHONE, SMSBOWER_REUSE_MAX
     global HERO_SMS_REUSE_PHONE, HERO_SMS_REUSE_MAX
@@ -556,6 +566,17 @@ def reload_all_configs(new_config_dict=None):
             return max(minimum, parsed)
         return parsed
 
+    def normalize_domain_list(value):
+        items = value if isinstance(value, list) else []
+        seen = set()
+        domains = []
+        for item in items:
+            text = str(item or "").strip().lower().strip(".")
+            if text and text not in seen:
+                seen.add(text)
+                domains.append(text)
+        return domains
+
     def safe_bool(value, default=False):
         if isinstance(value, bool):
             return value
@@ -586,6 +607,16 @@ def reload_all_configs(new_config_dict=None):
 
     EMAIL_API_MODE = _c.get("email_api_mode", "cloudflare_temp_email")
     MAIL_DOMAINS = _c.get("mail_domains", "")
+    DISABLED_MAIL_DOMAINS = normalize_domain_list(_c.get("disabled_mail_domains", []))
+    ENABLE_MAIL_DOMAIN_RUNTIME_CONTROL = safe_bool(_c.get("enable_mail_domain_runtime_control", False), default=False)
+    MAIL_DOMAIN_FAILURE_TYPES = [
+        str(item or "").strip().lower()
+        for item in (_c.get("mail_domain_failure_types", ["discarded_email"]) or ["discarded_email"])
+        if str(item or "").strip()
+    ]
+    MAIL_DOMAIN_FAILURE_TYPES = list(dict.fromkeys(MAIL_DOMAIN_FAILURE_TYPES)) or ["discarded_email"]
+    MAIL_DOMAIN_FAIL_THRESHOLD = safe_int(_c.get("mail_domain_fail_threshold", 3), default=3, minimum=0)
+    MAIL_DOMAIN_FAIL_COOLDOWN_SEC = safe_int(_c.get("mail_domain_fail_cooldown_sec", 600), default=600, minimum=0)
     GPTMAIL_BASE = str(_c.get("gptmail_base", "")).strip().rstrip("/")
     ADMIN_AUTH = _c.get("admin_auth", "")
 
@@ -827,6 +858,7 @@ def reload_all_configs(new_config_dict=None):
     SMSBOWER_POLL_TIMEOUT_SEC = safe_int(_smsbower.get("poll_timeout_sec", 120), default=120)
     SMSBOWER_MIN_PRICE = safe_float(_smsbower.get("min_price", 0.05), default=0.05)
     SMSBOWER_REUSE_MAX = safe_int(_smsbower.get("reuse_max", 2), default=2)
+    SMSBOWER_OPERATOR = str(_smsbower.get("operator", ) or "").strip()
 
     _fivesim = _c.get("fivesim", {})
     FIVESIM_ENABLED = safe_bool(_fivesim.get("enabled", False), default=False)
@@ -842,6 +874,7 @@ def reload_all_configs(new_config_dict=None):
     FIVESIM_MAX_TRIES = safe_int(_fivesim.get("max_tries", 3), default=3)
     FIVESIM_POLL_TIMEOUT_SEC = safe_int(_fivesim.get("poll_timeout_sec", 180), default=180)
     FIVESIM_REUSE_MAX = safe_int(_fivesim.get("reuse_max", 2), default=2)
+    FIVESIM_OPERATOR = str(_fivesim.get("operator", ) or "").strip()
 
 
     _ai = _c.get("ai_service", {})

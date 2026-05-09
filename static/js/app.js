@@ -1,16 +1,31 @@
 const { createApp } = Vue;
 
-// Debug: catch initial render errors
-const origCreateApp = Vue.createApp;
-Vue.createApp = function(rootComponent) {
-    const app = origCreateApp.call(this, rootComponent);
-    app.config.errorHandler = (err, instance, info) => {
-        console.error('[Vue Render Error]', err.message);
-        console.error('[Vue Error Info]', info);
-        console.error('[Stack]', err.stack);
-    };
-    return app;
-};
+const APP_LOCALE = 'zh-CN';
+const APP_TIME_ZONE = 'Asia/Shanghai';
+
+function formatMainlandDateTime(date, options = {}) {
+    return new Intl.DateTimeFormat(APP_LOCALE, {
+        timeZone: APP_TIME_ZONE,
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        ...options
+    }).format(date).replace(/\//g, '-');
+}
+
+function formatMainlandTime(date) {
+    return new Intl.DateTimeFormat(APP_LOCALE, {
+        timeZone: APP_TIME_ZONE,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    }).format(date);
+}
 
 function normalizeBooleanLike(value, defaultValue = false) {
     if (value === true || value === false) {
@@ -55,7 +70,7 @@ createApp({
                     { id: 'relay', name: '中转管仓', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
                     { id: 'notify', name: '消息通知', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h6a3 3 0 013 3v1a3 3 0 01-3 3H9.436c-1.532 0-2.22.24-2.893.542z"></path></svg>' },
                     { id: 'concurrency', name: '并发与系统', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>' },
-// { id: 'cf_routes', name: 'CF 路由', icon: 'globe' },
+				// { id: 'cf_routes', name: 'CF 路由', icon: '🌍' },
 
             ],
 			cfGlobalStatus: null,
@@ -87,6 +102,10 @@ createApp({
             logBuffer: [],
             logFlushTimer: null,
             config: null,
+            mailDomainRuntimeStats: [],
+            mailDomainRuntimeStatsError: '',
+            mailDomainRuntimePanelCollapsed: normalizeBooleanLike(localStorage.getItem('mail_domain_runtime_panel_collapsed'), false),
+            mailDomainRuntimeLastFetchAt: 0,
             blacklistStr: "",
             warpListStr: "",
             rawProxyListStr: "",
@@ -101,8 +120,12 @@ createApp({
                 success: 0, failed: 0, retries: 0, total: 0, target: 0,
                 pwd_blocked: 0, phone_verify: 0,
                 success_rate: '0.0%', elapsed: '0.0s', avg_time: '0.0s', progress_pct: '0%',
-                mode: '未启动'
+                mode: '未启动',
+                memory: { rss_mb: null, predicted_mid_mb: null, predicted_high_mb: null, safety_level: 'unknown', safety_label: '无数据' }
             },
+            memoryPrediction: null,
+            isLoadingMemoryPrediction: false,
+            memoryPredictionError: '',
             inventoryStats: {
                 local: { total: 0, active: 0, disabled: 0 },
                 cloud: { total: 0, cpa: 0, sub2api: 0, enabled: 0 }
@@ -110,7 +133,7 @@ createApp({
             statsTimer: null,
 
             showPwd: {
-                login: false, web: false, cf: false, imap: false, 
+                login: false, web: false, cf: false, imap: false,
                 free_token: false, free_pass: false,
                 cm: false, mc: false, clash: false, cpa: false, sub2api: false,
                 cf_key: false, cf_modal_key: false,
@@ -190,7 +213,8 @@ createApp({
                 target: 'all',
                 count: 5,
                 instances: [],
-                groups: []
+                groups: [],
+                isDeploying: false
             },
             gmail_oauth_mode: {
                 master_email: '',
@@ -278,6 +302,7 @@ createApp({
                 isDeploying: false,
                 isSettingCatchAll: false
             },
+            isUpdatingSystem: false,
         };
     },
     watch: {
@@ -292,11 +317,20 @@ createApp({
         searchMailboxes() {
             this.mailboxPage = 1;
             this.fetchMailboxes();
+        },
+        'config.email_api_mode'(nextMode) {
+            const supportedModes = ['cloudflare_temp_email', 'freemail', 'cloudmail', 'openai_cpa'];
+            if (!supportedModes.includes(String(nextMode || '').trim())) {
+                this.config.enable_mail_domain_runtime_control = false;
+                this.mailDomainRuntimeStats = [];
+                this.mailDomainRuntimeStatsError = '';
+                this.mailDomainRuntimeLastFetchAt = 0;
+            }
         }
     },
-    mounted() {
+    async mounted() {
         this.applyTheme();
-        this.fetchSystemVersion();
+        await this.fetchSystemVersion();
         if (this.isLoggedIn) {
             this.initApp();
         }
@@ -351,6 +385,13 @@ createApp({
             if (!this.webhookCodeFilter) return this.webhookCodes;
             const term = this.webhookCodeFilter.toLowerCase();
             return this.webhookCodes.filter(c => c.email && c.email.toLowerCase().includes(term));
+        },
+        availableMailDomainCount() {
+            return this.mailDomainRuntimeStats.filter(item => item && item.is_available).length;
+        },
+        cooldownMailDomainCount() {
+            return this.mailDomainRuntimeStats.filter(item => item && !item.is_available).length;
+        },
         }
     },
     methods: {
@@ -397,6 +438,47 @@ createApp({
             return res;
         },
 
+        formatMemoryMb(value) {
+            if (value === null || value === undefined || value === '') return 'N/A';
+            const numeric = Number(value);
+            if (Number.isNaN(numeric)) return 'N/A';
+            return `${numeric.toFixed(1)} MB`;
+        },
+
+        formatMainlandDateTime(date, options = {}) {
+            return formatMainlandDateTime(date, options);
+        },
+
+        memorySafetyClass(level) {
+            const classes = {
+                ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                watch: 'bg-sky-50 text-sky-700 border-sky-200',
+                warning: 'bg-amber-50 text-amber-700 border-amber-200',
+                critical: 'bg-rose-50 text-rose-700 border-rose-200',
+                unknown: 'bg-slate-50 text-slate-600 border-slate-200'
+            };
+            return classes[level] || classes.unknown;
+        },
+
+        async fetchMemoryPrediction() {
+            if (!this.isLoggedIn) return;
+            this.isLoadingMemoryPrediction = true;
+            this.memoryPredictionError = '';
+            try {
+                const res = await this.authFetch('/api/system/memory_prediction');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.memoryPrediction = data;
+                } else {
+                    this.memoryPredictionError = data.message || '内存预测数据获取失败';
+                }
+            } catch (e) {
+                this.memoryPredictionError = '内存预测 API 请求失败';
+            } finally {
+                this.isLoadingMemoryPrediction = false;
+            }
+        },
+
         async handleLogin() {
             if(!this.loginPassword) { this.showToast("请输入密码！", "warning"); return; }
             try {
@@ -408,7 +490,7 @@ createApp({
                 const data = await res.json();
                 if (data.status === 'success') {
 					this.logs = [];
-                    localStorage.setItem('auth_token', data.token); 
+                    localStorage.setItem('auth_token', data.token);
                     this.isLoggedIn = true;
                     this.initApp();
                     this.showToast("登录成功，欢迎回来！", "success");
@@ -429,6 +511,13 @@ createApp({
         },
         async initApp() {
             await this.fetchConfig();
+            if (this.config?.enable_mail_domain_runtime_control) {
+                await this.fetchMailDomainRuntimeStats();
+            } else {
+                this.mailDomainRuntimeStats = [];
+                this.mailDomainRuntimeStatsError = '';
+                this.mailDomainRuntimeLastFetchAt = 0;
+            }
             this.initSSE();
             this.fetchAccounts();
             this.fetchCloudAccounts();
@@ -445,6 +534,9 @@ createApp({
             }
             if (this.currentTab === 'proxy') {
                 this.fetchClashPool();
+            }
+            if (this.currentTab === 'concurrency') {
+                this.fetchMemoryPrediction();
             }
         },
         startStatsPolling() {
@@ -473,9 +565,19 @@ createApp({
                             this.dispatchExtensionTask();
                         }
                     }
-                this.stats = data;
+                    this.stats = data;
                 } else {
                     this.isRunning = data.is_running;
+                }
+
+                if (
+                    this.currentTab === 'email' &&
+                    this.isRunning &&
+                    this.config?.enable_mail_domain_runtime_control &&
+                    !this.mailDomainRuntimePanelCollapsed &&
+                    Date.now() - this.mailDomainRuntimeLastFetchAt >= 1000
+                ) {
+                    this.fetchMailDomainRuntimeStats({ silent: true });
                 }
 
                 if (this.currentTab === 'cluster') {
@@ -597,10 +699,10 @@ createApp({
                         this.config.reg_mode = 'protocol';
                     }
                 if (!this.config.tg_bot.template_success) {
-this.config.tg_bot.template_success = "<b>注册成功</b>\n时间: <code>{time}</code>\n账号: <code>{email}</code>\n密码: <code>{password}</code>";
+                    this.config.tg_bot.template_success = "🎉 <b>注册成功</b>\n⏰ 时间: <code>{time}</code>\n📧 账号: <code>{email}</code>\n🔑 密码: <code>{password}</code>";
                 }
                 if (!this.config.tg_bot.template_stop) {
-this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最终运行统计</b>：\n成功率: {success_rate}% · 成功: {success}/{target} · 失败: {failed} 次 · 风控拦截: {retries} 次 · 密码受阻: {pwd_blocked} 次 · 出现手机: {phone_verify} 次 · 总耗时: {elapsed_time}s · 平均单号: {avg_time}s";
+                    this.config.tg_bot.template_stop = "🛑 <b>系统已收到停止指令</b>\n\n📊 <b>最终运行统计</b>：\n成功率: {success_rate}% · 成功: {success}/{target} · 失败: {failed} 次 · 风控拦截: {retries} 次 · 密码受阻: {pwd_blocked} 次 · 出现手机: {phone_verify} 次 · 总耗时: {elapsed_time}s · 平均单号: {avg_time}s";
                 }
                 if (!this.config.database) {
                     this.config.database = {
@@ -664,7 +766,131 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                 if (this.config.cluster_node_name === undefined) this.config.cluster_node_name = '';
                 if (this.config.cluster_master_url === undefined) this.config.cluster_master_url = '';
                 if (this.config.cluster_secret === undefined) this.config.cluster_secret = 'wenfxl666';
+                if (!Array.isArray(this.config.disabled_mail_domains)) this.config.disabled_mail_domains = [];
+                this.config.disabled_mail_domains = [...new Set(
+                    this.config.disabled_mail_domains
+                        .map(item => String(item || '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''))
+                        .filter(Boolean)
+                )];
+                if (this.config.enable_mail_domain_runtime_control === undefined) this.config.enable_mail_domain_runtime_control = false;
+                this.config.enable_mail_domain_runtime_control = normalizeBooleanLike(this.config.enable_mail_domain_runtime_control, false);
+                if (!Array.isArray(this.config.mail_domain_failure_types)) this.config.mail_domain_failure_types = ['discarded_email'];
+                this.config.mail_domain_failure_types = [...new Set(
+                    this.config.mail_domain_failure_types
+                        .map(item => String(item || '').trim().toLowerCase())
+                        .filter(Boolean)
+                )];
+                if (this.config.mail_domain_failure_types.length === 0) this.config.mail_domain_failure_types = ['discarded_email'];
+                if (this.config.mail_domain_fail_threshold === undefined) this.config.mail_domain_fail_threshold = 3;
+                if (this.config.mail_domain_fail_cooldown_sec === undefined) this.config.mail_domain_fail_cooldown_sec = 600;
             } catch (e) {}
+        },
+        async fetchMailDomainRuntimeStats(options = {}) {
+            const { silent = false } = options;
+            if (!this.config?.enable_mail_domain_runtime_control) {
+                this.mailDomainRuntimeStats = [];
+                this.mailDomainRuntimeStatsError = '';
+                this.mailDomainRuntimeLastFetchAt = 0;
+                return;
+            }
+            try {
+                const res = await this.authFetch('/api/config/mail_domain_runtime_stats');
+                const data = await res.json();
+                if (data.status === 'success' && Array.isArray(data.items)) {
+                    this.mailDomainRuntimeStats = data.items;
+                    this.mailDomainRuntimeStatsError = '';
+                    this.mailDomainRuntimeLastFetchAt = Date.now();
+                } else {
+                    this.mailDomainRuntimeStatsError = data.message || '域名运行时状态获取失败';
+                    if (!silent) {
+                        this.showToast(this.mailDomainRuntimeStatsError, 'error');
+                    }
+                }
+            } catch (e) {
+                this.mailDomainRuntimeStatsError = '域名运行时状态获取失败，请检查后端接口或网络连接';
+                if (!silent) {
+                    this.showToast(this.mailDomainRuntimeStatsError, 'error');
+                }
+            }
+        },
+        toggleMailDomainRuntimePanel() {
+            this.mailDomainRuntimePanelCollapsed = !this.mailDomainRuntimePanelCollapsed;
+            localStorage.setItem('mail_domain_runtime_panel_collapsed', this.mailDomainRuntimePanelCollapsed ? 'true' : 'false');
+        },
+        isMailDomainRuntimePristine(item) {
+            if (!item || typeof item !== 'object') return false;
+            return !item.last_used_at && !item.success_count && !item.fail_count && !(item.cooldown_remaining_sec > 0);
+        },
+        toggleMailDomainDisabled(domain) {
+            const normalized = String(domain || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+            if (!normalized) return;
+            if (!Array.isArray(this.config.disabled_mail_domains)) {
+                this.config.disabled_mail_domains = [];
+            }
+            const next = new Set(
+                this.config.disabled_mail_domains
+                    .map(item => String(item || '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''))
+                    .filter(Boolean)
+            );
+            if (next.has(normalized)) {
+                next.delete(normalized);
+            } else {
+                next.add(normalized);
+            }
+            this.config.disabled_mail_domains = Array.from(next);
+            this.saveConfig();
+        },
+        async clearMailDomainRuntimeCooldowns() {
+            try {
+                const res = await this.authFetch('/api/config/mail_domain_runtime_stats/clear', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.mailDomainRuntimeStatsError = '';
+                    this.showToast(data.message || '已清除全部域名冷却', 'success');
+                    await this.fetchMailDomainRuntimeStats({ silent: true });
+                    this.pollStats();
+                } else {
+                    this.showToast(data.message || '清除全部域名冷却失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('清除全部域名冷却失败，请检查网络连接', 'error');
+            }
+        },
+        async clearMailDomainRuntimeRowCounters(domain) {
+            try {
+                const res = await this.authFetch('/api/config/mail_domain_runtime_stats/clear_counters', {
+                    method: 'POST',
+                    body: JSON.stringify({ domain })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || '已清空域名计数', 'success');
+                    await this.fetchMailDomainRuntimeStats({ silent: true });
+                    this.pollStats();
+                } else {
+                    this.showToast(data.message || '清空域名计数失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('清空域名计数失败，请检查网络连接', 'error');
+            }
+        },
+        async clearMailDomainRuntimeRowCooldown(domain) {
+            try {
+                const res = await this.authFetch('/api/config/mail_domain_runtime_stats/clear_cooldown', {
+                    method: 'POST',
+                    body: JSON.stringify({ domain })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || '已清除域名冷却', 'success');
+                    await this.fetchMailDomainRuntimeStats({ silent: true });
+                    this.pollStats();
+                } else {
+                    this.showToast(data.message || '清除域名冷却失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('清除域名冷却失败，请检查网络连接', 'error');
+            }
         },
         async saveConfig() {
             try {
@@ -694,6 +920,33 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                     this.config.local_microsoft.suffix_len_min = minLen;
                     this.config.local_microsoft.suffix_len_max = maxLen;
                 }
+                this.config.enable_mail_domain_runtime_control = normalizeBooleanLike(this.config.enable_mail_domain_runtime_control, false);
+                if (!Array.isArray(this.config.mail_domain_failure_types)) {
+                    this.config.mail_domain_failure_types = ['discarded_email'];
+                }
+                this.config.mail_domain_failure_types = [...new Set(
+                    this.config.mail_domain_failure_types
+                        .map(item => String(item || '').trim().toLowerCase())
+                        .filter(Boolean)
+                )];
+                if (this.config.mail_domain_failure_types.length === 0) {
+                    this.config.mail_domain_failure_types = ['discarded_email'];
+                }
+                if (!this.config.enable_mail_domain_runtime_control) {
+                    this.mailDomainRuntimeStats = [];
+                    this.mailDomainRuntimeStatsError = '';
+                    this.mailDomainRuntimeLastFetchAt = 0;
+                }
+                if (!Array.isArray(this.config.disabled_mail_domains)) {
+                    this.config.disabled_mail_domains = [];
+                }
+                this.config.disabled_mail_domains = [...new Set(
+                    this.config.disabled_mail_domains
+                        .map(item => String(item || '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''))
+                        .filter(Boolean)
+                )];
+                this.config.mail_domain_fail_threshold = Math.max(0, parseInt(this.config.mail_domain_fail_threshold, 10) || 0);
+                this.config.mail_domain_fail_cooldown_sec = Math.max(0, parseInt(this.config.mail_domain_fail_cooldown_sec, 10) || 0);
                 this.config.warp_proxy_list = this.warpListStr.split('\n').map(s => s.trim()).filter(s => s);
                 if (!this.config.raw_proxy_pool || typeof this.config.raw_proxy_pool !== 'object' || Array.isArray(this.config.raw_proxy_pool)) {
                     this.config.raw_proxy_pool = { enable: false, proxy_list: [] };
@@ -706,6 +959,8 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                 const data = await res.json();
                 if(data.status === 'success') {
                     this.showToast(data.message, "success");
+                    await this.fetchConfig();
+                    await this.fetchMailDomainRuntimeStats();
                     this.pollStats();
                 } else { this.showToast("保存失败：" + data.message, "error"); }
             } catch (e) { this.showToast("保存失败网络异常", "error"); }
@@ -747,8 +1002,8 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                     } else {
                         this.totalAccounts = this.accounts.length;
                     }
-                    
-                    this.selectedAccounts = []; 
+
+                    this.selectedAccounts = [];
                     if (isManual) this.showToast("账号列表已刷新！", "success");
                 }
             } catch (e) {
@@ -763,14 +1018,14 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                 return;
             }
             this.currentPage = newPage;
-            this.selectedAccounts = []; 
+            this.selectedAccounts = [];
             this.fetchAccounts(false);
         },
 		changePageSize() {
             this.currentPage = 1;
-            
-            this.selectedAccounts = []; 
-            
+
+            this.selectedAccounts = [];
+
             this.fetchAccounts(false);
         },
         switchTab(tabId) {
@@ -778,13 +1033,14 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
             this.currentTab = tabId;
             window.location.hash = tabId;
 			if (tabId === 'console') {
-				this.pollStats(); 
+				this.pollStats();
 			}
             if (tabId === 'accounts') {
                 this.fetchAccounts();
             }
 			if (tabId === 'email') {
 				this.fetchConfig();
+                    this.fetchMailDomainRuntimeStats();
 			}
 			if (tabId === 'cloud') {
 			    this.fetchCloudAccounts();
@@ -799,6 +1055,9 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
             }
             if (tabId === 'proxy') {
                 this.fetchClashPool();
+            }
+            if (tabId === 'concurrency') {
+                this.fetchMemoryPrediction();
             }
             if (tabId === 'team_accounts') {
                 this.fetchTeamAccounts();
@@ -845,7 +1104,7 @@ this.config.tg_bot.template_stop = "<b>系统已收到停止指令</b>\n\n<b>最
                         document.body.removeChild(a);
                         window.URL.revokeObjectURL(url);
 
-this.showToast(`成功打包导出 ${data.length} 个账号的压缩包！`, "success");
+                        this.showToast(`🎉 成功打包导出 ${data.length} 个账号的压缩包！`, "success");
                     } else {
                         data.forEach((tokenObj, index) => {
                             setTimeout(() => {
@@ -869,7 +1128,7 @@ this.showToast(`成功打包导出 ${data.length} 个账号的压缩包！`, "su
                                 window.URL.revokeObjectURL(url);
                             }, index * 300);
                         });
-this.showToast(`成功触发 ${data.length} 个独立 Token 文件的下载！`, "success");
+                        this.showToast(`🎉 成功触发 ${data.length} 个独立 Token 文件的下载！`, "success");
                     }
 
                     this.selectedAccounts = [];
@@ -884,11 +1143,11 @@ this.showToast(`成功触发 ${data.length} 个独立 Token 文件的下载！`,
 		maskEmail(email) {
             if (!email) return '';
             const parts = email.split('@');
-            if (parts.length !== 2) return '******'; 
-            
+            if (parts.length !== 2) return '******';
+
             const name = parts[0];
             const maskedDomain = '***.***';
-            
+
             if (name.length <= 3) {
                 return name + '***@' + maskedDomain;
             }
@@ -905,10 +1164,10 @@ this.showToast(`成功触发 ${data.length} 个独立 Token 文件的下载！`,
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement('a');
 			link.href = url;
-			
+
 			const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 			link.download = `accounts_login_${dateStr}.txt`;
-			
+
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -919,19 +1178,19 @@ this.showToast(`成功触发 ${data.length} 个独立 Token 文件的下载！`,
 		async deleteSelectedAccounts() {
             if (this.selectedAccounts.length === 0) return;
 
-const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底删除选中的 ${this.selectedAccounts.length} 个账号吗？\n删除后数据将无法恢复！`);
+            const confirmed = await this.customConfirm(`⚠️ 危险操作：\n\n确定要彻底删除选中的 ${this.selectedAccounts.length} 个账号吗？\n删除后数据将无法恢复！`);
             if (!confirmed) return;
 			this.isDeletingAccounts = true;
             try {
                 const emailsToDelete = this.selectedAccounts.map(acc => acc.email);
-                
+
                 const res = await this.authFetch('/api/accounts/delete', {
                     method: 'POST',
                     body: JSON.stringify({ emails: emailsToDelete })
                 });
-                
+
                 const data = await res.json();
-                
+
                 if (data.status === 'success') {
                     this.showToast(`成功物理删除 ${emailsToDelete.length} 个账号`, 'success');
                     this.selectedAccounts = [];
@@ -974,32 +1233,32 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                     }
                 } else {
                     if (this.config?.reg_mode === 'extension') {
-                        this.showToast("正在探测节点在线状态...", "info");
+                        this.showToast("📡 正在探测节点在线状态...", "info");
                         try {
                             const localId = localStorage.getItem('local_worker_id') || 'Node-Pilot-01';
                             const checkRes = await this.authFetch(`/api/ext/check_node?worker_id=${localId}`);
                             const checkData = await checkRes.json();
                             if (!checkData.online) {
                                 const now = new Date();
-                                const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
-                                this.showToast(`启动失败：节点 [${localId}] 未连接或已掉线！`, "error");
+            const timeStr = formatMainlandTime(now);
+                                this.showToast(`🚫 启动失败：节点 [${localId}] 未连接或已掉线！`, "error");
                                 this.logs.push({
                                     parsed: true,
                                     time: timeStr,
                                     level: '系统',
-                                    text: '请确认是否安装了本项目plugin目录里的浏览器插件，并强制刷新该页面！',
-                                    raw: `[${timeStr}] [系统] 请确认是否安装了本项目plugin目录里的浏览器插件，并强制刷新该页面！`
+                                    text: '🛑 请确认是否安装了本项目plugin目录里的浏览器插件，并强制刷新该页面！',
+                                    raw: `[${timeStr}] [系统] 🛑 请确认是否安装了本项目plugin目录里的浏览器插件，并强制刷新该页面！`
                                 });
                                 return;
                             }
                         } catch (e) {
 
-                            this.showToast("无法连接到总控服务器检查状态", "error");
+                            this.showToast("🚫 无法连接到总控服务器检查状态", "error");
                             return;
                         }
                         this.isRunning = true;
                         this.currentTab = 'console';
-                        this.showToast("节点在线！已启动【浏览器插件托管】模式", "success");
+                        this.showToast("✅ 节点在线！已启动【浏览器插件托管】模式", "success");
                         await this.authFetch('/api/ext/reset_stats', { method: 'POST' });
                         await this.dispatchExtensionTask();
 
@@ -1025,6 +1284,7 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                     this.isRunning = true;
                     this.currentTab = 'console';
                     this.pollStats();
+                    await this.fetchMailDomainRuntimeStats();
                     this.showToast(`启动成功`, "success");
                 } else { this.showToast(data.message, "error"); }
             } catch (e) { this.showToast("启动请求发送失败", "error"); }
@@ -1035,14 +1295,15 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 const data = await res.json();
                 this.showToast("任务已停止", "info");
                 this.isRunning = false;
+                await this.fetchMailDomainRuntimeStats();
                 const now = new Date();
-                const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false }); // 获取如 14:30:05 格式
+            const timeStr = formatMainlandTime(now); // 获取如 14:30:05 格式
                 this.logs.push({
                     parsed: true,
                     time: timeStr,
                     level: '系统',
-                    text: '接收到紧急停止指令，引擎已停止运行！',
-                    raw: `[${timeStr}] [系统] 接收到紧急停止指令，引擎已停止运行！`
+                    text: '🛑 接收到紧急停止指令，引擎已停止运行！',
+                    raw: `[${timeStr}] [系统] 🛑 接收到紧急停止指令，引擎已停止运行！`
                 });
 
                 this.$nextTick(() => {
@@ -1058,13 +1319,13 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
         },
         async bulkPushCPA() {
             if (!this.config.cpa_mode.enable) {
-                this.showToast("请先开启 CPA 巡检并填写 API", "warning"); return;
+              this.showToast("🚫 请先开启 CPA 巡检并填写 API", "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
             const targetAccounts = this.selectedAccounts.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('CPA'));
 
             if (targetAccounts.length === 0) {
-                this.showToast("选中的账号都已推送过 CPA，无需重复推送！", "warning");
+                this.showToast("⚠️ 选中的账号都已推送过 CPA，无需重复推送！", "warning");
                 return;
             }
             const skippedCount = this.selectedAccounts.length - targetAccounts.length;
@@ -1093,13 +1354,13 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
         },
         async bulkPushSub2API() {
             if (!this.config.sub2api_mode.enable) {
-                this.showToast("请先开启 Sub2API 模式并填写参数", "warning"); return;
+                this.showToast("🚫 请先开启 Sub2API 模式并填写参数", "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
             const targetAccounts = this.selectedAccounts.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('SUB2API'));
 
             if (targetAccounts.length === 0) {
-                this.showToast("选中的账号都已推送过 Sub2API，无需重复推送！", "warning");
+                this.showToast("⚠️ 选中的账号都已推送过 Sub2API，无需重复推送！", "warning");
                 return;
             }
 
@@ -1129,13 +1390,13 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
         },
         async bulkPushImage2API() {
             if (!this.config.image2api_mode || !this.config.image2api_mode.enable) {
-                this.showToast("请先开启 Image2API 模式并填写参数", "warning"); return;
+                this.showToast("🚫 请先开启 Image2API 模式并填写参数", "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
             const targetAccounts = this.selectedAccounts.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('IMAGE2API'));
 
             if (targetAccounts.length === 0) {
-                this.showToast("选中的账号都已推送过 Image2API，无需重复推送！", "warning");
+                this.showToast("⚠️ 选中的账号都已推送过 Image2API，无需重复推送！", "warning");
                 return;
             }
 
@@ -1166,26 +1427,26 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
         async triggerAccountAction(account, action) {
             if (action === 'push') {
                 if (!this.config.cpa_mode.enable) {
-                    this.showToast("无法推送：请先配置 CPA 参数！", "warning"); return;
+                    this.showToast("🚫 无法推送：请先配置 CPA 参数！", "warning"); return;
                 }
                 if (account.push_platform && account.push_platform.toUpperCase().includes('CPA')) {
-                    this.showToast("该账号已在 CPA 平台，无需重复推送！", "warning"); return;
+                    this.showToast("⚠️ 该账号已在 CPA 平台，无需重复推送！", "warning"); return;
                 }
             }
             if (action === 'push_sub2api') {
                 if (!this.config.sub2api_mode.enable) {
-                    this.showToast("无法推送：请先配置 Sub2API 参数！", "warning"); return;
+                    this.showToast("🚫 无法推送：请先配置 Sub2API 参数！", "warning"); return;
                 }
                 if (account.push_platform && account.push_platform.toUpperCase().includes('SUB2API')) {
-                    this.showToast("该账号已在 Sub2API 平台，无需重复推送！", "warning"); return;
+                    this.showToast("⚠️ 该账号已在 Sub2API 平台，无需重复推送！", "warning"); return;
                 }
             }
             if (action === 'push_image2api') {
                 if (!this.config.image2api_mode || !this.config.image2api_mode.enable) {
-                    this.showToast("无法推送：请先配置 Image2API 参数！", "warning"); return;
+                    this.showToast("🚫 无法推送：请先配置 Image2API 参数！", "warning"); return;
                 }
                 if (account.push_platform && account.push_platform.toUpperCase().includes('IMAGE2API')) {
-                    this.showToast("该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
+                    this.showToast("⚠️ 该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
                 }
             }
             if (action === 'push_newapi') {
@@ -1300,7 +1561,7 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
             }
         },
         async clearLogs() {
-            this.logs = []; 
+            this.logs = [];
             try { await this.authFetch('/api/logs/clear', { method: 'POST' }); } catch (e) {}
         },
 		initSSE() {
@@ -1368,7 +1629,7 @@ const confirmed = await this.customConfirm(`危险操作：\n\n确定要彻底�
                 this.logBuffer.push(logObj);
             };
             this.evtSource.onerror = (event) => {
-console.error("SSE 连接断开或异常。");
+                console.error("🔴 SSE 连接断开或异常。");
                 if (this.evtSource) {
                     this.evtSource.close();
                     this.evtSource = null;
@@ -1391,7 +1652,7 @@ console.error("SSE 连接断开或异常。");
 		},
 		// async executeGenerateDomainsOnly() {
 			// if (!this.config.mail_domains) return this.showToast('请先填写上方的主发信域名池！', 'warning');
-			
+
 			// const level = this.config.sub_domain_level || 1;
 
 			// try {
@@ -1421,13 +1682,13 @@ console.error("SSE 连接断开或异常。");
 		async executeSyncToCF() {
 			const rawList = this.config.mail_domains || '';
 			const subDomains = rawList.split(',').map(d => d.trim()).filter(d => d);
-			
+
 			if (subDomains.length === 0) return this.showToast('当前没有可解析的主域，请先填写！', 'warning');
 			if (!this.config.cf_api_email || !this.config.cf_api_key) return this.showToast('请填写 CF 账号邮箱和 API Key！', 'warning');
 			const confirmed = await this.customConfirm(`把 ${subDomains.length} 个主域名解析到 Cloudflare，确定继续吗？`);
 			if (!confirmed) return;
 			this.isLoadingSync = true;
-this.showToast('多线程同步中，请耐心等待...', 'info');
+			this.showToast('🚀 多线程同步中，请耐心等待...', 'info');
             this.currentTab = 'console';
 			try {
 				const res = await this.authFetch('/api/config/add_wildcard_dns', {
@@ -1439,17 +1700,17 @@ this.showToast('多线程同步中，请耐心等待...', 'info');
 						api_key: this.config.cf_api_key
 					})
 				});
-				
+
 				const data = await res.json();
 				if (data.status === 'success') {
-this.showToast('解析成功...', 'success');
+					this.showToast('✅ 解析成功...', 'success');
 				} else {
 					this.showToast(data.message || '解析失败', 'error');
 				}
 			} catch (e) {
 				this.showToast('解析接口请求异常', 'error');
 			} finally {
-				this.isLoadingSync = false; 
+				this.isLoadingSync = false;
 			}
 		},
 		// async checkCfGlobalStatus() {
@@ -1459,11 +1720,11 @@ this.showToast('解析成功...', 'success');
 				// const res = await this.authFetch(`/api/config/cf_global_status?main_domain=${encodeURIComponent(domains)}`);
 				// const data = await res.json();
 				// if (data.status === 'success') {
-					// this.cfGlobalStatusList = data.data; 
+					// this.cfGlobalStatusList = data.data;
 					// const allEnabled = data.data.length > 0 && data.data.every(item => item.is_enabled);
 					// if (allEnabled && this.cfStatusTimer) {
-						// this.stopCfStatusPolling(); 
-// this.showToast('线上状态已全部激活！', 'success');
+						// this.stopCfStatusPolling();
+						// this.showToast('✨ 线上状态已全部激活！', 'success');
 					// }
 				// }
 			// } catch (e) {
@@ -1471,22 +1732,22 @@ this.showToast('解析成功...', 'success');
 			// }
 		// },
 		// async startCfStatusPolling() {
-			// this.stopCfStatusPolling(); 
+			// this.stopCfStatusPolling();
 			// this.isLoadingCfRoutes = true;
-			
-// this.showToast("开启 CF 状态智能监控...");
+
+			// this.showToast("🚀 开启 CF 状态智能监控...");
 
 			// this.cfStatusTimer = setInterval(() => {
 				// this.checkCfGlobalStatus();
 			// }, 8000);
-			// await this.fetchCfRoutes(); 
+			// await this.fetchCfRoutes();
 		// },
 		// stopCfStatusPolling() {
 			// if (this.cfStatusTimer) {
 				// clearInterval(this.cfStatusTimer);
 				// this.cfStatusTimer = null;
 				// this.isLoadingCfRoutes = false;
-// this.showToast("智能监控已停止。");
+				// this.showToast("🛑 智能监控已停止。");
 			// }
 		// },
 		// async fetchCfRoutes() {
@@ -1494,7 +1755,7 @@ this.showToast('解析成功...', 'success');
 			// if (!this.config.cf_api_email || !this.config.cf_api_key) return this.showToast('请填写 CF 账号邮箱和 API Key！', 'warning');
 
 			// this.isLoadingCfRoutes = true;
-// this.showToast('正在连线 Cloudflare 查询线上路由记录...', 'info');
+			// this.showToast('🔍 正在连线 Cloudflare 查询线上路由记录...', 'info');
 
 			// try {
 				// const res = await this.authFetch('/api/config/query_cf_domains', {
@@ -1508,8 +1769,8 @@ this.showToast('解析成功...', 'success');
 				// const data = await res.json();
 				// if (data.status === 'success') {
 					// if (data.domains) {
-						// this.cfRoutes = data.domains.split(',').filter(d=>d).map(d => ({ 
-							// domain: d, 
+						// this.cfRoutes = data.domains.split(',').filter(d=>d).map(d => ({
+							// domain: d,
 							// loading: false
 						// }));
 					// } else {
@@ -1533,7 +1794,7 @@ this.showToast('解析成功...', 'success');
 		// async deleteSelectedCfRoutes() {
 			// if (this.selectedCfRoutes.length === 0) return;
 			// const domainsToDelete = this.selectedCfRoutes.map(item => item.domain);
-			
+
 			// this.isDeletingCfRoutes = true;
 			// try {
 				// await this.executeDeleteCfDomains(domainsToDelete);
@@ -1543,7 +1804,7 @@ this.showToast('解析成功...', 'success');
 		// },
 
 		// async deleteSingleCfRoute(routeObj) {
-			// routeObj.loading = true; 
+			// routeObj.loading = true;
 			// try {
 				// await this.executeDeleteCfDomains([routeObj.domain]);
 			// } finally {
@@ -1555,10 +1816,10 @@ this.showToast('解析成功...', 'success');
 			// if (!this.config.cf_api_email || !this.config.cf_api_key) return this.showToast('请填写 CF 账号邮箱和 API Key！', 'warning');
 
 			// const count = domainsArray.length;
-// const confirmed = await this.customConfirm(`危险操作：\n\n即将调用 Cloudflare API 强制删除这 ${count} 个域名的路由解析记录。确定要继续吗？`);
+			// const confirmed = await this.customConfirm(`⚠️ 危险操作：\n\n即将调用 Cloudflare API 强制删除这 ${count} 个域名的路由解析记录。确定要继续吗？`);
 			// if (!confirmed) return;
 			// if (count > 1) this.isDeletingCfRoutes = true;
-// this.showToast(`正在连线 Cloudflare 销毁 ${count} 条记录...`, 'info');
+			// this.showToast(`🗑️ 正在连线 Cloudflare 销毁 ${count} 条记录...`, 'info');
 
 			// try {
 				// const res = await this.authFetch('/api/config/delete_cf_domains', {
@@ -1823,6 +2084,7 @@ this.showToast('解析成功...', 'success');
             }
         },
         async checkUpdate(isManual = false) {
+            if (this.appVersion === '检查中...' || !this.appVersion) return;
             try {
                 const res = await this.authFetch(`/api/system/check_update?current_version=${this.appVersion}`);
                 const data = await res.json();
@@ -1850,10 +2112,39 @@ this.showToast('解析成功...', 'success');
         },
         async promptUpdate() {
             if (!this.updateInfo.hasUpdate) return;
-const msg = `发现新版本: ${this.updateInfo.version}\n\n更新内容:\n${this.updateInfo.changelog}\n\n是否前往 GitHub 查看并下载更新？`;
+            const msg = `🚀 发现新版本: ${this.updateInfo.version}\n\n📝 更新内容:\n${this.updateInfo.changelog}\n\n是否立即执行一键更新？\n(系统将自动识别 Docker/本地环境，更新期间请勿关闭页面)`;
             const confirmed = await this.customConfirm(msg);
             if (confirmed) {
-                window.open(this.updateInfo.url, '_blank');
+                this.executeAutoUpdate();
+            }
+        },
+        async executeAutoUpdate() {
+            this.isUpdatingSystem = true;
+            this.showToast("🚀 正在下发更新指令，请耐心等待...", "info");
+            try {
+                const res = await this.authFetch('/api/system/auto_update', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    this.showToast(`✅ ${data.message}`, "success");
+                    if(this.statsTimer) clearInterval(this.statsTimer);
+                    if(this.evtSource) this.evtSource.close();
+
+                    this.showToast("⏳ 网页将在 20 秒后自动刷新...", "info");
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 20000);
+
+                } else if (data.status === 'warning') {
+                    this.showToast(`⚠️ ${data.message}`, "warning");
+                    this.isUpdatingSystem = false;
+                } else {
+                    this.showToast(`❌ 更新失败: ${data.message}`, "error");
+                    this.isUpdatingSystem = false;
+                }
+            } catch (e) {
+                this.showToast("更新指令已发送，由于后端重启，连接已断开，请稍后手动刷新。", "warning");
+                setTimeout(() => { window.location.reload(); }, 20000);
             }
         },
         async getGmailAuthUrl() {
@@ -1882,7 +2173,7 @@ const msg = `发现新版本: ${this.updateInfo.version}\n\n更新内容:\n${thi
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
-this.showToast("永久授权成功！系统已自动关联该 Gmail", "success");
+                    this.showToast("🎉 永久授权成功！系统已自动关联该 Gmail", "success");
                     this.gmailOAuth.authUrl = '';
                     this.gmailOAuth.pastedCode = '';
                 } else {
@@ -1895,17 +2186,17 @@ this.showToast("永久授权成功！系统已自动关联该 Gmail", "success")
             }
         },
         async restartSystem() {
-const confirmed = await this.customConfirm("危险操作：\n\n确定要重启整个后端系统吗？\n如果当前有任务正在运行，将会被强制中断！");
+            const confirmed = await this.customConfirm("⚠️ 危险操作：\n\n确定要重启整个后端系统吗？\n如果当前有任务正在运行，将会被强制中断！");
             if (!confirmed) return;
 
             try {
-this.showToast("正在向服务器发送重启指令...", "info");
+                this.showToast("🚀 正在向服务器发送重启指令...", "info");
                 this.isRestarting = true;
                 const res = await this.authFetch('/api/system/restart', { method: 'POST' });
                 const data = await res.json();
 
                 if (data.status === 'success') {
-this.showToast("系统正在重启，网页将于 6 秒后自动刷新...", "success");
+                    this.showToast("✅ 系统正在重启，网页将于 6 秒后自动刷新...", "success");
                     if(this.statsTimer) clearInterval(this.statsTimer);
                     if(this.evtSource) this.evtSource.close();
                     if(this.cfStatusTimer) clearInterval(this.cfStatusTimer);
@@ -1930,8 +2221,7 @@ this.showToast("系统正在重启，网页将于 6 秒后自动刷新...", "suc
             }
             const d = new Date(utcStr);
             if (isNaN(d.getTime())) return dateStr;
-            const pad = (n) => n.toString().padStart(2, '0');
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            return formatMainlandDateTime(d);
         },
         async exportSub2Api() {
             if (this.selectedAccounts.length === 0) {
@@ -1979,7 +2269,7 @@ this.showToast("系统正在重启，网页将于 6 秒后自动刷新...", "suc
                         link.remove();
                         window.URL.revokeObjectURL(url);
 
-this.showToast(`成功打包并下载 ${accounts.length} 个独立配置文件！`, 'success');
+                        this.showToast(`🎉 成功打包并下载 ${accounts.length} 个独立配置文件！`, 'success');
                     } else {
                         const content = JSON.stringify(res.data, null, 2);
                         const blob = new Blob([content], { type: 'application/json' });
@@ -2078,7 +2368,7 @@ this.showToast(`成功打包并下载 ${accounts.length} 个独立配置文件�
         },
 
         async singleCloudAction(acc, action) {
-if (action === 'delete' && !confirm('危险操作：确认在远端彻底删除该账号吗？')) return;
+            if (action === 'delete' && !confirm('⚠️ 危险操作：确认在远端彻底删除该账号吗？')) return;
 
             const actionName = action === 'check' ? '测活' : (action === 'enable' ? '启用' : (action === 'disable' ? '禁用' : (action === 'refresh' ? '刷新凭证' : '删除')));
             this.showToast(`正在对账号进行 ${actionName}，请稍候...`, 'info');
@@ -2099,7 +2389,7 @@ if (action === 'delete' && !confirm('危险操作：确认在远端彻底删除�
 
                 if (action === 'check') {
                     this.currentTab = 'console';
-                    const now = new Date().toLocaleString('zh-CN', { hour12: false });
+            const now = formatMainlandDateTime(new Date());
                     this.localCheckTimes[acc.id] = now;
                     acc.last_check = now;
 
@@ -2146,7 +2436,7 @@ if (action === 'delete' && !confirm('危险操作：确认在远端彻底删除�
             if (this.selectedCloud.length === 0) {
                 return this.showToast('请先勾选需要操作的账号', 'warning');
             }
-if (action === 'delete' && !confirm(`危险操作：确认删除选中的 ${this.selectedCloud.length} 个账号吗？`)) return;
+            if (action === 'delete' && !confirm(`⚠️ 危险操作：确认删除选中的 ${this.selectedCloud.length} 个账号吗？`)) return;
 
             const actionName = action === 'check' ? '测活' : (action === 'enable' ? '启用' : (action === 'disable' ? '禁用' : (action === 'refresh' ? '刷新凭证' : '删除')));
             this.showToast(`正在批量 ${actionName} ${this.selectedCloud.length} 个账号，耗时较长请耐心等待...`, 'info');
@@ -2168,7 +2458,7 @@ if (action === 'delete' && !confirm(`危险操作：确认删除选中的 ${this
                     });
                 }
                 if (action === 'check') {
-                    const now = new Date().toLocaleString('zh-CN', { hour12: false });
+            const now = formatMainlandDateTime(new Date());
                     this.selectedCloud.forEach(c => { this.localCheckTimes[c.id] = now; });
                 }
 
@@ -2219,7 +2509,7 @@ if (action === 'delete' && !confirm(`危险操作：确认删除选中的 ${this
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
-this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'success');
+                    this.showToast(`✅ 指令 [${action}] 已成功发送至节点: ${nodeName}`, 'success');
                 } else {
                     this.showToast(data.message, 'warning');
                 }
@@ -2295,7 +2585,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                     return;
                 }
                 const now = new Date();
-                const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const timeStr = formatMainlandTime(now);
 
                 if (data.status !== 'success') {
                     this.logs.push({ parsed: true, time: timeStr, level: '总控', text: `任务生成失败: ${data.message}`, raw: `[${timeStr}] [总控] 任务生成失败: ${data.message}` });
@@ -2305,7 +2595,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 const task = data.task_data;
                 const taskId = "TASK_" + new Date().getTime();
 
-                this.logs.push({ parsed: true, time: timeStr, level: '总控', text: `任务包裹已打包，目标邮箱:${task.email}，正在进行...`, raw: `[${timeStr}] [总控] 任务包裹已打包，目标邮箱:${task.email}，正在进行...` });
+                this.logs.push({ parsed: true, time: timeStr, level: '总控', text: `📦 任务包裹已打包，目标邮箱:${task.email}，正在进行...`, raw: `[${timeStr}] [总控] 📦 任务包裹已打包，目标邮箱:${task.email}，正在进行...` });
 
                 this.$nextTick(() => {
                     const container = document.getElementById('terminal-container');
@@ -2332,7 +2622,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
 
             } catch (error) {
                 const now = new Date();
-                const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const timeStr = formatMainlandTime(now);
                 this.logs.push({ parsed: true, time: timeStr, level: '总控', text: `下发任务异常: ${error.message}`, raw: `[${timeStr}] [总控] 下发任务异常: ${error.message}` });
             }
         },
@@ -2343,12 +2633,12 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
 
             const payload = {
                 apiUrl: window.location.origin,
-                token: localStorage.getItem('auth_token'), // 确保抓取登录后的最新 Token
+                token: localStorage.getItem('auth_token'), // 💥 确保抓取登录后的最新 Token
                 workerId: localWorkerId
             };
 
             window.postMessage({ type: "CMD_INIT_NODE", payload: payload }, "*");
-            console.log(`[总控] 身份同步指令已下发: ${localWorkerId}`);
+            console.log(`📡 [总控] 身份同步指令已下发: ${localWorkerId}`);
         },
 
         listenToExtension() {
@@ -2366,12 +2656,12 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
 
                 if (event.data.type === "WORKER_READY") {
                     const now = new Date();
-                    const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const timeStr = formatMainlandTime(now);
 
                     if (this._extDetectionTimer) {
                         clearInterval(this._extDetectionTimer);
                         this._extDetectionTimer = null;
-                        console.log("[总控] 锁定插件频段，探测雷达已关闭。");
+                        console.log("🎯 [总控] 锁定插件频段，探测雷达已关闭。");
                     }
 
                     this.isExtConnected = true;
@@ -2385,8 +2675,8 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
 
                     this.logs.push({
                         parsed: true, time: timeStr, level: '总控',
-                        text: '插件连接成功，正在同步身份凭证...',
-                        raw: `[${timeStr}] [总控] 插件连接成功，正在同步身份凭证...`
+                        text: '✅ 插件连接成功，正在同步身份凭证...',
+                        raw: `[${timeStr}] [总控] ✅ 插件连接成功，正在同步身份凭证...`
                     });
 
                     this.$nextTick(() => {
@@ -2400,7 +2690,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
 
                 if (event.data.type === "WORKER_LOG_REPLY") {
                     const now = new Date();
-                    const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const timeStr = formatMainlandTime(now);
                     this.logs.push({
                         parsed: true, time: timeStr, level: '节点',
                         text: event.data.log, raw: `[${timeStr}] [节点] ${event.data.log}`
@@ -2423,23 +2713,23 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                     }
 
                     if (result.status === 'success') {
-                        this.showToast(`收到节点捷报！注册成功！`, "success");
+                        this.showToast(`🎉 收到节点捷报！注册成功！`, "success");
                     } else {
-                        this.showToast(`节点汇报失败: ${result.error_msg}`, "error");
+                        this.showToast(`❌ 节点汇报失败: ${result.error_msg}`, "error");
                     }
 
                     if (this.isRunning) {
                         const targetCount = this.config?.normal_mode?.target_count || 0;
                         if (targetCount > 0 && this.stats && this.stats.success >= targetCount) {
-                            this.showToast(`已达到目标产出数量 (${targetCount})，自动停止调度！`, "success");
+                            this.showToast(`🎯 已达到目标产出数量 (${targetCount})，自动停止调度！`, "success");
                             this.isRunning = false;
                             window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
 
-                            const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            const timeStr = formatMainlandTime(new Date());
                             this.logs.push({
                                 parsed: true, time: timeStr, level: '总控',
-                                text: `目标产量已达成，总控引擎已自动挂起。`,
-                                raw: `[${timeStr}] [总控] 目标产量已达成，总控引擎已自动挂起。`
+                                text: `🛑 目标产量已达成，总控引擎已自动挂起。`,
+                                raw: `[${timeStr}] [总控] 🛑 目标产量已达成，总控引擎已自动挂起。`
                             });
                             return;
                         }
@@ -2455,7 +2745,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
             if (this._extDetectionTimer) clearInterval(this._extDetectionTimer);
             this._extDetectionTimer = setInterval(() => {
                 if (this.config?.reg_mode === 'extension' && !this.isExtConnected) {
-                    console.log("[总控] 正在扫描空域...");
+                    console.log("📡 [总控] 正在扫描空域...");
                     window.postMessage({ type: "CHECK_EXTENSION_READY" }, "*");
                 } else if (this.config?.reg_mode !== 'extension') {
                     clearInterval(this._extDetectionTimer);
@@ -2479,7 +2769,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 }
                 this.isExtConnected = false;
                 window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
-                console.log("[总控] 已进入协议模式，切断插件链路。");
+                console.log("🛑 [总控] 已进入协议模式，切断插件链路。");
             }
         },
         async fetchMailboxes(isManual = false) {
@@ -2568,7 +2858,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         openOutlookAuthModal(mailbox) {
             const cid = mailbox.client_id || this.config?.local_microsoft?.client_id || this.BUILTIN_CLIENT_ID;
             if (!cid) {
-                this.showToast("无法获取有效的 Client ID！", "warning");
+                this.showToast("🚫 无法获取有效的 Client ID！", "warning");
                 return;
             }
             this.outlookAuth.mailbox = mailbox;
@@ -2615,7 +2905,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                     if (this.outlookAuth.mailbox.isFission && data.refresh_token) {
                         this.config.local_microsoft.refresh_token = data.refresh_token;
                         await this.saveConfig();
-                        this.showToast("Token 已自动填入并保存！", "success");
+                        this.showToast("✅ Token 已自动填入并保存！", "success");
                     } else {
                         this.fetchMailboxes();
                     }
@@ -2630,7 +2920,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
         openFissionAuthModal() {
             if (!this.config.local_microsoft.master_email) {
-                this.showToast("请先填写裂变主邮箱账号！", "warning");
+                this.showToast("🚫 请先填写裂变主邮箱账号！", "warning");
                 return;
             }
 
@@ -2670,7 +2960,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
 
-            this.showToast(`成功导出 ${this.selectedMailboxes.length} 个邮箱到 TXT`, 'success');
+            this.showToast(`🎉 成功导出 ${this.selectedMailboxes.length} 个邮箱到 TXT`, 'success');
             this.selectedMailboxes = [];
         },
         async recoverSelectedMailboxes() {
@@ -2710,7 +3000,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 if (d.status === 'success') {
                     this.clashPool.instances = d.data.instances;
                     this.clashPool.groups = d.data.groups;
-                    if (this.clashPool.instances.length > 0) {
+                    if (this.clashPool.instances.length > 0 && !this.clashPool.isDeploying) {
                         this.clashPool.count = this.clashPool.instances.length;
                     }
                 }
@@ -2719,6 +3009,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
         async handleClashDeploy() {
             this.showToast('正在调整实例规模...', 'info');
+            this.clashPool.isDeploying = true;
             try {
                 const res = await this.authFetch('/api/clash/deploy', {
                     method: 'POST',
@@ -2726,8 +3017,18 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 });
                 const d = await res.json();
                 this.showToast(d.message, d.status);
-                this.fetchClashPool();
-            } catch (e) { this.showToast('网络错误', 'error'); }
+                if (d.status === 'success') {
+                    setTimeout(() => {
+                        this.fetchClashPool();
+                        this.clashPool.isDeploying = false;
+                    }, 5000);
+                } else {
+                    this.clashPool.isDeploying = false;
+                }
+            } catch (e) {
+                this.showToast('网络错误', 'error');
+                this.clashPool.isDeploying = false;
+            }
         },
         async handleClashUpdate() {
             if (!this.clashPool.subUrl) return this.showToast('请输入订阅链接', 'error');
@@ -2739,7 +3040,11 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 });
                 const d = await res.json();
                 this.showToast(d.message, d.status);
-                this.fetchClashPool();
+                if (d.status === 'success') {
+                    setTimeout(() => {
+                        this.fetchClashPool();
+                    }, 5000);
+                }
             } catch (e) { this.showToast('网络错误', 'error'); }
             this.clashPool.loading = false;
         },
@@ -2768,7 +3073,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 this.config.clash_proxy_pool.pool_mode = true;
                 this.config.clash_proxy_pool.enable = true;
 
-                this.showToast(`已自动同步 ${generatedList.length} 个端口到独享池`, 'success');
+                this.showToast(`✅ 已自动同步 ${generatedList.length} 个端口到独享池`, 'success');
 
                 this.$nextTick(() => {
                     const el = document.getElementById('proxy-intelligence-pool');
@@ -2859,7 +3164,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
 
         async clearAllAccounts() {
-            const confirmed = await this.customConfirm('危险操作！确定要删除【账号库】中的所有已注册账号吗？此操作不可恢复。');
+            const confirmed = await this.customConfirm('⚠️ 危险操作！确定要删除【账号库】中的所有已注册账号吗？此操作不可恢复。');
             if (!confirmed) return;
 
             try {
@@ -2911,7 +3216,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
             }
         },
         async clearAllMailboxes() {
-            const confirmed = await this.customConfirm('危险操作！确定要删除【微软邮箱库】中的所有数据吗？');
+            const confirmed = await this.customConfirm('⚠️ 危险操作！确定要删除【微软邮箱库】中的所有数据吗？');
             if (!confirmed) return;
 
             try {
@@ -2990,7 +3295,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
             if (!confirmed) return;
 
             this.isRefreshingAccounts = true;
-            this.showToast(`正在后端并发刷新 ${this.selectedAccounts.length} 个账号，请稍候...`, 'info');
+            this.showToast(`🚀 正在后端并发刷新 ${this.selectedAccounts.length} 个账号，请稍候...`, 'info');
             this.currentTab = 'console';
             try {
                 const emails = this.selectedAccounts.map(acc => acc.email);
@@ -3028,13 +3333,13 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                                          .filter(p => p);
 
             if (platforms.length >= 3) {
-                return [{ name: '三平台同步', type: 'TRIPLE' }];
+                return [{ name: '🚀 三平台同步', type: 'TRIPLE' }];
             }
             return platforms.map(p => {
                 let displayName = p;
-                if (p === 'IMAGE2API') displayName = 'IMAGE2API';
-                if (p === 'SUB2API') displayName = 'SUB2API';
-                if (p === 'CPA') displayName = 'CPA';
+                if (p === 'IMAGE2API') displayName = '🖼️ IMAGE2API';
+                if (p === 'SUB2API') displayName = '🛸 SUB2API';
+                if (p === 'CPA') displayName = '🎯 CPA';
                 return { name: displayName, type: p };
             });
         },
@@ -3122,7 +3427,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
             }
         },
         async clearAllTeamAccounts() {
-            const confirmed = await this.customConfirm('危险操作！确定要清空【Team 团队账号库】中的所有数据吗？');
+            const confirmed = await this.customConfirm('⚠️ 危险操作！确定要清空【Team 团队账号库】中的所有数据吗？');
             if (!confirmed) return;
             try {
                 const res = await this.authFetch('/api/team_accounts/clear_all', { method: 'POST' });
@@ -3438,7 +3743,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 this.showToast('请至少勾选一项需要清除的数据！', 'warning');
                 return;
             }
-            const confirmed = await this.customConfirm('危险操作：清除授权数据后可能导致程序异常或需要重新绑定授权！\n\n确定继续吗？');
+            const confirmed = await this.customConfirm('⚠️ 危险操作：清除授权数据后可能导致程序异常或需要重新绑定授权！\n\n确定继续吗？');
             if (!confirmed) return;
             try {
                 const response = await this.authFetch('/api/auth/reset', {
@@ -3544,9 +3849,9 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
         },
         copyText(text) {
             navigator.clipboard.writeText(text).then(() => {
-                this.showToast('复制成功: ' + text, 'success');
+                this.showToast('✅ 复制成功: ' + text, 'success');
             }).catch(() => {
-                this.showToast('复制失败', 'error');
+                this.showToast('❌ 复制失败', 'error');
             });
         },
 
@@ -3565,7 +3870,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 const data = await res.json();
                 if (data.status === 'success') {
                     this.cfTools.results = data.data;
-                    this.showToast('批量获取 NS 完成，请在界面下方复制修改！', 'success');
+                    this.showToast('✅ 批量获取 NS 完成，请在界面下方复制修改！', 'success');
                     this.currentTab = 'email';
                 } else this.showToast(data.message, 'error');
             } catch (e) { this.showToast('请求异常', 'error'); } finally { this.cfTools.isHosting = false; }
@@ -3583,7 +3888,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 const data = await res.json();
                 if (data.status === 'success') {
                     this.cfTools.results = data.data;
-                    this.showToast('邮件服务校验激活完毕！', 'success');
+                    this.showToast('🎉 邮件服务校验激活完毕！', 'success');
                     this.currentTab = 'email';
                 } else this.showToast(data.message, 'error');
             } catch (e) { this.showToast('请求异常', 'error'); } finally { this.cfTools.isEnablingEmail = false; }
@@ -3615,7 +3920,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
-                    this.showToast(`Worker 部署并绑定就绪！`, 'success');
+                    this.showToast(`🎉 Worker 部署并绑定就绪！`, 'success');
                     this.currentTab = 'email';
                 } else {
                     this.showToast(`部署失败: ${data.message}`, 'error');
@@ -3640,7 +3945,7 @@ this.showToast(`指令 [${action}] 已成功发送至节点: ${nodeName}`, 'succ
                 const data = await res.json();
                 if (data.status === 'success') {
                     this.cfTools.results = data.data;
-                    this.showToast('Catch-All 规则配置完毕！', 'success');
+                    this.showToast('🎉 Catch-All 规则配置完毕！', 'success');
                     this.currentTab = 'email';
                 } else this.showToast(data.message, 'error');
             } catch (e) { this.showToast('请求异常', 'error'); } finally { this.cfTools.isSettingCatchAll = false; }

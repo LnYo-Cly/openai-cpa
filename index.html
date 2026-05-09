@@ -134,12 +134,6 @@
                         <button @click="logout" class="whitespace-nowrap px-4 py-2.5 text-xs font-bold text-slate-500 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm active:scale-95 transition-all hover:text-rose-500">
                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 退出登录
                         </button>
-                        <button @click="checkUpdate(true)" class="whitespace-nowrap px-4 py-2.5 text-xs font-bold text-blue-600 bg-blue-50/50 rounded-xl border border-blue-200/60 shadow-sm active:scale-95 transition-all">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 检查更新
-                        </button>
-                        <button @click="logout" class="whitespace-nowrap px-4 py-2.5 text-xs font-bold text-slate-500 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm active:scale-95 transition-all hover:text-rose-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 退出登录
-                        </button>
                     </div>
                 </nav>
                 <div class="hidden md:block p-4 border-t border-slate-200/60 shrink-0 mt-auto bg-transparent">
@@ -226,6 +220,10 @@
                         <span class="text-slate-500 font-bold whitespace-nowrap">成功 <span class="text-emerald-500 font-black ml-0.5">{{stats.success}}/{{stats.target}}</span></span>
                         <span class="text-slate-300 hidden sm:inline">•</span>
                         <span class="text-slate-500 font-bold whitespace-nowrap">失败 <span class="text-rose-500 font-black ml-0.5">{{stats.failed}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">可用域名 <span class="text-emerald-500 font-black ml-0.5">{{stats.available_count || 0}}</span></span>
+                        <span class="text-slate-300 hidden sm:inline">•</span>
+                        <span class="text-slate-500 font-bold whitespace-nowrap">冷却域名 <span class="text-amber-500 font-black ml-0.5">{{stats.cooldown_count || 0}}</span></span>
                         <span class="text-slate-300 hidden sm:inline">•</span>
                         <span class="text-slate-500 font-bold whitespace-nowrap">风控拦截 <span class="text-amber-500 font-black ml-0.5">{{stats.retries}}</span></span>
                         <span class="text-slate-300 hidden sm:inline">•</span>
@@ -884,6 +882,128 @@
                                         <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.67-3.835m2.89-2.89A9.97 9.97 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-1.875 3.175m-2.89 2.89l-1.414-1.414M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
                                     </button>
                                     </button>
+                                </div>
+
+                                <div class="mt-5 p-5 md:p-6 bg-gradient-to-br from-amber-50/80 to-white rounded-2xl border border-amber-100 shadow-sm flex flex-col gap-4">
+                                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                        <div>
+                                            <h4 class="text-sm font-black text-amber-600 tracking-wide">黄金矿工模式</h4>
+                                            <p class="text-xs text-slate-500 mt-1 font-medium">开启后按主域统计异常，并在超限后自动冷却。</p>
+                                            <p class="text-[11px] text-slate-400 mt-1">超限域名会暂时停用；关闭后恢复随机使用，不计数、不冷却。</p>
+                                            <p v-if="!['cloudflare_temp_email', 'freemail', 'cloudmail', 'openai_cpa'].includes(config.email_api_mode)" class="text-[11px] font-bold text-rose-600 mt-3 bg-rose-50 px-3 py-2 rounded-lg inline-block border border-rose-100 shadow-sm flex items-center gap-1.5">
+                                                <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></span> 当前模式不支持此功能！仅限 cloudflare_temp_email, freemail, cloudmail, openai_cpa。
+                                            </p>
+                                        </div>
+                                        <label class="relative inline-flex items-center shrink-0 mt-3 sm:mt-0" :class="['cloudflare_temp_email', 'freemail', 'cloudmail', 'openai_cpa'].includes(config.email_api_mode) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50 grayscale'">
+                                            <input type="checkbox" v-model="config.enable_mail_domain_runtime_control" :disabled="!['cloudflare_temp_email', 'freemail', 'cloudmail', 'openai_cpa'].includes(config.email_api_mode)" class="sr-only peer">
+                                            <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-amber-500 shadow-inner transition-colors duration-300"></div>
+                                        </label>
+                                    </div>
+
+                                    <div v-if="config.enable_mail_domain_runtime_control" class="border-t border-amber-100/60 pt-5 mt-2 space-y-5">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block text-slate-700 text-xs font-black mb-2 uppercase tracking-wider">冷却阈值</label>
+                                                <input type="number" min="0" v-model.number="config.mail_domain_fail_threshold"
+                                                       class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm"
+                                                       placeholder="例如 3">
+                                                <p class="text-[11px] text-slate-400 mt-2 font-medium">同一主域异常达到该次数后暂停使用，0 表示关闭。</p>
+                                            </div>
+                                            <div>
+                                                <label class="block text-slate-700 text-xs font-black mb-2 uppercase tracking-wider">冷却秒数</label>
+                                                <input type="number" min="0" v-model.number="config.mail_domain_fail_cooldown_sec"
+                                                       class="w-full appearance-none bg-white border border-slate-200 text-slate-700 rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm"
+                                                       placeholder="例如 600">
+                                                <p class="text-[11px] text-slate-400 mt-2 font-medium">触发阈值后，该主域暂停使用的时长。</p>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-black mb-3 uppercase tracking-wider">异常判断逻辑</label>
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <label class="flex items-start gap-3 p-3 bg-white border border-slate-200 rounded-xl shadow-sm cursor-pointer">
+                                                    <input type="checkbox" value="discarded_email" v-model="config.mail_domain_failure_types" class="mt-0.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500/30">
+                                                    <div>
+                                                        <div class="text-sm font-black text-slate-700">邮件丢弃异常</div>
+                                                        <div class="text-[11px] text-slate-400 mt-1">统计验证码重试耗尽后的丢弃异常。</div>
+                                                    </div>
+                                                </label>
+                                                <label class="flex items-start gap-3 p-3 bg-white border border-slate-200 rounded-xl shadow-sm cursor-pointer">
+                                                    <input type="checkbox" value="cloudflare_temp_email_network" v-model="config.mail_domain_failure_types" class="mt-0.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500/30">
+                                                    <div>
+                                                        <div class="text-sm font-black text-slate-700">网络异常</div>
+                                                        <div class="text-[11px] text-slate-400 mt-1">统计申请邮箱时的网络异常。</div>
+                                                    </div>
+                                                </label>
+                                                <label class="flex items-start gap-3 p-3 bg-white border border-slate-200 rounded-xl shadow-sm cursor-pointer">
+                                                    <input type="checkbox" value="capacity_exceeded" v-model="config.mail_domain_failure_types" class="mt-0.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500/30">
+                                                    <div>
+                                                        <div class="text-sm font-black text-slate-700">容量超限异常</div>
+                                                        <div class="text-[11px] text-slate-400 mt-1">统计返回的限额或容量超限。</div>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                            <p class="text-[11px] text-slate-400 mt-2 font-medium">仅勾选的异常类型会累计到当前域名的异常计数并参与冷却判断。</p>
+                                        </div>
+
+                                        <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                                            <div class="flex items-center justify-between gap-3 mb-3">
+                                                <div>
+                                                    <h4 class="text-sm font-black text-slate-700">域名列表</h4>
+                                                    <p class="text-[11px] text-slate-400 mt-1 font-medium">仅展示当前进程内的主域名计数与冷却状态，重启后会重新统计。</p>
+                                                    <p class="text-[11px] text-slate-400 mt-1 font-medium">可用 {{ availableMailDomainCount }} / 冷却 {{ cooldownMailDomainCount }}</p>
+                                                </div>
+                                                <div class="flex items-center gap-2 flex-wrap justify-end">
+                                                    <button @click="toggleMailDomainRuntimePanel" type="button" :title="mailDomainRuntimePanelCollapsed ? '展开状态' : '隐藏状态'" :aria-label="mailDomainRuntimePanelCollapsed ? '展开状态' : '隐藏状态'" class="text-lg text-slate-400 hover:text-indigo-600 focus:outline-none transition-transform hover:scale-110">
+                                                        <svg v-if="!mailDomainRuntimePanelCollapsed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                                        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.67-3.835m2.89-2.89A9.97 9.97 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-1.875 3.175m-2.89 2.89l-1.414-1.414M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                                    </button>
+                                                    <button @click="clearMailDomainRuntimeCooldowns" type="button" class="px-3 py-2 text-xs font-black rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 transition-colors shadow-sm">清除冷却</button>
+                                                </div>
+                                            </div>
+                                            <div v-show="!mailDomainRuntimePanelCollapsed">
+                                                <div v-if="mailDomainRuntimeStatsError" class="text-xs text-rose-500 font-medium bg-rose-50 border border-rose-200 rounded-xl px-4 py-4 mb-3">
+                                                    {{ mailDomainRuntimeStatsError }}
+                                                </div>
+                                                <div v-if="mailDomainRuntimeStats.length > 0" class="space-y-3">
+                                                    <div v-for="item in mailDomainRuntimeStats" :key="item.domain" class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                                                            <div>
+                                                                <div class="text-sm font-black text-slate-800 break-all">{{ item.domain }}</div>
+                                                                <div class="text-[11px] text-slate-400 mt-1">
+                                                        最近使用: {{ item.last_used_at ? formatMainlandDateTime(new Date(item.last_used_at * 1000)) : '未使用' }}
+                                                                </div>
+                                                                <div v-if="isMailDomainRuntimePristine(item)" class="text-[11px] text-sky-500 mt-1 font-medium">
+                                                                    尚未参与运行，等待首次分配。
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex items-center gap-2 flex-wrap justify-end">
+                                                                <button @click="toggleMailDomainDisabled(item.domain)" type="button" :class="item.is_disabled ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'border-rose-200 text-rose-600 hover:bg-rose-50'" class="px-3 py-1.5 text-[11px] font-black rounded-lg border bg-white transition-colors shadow-sm">
+                                                                    {{ item.is_disabled ? '启用' : '禁用' }}
+                                                                </button>
+                                                                <button @click="clearMailDomainRuntimeRowCounters(item.domain)" type="button" class="px-3 py-1.5 text-[11px] font-black rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors shadow-sm">清空计数</button>
+                                                                <button @click="clearMailDomainRuntimeRowCooldown(item.domain)" type="button" class="px-3 py-1.5 text-[11px] font-black rounded-lg border border-amber-200 bg-white text-amber-700 hover:bg-amber-50 transition-colors shadow-sm">清除冷却</button>
+                                                                <span :class="item.is_disabled ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-emerald-100 text-emerald-700 border-emerald-200'" class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black border w-max">
+                                                                    {{ item.is_disabled ? '停用' : '启用' }}
+                                                                </span>
+                                                                <span :class="item.is_available ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'" class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black border w-max">
+                                                                    {{ item.is_available ? '可用' : '冷却中' }}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 text-xs font-bold text-slate-600">
+                                                            <div class="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">异常: <span class="text-slate-800">{{ item.fail_count }}</span></div>
+                                                            <div class="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">成功: <span class="text-slate-800">{{ item.success_count }}</span></div>
+                                                            <div class="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">时间: <span class="text-slate-800">{{ formatDuration(item.cooldown_remaining_sec || 0) }}</span></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div v-else class="text-xs text-slate-400 font-medium bg-white border border-dashed border-slate-200 rounded-xl px-4 py-4">
+                                                    当前还没有域名运行时统计数据，开始注册后这里会显示各主域名的成功/异常计数与冷却状态。
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="mt-8 p-5 md:p-6 bg-slate-50/80 rounded-2xl border border-slate-200 shadow-sm">
@@ -2253,7 +2373,14 @@
                                             </button>
                                         </div>
                                     </div>
-
+                                    <div>
+                                        <label class="block text-xs md:text-sm text-orange-900 font-black mb-2 uppercase tracking-wider">
+                                            <span>服务代号 (Service)</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text" v-model="config.hero_sms.service" class="w-full appearance-none bg-white border border-orange-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm text-sm font-mono placeholder:text-slate-300" placeholder="默认填: dr">
+                                        </div>
+                                    </div>
                                     <div class="md:col-span-2 pt-2">
                                         <button @click="fetchHeroSmsPrices" :disabled="isLoadingPrices" class="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl text-sm md:text-base font-black hover:from-orange-600 hover:to-amber-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed border border-orange-400">
                                             <span class="inline-flex items-center justify-center">
@@ -2362,9 +2489,6 @@
                                             前往官网
                                         </a>
                                     </h3>
-
-
-<!--                                    <h3 class="text-xl md:text-2xl font-black text-indigo-600 tracking-tight flex items-center gap-2">SmsBower 手机接码</h3>-->
                                     <label class="relative inline-flex bg-white px-4 py-2.5 md:px-5 md:py-3 rounded-xl cursor-pointer hover:bg-indigo-50 transition-colors shadow-sm border border-indigo-200 w-full sm:w-auto items-center justify-center group">
                                         <input type="checkbox" v-model="config.smsbower.enabled" @change="if(config.smsbower.enabled) { config.hero_sms.enabled = false; config.fivesim.enabled = false; }" class="sr-only peer">
                                         <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-indigo-500 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
@@ -2393,7 +2517,14 @@
                                             </button>
                                         </div>
                                     </div>
-
+                                    <div>
+                                        <label class="block text-xs md:text-sm text-indigo-900 font-black mb-2 uppercase tracking-wider">
+                                            <span>服务代号 (Service)</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text" v-model="config.smsbower.service" class="w-full appearance-none bg-white border border-indigo-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors shadow-sm text-sm font-mono placeholder:text-slate-300" placeholder="默认填: dr">
+                                        </div>
+                                    </div>
                                     <div class="md:col-span-2 pt-2">
                                         <button @click="fetchSmsBowerPrices" :disabled="isLoadingSmsBowerPrices" class="w-full py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-xl text-sm md:text-base font-black hover:from-indigo-600 hover:to-cyan-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed border border-indigo-400">
                                             <span class="inline-flex items-center justify-center">
@@ -2412,31 +2543,45 @@
                                         <div class="max-h-[350px] overflow-y-auto custom-scrollbar">
                                             <table class="min-w-full divide-y divide-indigo-100/50">
                                                 <thead class="bg-white sticky top-0 z-10 shadow-sm">
-                                                <tr class="text-[11px] text-slate-400 font-black uppercase tracking-widest">
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">国家 / ID</th>
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">单价 (USD)</th>
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">余量 (个)</th>
-                                                    <th class="px-5 py-3.5 text-right bg-slate-50/80 backdrop-blur-sm">操作</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="divide-y divide-slate-50 text-xs font-medium">
-                                                <tr v-for="item in smsBowerPrices" :key="item.country" class="hover:bg-indigo-50/40 transition-colors group">
-                                                    <td class="px-5 py-3">
-                                                        <div class="font-black text-slate-700 group-hover:text-indigo-700 transition-colors">{{ item.name }}</div>
-                                                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">ID: {{ item.country }}</div>
-                                                    </td>
-                                                    <td class="px-5 py-3">
-                                                        <span class="bg-emerald-50 text-emerald-600 border border-emerald-100 font-black px-2 py-0.5 rounded-md shadow-sm">{{ item.cost }} $</span>
-                                                    </td>
-                                                    <td class="px-5 py-3 text-slate-500 font-mono">{{ item.count }}</td>
-                                                    <td class="px-5 py-3 text-right">
-                                                        <button @click="config.smsbower.country = item.country; showToast('已切换至: ' + item.name, 'success')"
-                                                                class="bg-white border border-indigo-200 text-indigo-600 px-4 py-1.5 rounded-lg hover:bg-indigo-500 hover:text-white hover:border-indigo-500 active:scale-95 transition-all font-bold shadow-sm">
-                                                            选用
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
+                                                    <tr class="text-[11px] text-slate-400 font-black uppercase tracking-widest">
+                                                        <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm w-1/4">国家 / ID</th>
+                                                        <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm w-3/4">可选线路 (点击卡片直接选用)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-50 text-xs font-medium">
+                                                    <tr v-for="item in smsBowerPrices" :key="item.country" class="hover:bg-indigo-50/20 transition-colors group">
+                                                        <td class="px-5 py-4 align-top border-r border-slate-50/80">
+                                                            <div class="font-black text-slate-800 text-sm group-hover:text-indigo-700 transition-colors">{{ item.name }}</div>
+                                                            <div class="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-2">
+                                                                <span class="bg-slate-100 px-1.5 py-0.5 rounded">ID: {{ item.country }}</span>
+                                                                <span class="text-indigo-400 font-bold">总库存: {{ item.total_count }}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="px-5 py-3">
+                                                            <div class="flex flex-wrap gap-3">
+                                                                <button v-for="route in item.routes" :key="route.provider"
+                                                                        @click="config.smsbower.country = item.country; config.smsbower.operator = route.provider; showToast('已切换至: ' + item.name + ' (线路 ' + route.provider + ')', 'success')"
+                                                                        class="relative flex flex-col bg-white border border-indigo-100 rounded-xl p-3 hover:border-indigo-400 hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all text-left min-w-[130px] group/card overflow-hidden"
+                                                                        :class="{'ring-2 ring-indigo-500 border-transparent bg-indigo-50/30': config.smsbower.country === item.country && config.smsbower.operator === route.provider}">
+
+                                                                    <div v-if="config.smsbower.country === item.country && config.smsbower.operator === route.provider" class="absolute top-0 right-0 w-0 h-0 border-t-[28px] border-r-[28px] border-t-transparent border-r-indigo-500">
+                                                                        <svg class="absolute -top-[23px] -right-[24px] w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                                                                    </div>
+
+                                                                    <div class="flex justify-between items-center w-full mb-2.5 gap-4">
+                                                                        <span class="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider border border-indigo-100/50">线路 {{ route.provider }}</span>
+                                                                        <span class="text-sm font-black text-emerald-600">${{ route.cost }}</span>
+                                                                    </div>
+
+                                                                    <div class="text-[11px] text-slate-500 font-mono font-medium flex items-center gap-1.5">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                                                        库存: <span class="text-slate-700 font-bold">{{ route.count }}</span>
+                                                                    </div>
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
                                             </table>
                                         </div>
                                     </div>
@@ -2532,7 +2677,14 @@
                                             </button>
                                         </div>
                                     </div>
-
+                                    <div>
+                                        <label class="block text-xs md:text-sm text-teal-900 font-black mb-2 uppercase tracking-wider">
+                                            <span>服务代号 (Service)</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text" v-model="config.fivesim.service" class="w-full appearance-none bg-white border border-teal-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors shadow-sm text-sm font-mono placeholder:text-slate-300" placeholder="通常填: openai">
+                                        </div>
+                                    </div>
                                     <div class="md:col-span-2 pt-2">
                                         <button @click="fetchFivesimPrices" :disabled="isLoadingFivesimPrices" class="w-full py-3 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-xl text-sm md:text-base font-black hover:from-teal-600 hover:to-emerald-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/30 disabled:opacity-50 disabled:cursor-not-allowed border border-teal-400">
                                             <span class="inline-flex items-center justify-center">
@@ -2551,29 +2703,45 @@
                                         <div class="max-h-[350px] overflow-y-auto custom-scrollbar">
                                             <table class="min-w-full divide-y divide-teal-100/50">
                                                 <thead class="bg-white sticky top-0 z-10 shadow-sm">
-                                                <tr class="text-[11px] text-slate-400 font-black uppercase tracking-widest">
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">国家 / ID</th>
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">起步单价 ($)</th>
-                                                    <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm">余量 (个)</th>
-                                                    <th class="px-5 py-3.5 text-right bg-slate-50/80 backdrop-blur-sm">操作</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="divide-y divide-slate-50 text-xs font-medium">
-                                                <tr v-for="item in fivesimPrices" :key="item.country" class="hover:bg-teal-50/40 transition-colors group">
-                                                    <td class="px-5 py-3">
-                                                        <div class="font-black text-slate-700 group-hover:text-teal-700 transition-colors">{{ item.name }}</div>
-                                                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">Code: {{ item.country }}</div>
-                                                    </td>
-                                                    <td class="px-5 py-3">
-                                                        <span class="bg-emerald-50 text-emerald-600 border border-emerald-100 font-black px-2 py-0.5 rounded-md shadow-sm">{{ item.cost }} $</span>
-                                                    </td>
-                                                    <td class="px-5 py-3 text-slate-500 font-mono">{{ item.count }}</td>
-                                                    <td class="px-5 py-3 text-right">
-                                                        <button @click="config.fivesim.country = item.country; showToast('已切换至: ' + item.name, 'success')"
-                                                                class="bg-white border border-teal-200 text-teal-600 px-4 py-1.5 rounded-lg hover:bg-teal-500 hover:text-white hover:border-teal-500 active:scale-95 transition-all font-bold shadow-sm">选用</button>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
+                                                    <tr class="text-[11px] text-slate-400 font-black uppercase tracking-widest">
+                                                        <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm w-1/4">国家 / Code</th>
+                                                        <th class="px-5 py-3.5 text-left bg-slate-50/80 backdrop-blur-sm w-3/4">可选线路 (点击卡片直接选用)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-50 text-xs font-medium">
+                                                    <tr v-for="item in fivesimPrices" :key="item.country" class="hover:bg-teal-50/20 transition-colors group">
+                                                        <td class="px-5 py-4 align-top border-r border-slate-50/80">
+                                                            <div class="font-black text-slate-800 text-sm group-hover:text-teal-700 transition-colors">{{ item.name }}</div>
+                                                            <div class="text-[10px] text-slate-400 font-mono mt-1.5 flex flex-col items-start gap-1">
+                                                                <span class="bg-slate-100 px-1.5 py-0.5 rounded">Code: {{ item.country }}</span>
+                                                                <span class="text-teal-600 font-bold">总库存: {{ item.total_count }}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="px-5 py-3">
+                                                            <div class="flex flex-wrap gap-3">
+                                                                <button v-for="route in item.routes" :key="route.provider"
+                                                                        @click="config.fivesim.country = item.country; config.fivesim.operator = route.provider; showToast('已切换至: ' + item.name + ' (线路 ' + route.provider + ')', 'success')"
+                                                                        class="relative flex flex-col bg-white border border-teal-100 rounded-xl p-3 hover:border-teal-400 hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all text-left min-w-[130px] group/card overflow-hidden"
+                                                                        :class="{'ring-2 ring-teal-500 border-transparent bg-teal-50/40': config.fivesim.country === item.country && config.fivesim.operator === route.provider}">
+                                                                    <div v-if="config.fivesim.country === item.country && config.fivesim.operator === route.provider" class="absolute top-0 right-0 w-0 h-0 border-t-[28px] border-r-[28px] border-t-transparent border-r-teal-500">
+                                                                        <svg class="absolute -top-[23px] -right-[24px] w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                                                                    </div>
+                                                                    <div class="flex justify-between items-center w-full mb-2.5 gap-4">
+                                                                        <span class="text-[10px] font-black text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded uppercase tracking-wider border border-teal-200/50 max-w-[80px] truncate" :title="route.provider">
+                                                                            {{ route.provider }}
+                                                                        </span>
+                                                                        <span class="text-sm font-black text-emerald-600">${{ route.cost }}</span>
+                                                                    </div>
+                                                                    <div class="text-[11px] text-slate-500 font-mono font-medium flex items-center gap-1.5">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                                                        库存: <span class="text-slate-700 font-bold">{{ route.count }}</span>
+                                                                    </div>
+                                                                </button>
+
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
                                             </table>
                                         </div>
                                     </div>
@@ -3244,7 +3412,25 @@
 
                                             <td class="px-5 md:px-8 py-4 min-w-[320px]">
 
-                                                <div v-if="acc.account_type === 'sub2api' && acc.details && Object.keys(acc.details).length > 0" class="flex flex-col gap-4 w-full pr-6 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                                                <div v-if="acc.account_type === 'sub2api' && acc.details && Object.keys(acc.details).length > 0" class="flex flex-col gap-3 w-full pr-6 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+
+                                                    <div v-if="acc.details.requests !== undefined || acc.details.window_stats !== undefined" class="flex flex-wrap gap-2 pb-2 border-b border-slate-200/60">
+                                                        <span class="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded shadow-sm text-[10px] font-black font-mono flex items-center gap-1.5">
+                                                            <svg class="w-3.5 h-3.5 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                                            {{ acc.details.window_stats?.requests ?? acc.details.requests ?? 0 }} req
+                                                        </span>
+                                                        <span class="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded shadow-sm text-[10px] font-black font-mono flex items-center gap-1.5">
+                                                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                                                            {{ (acc.details.window_stats?.tokens ?? acc.details.tokens ?? 0) >= 1000 ? ((acc.details.window_stats?.tokens ?? acc.details.tokens ?? 0)/1000).toFixed(1) + 'K' : (acc.details.window_stats?.tokens ?? acc.details.tokens ?? 0) }}
+                                                        </span>
+                                                        <span class="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded shadow-sm text-[10px] font-black font-mono">
+                                                            A ${{ Number(acc.details.window_stats?.standard_cost ?? acc.details.standard_cost ?? 0).toFixed(2) }}
+                                                        </span>
+                                                        <span class="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded shadow-sm text-[10px] font-black font-mono">
+                                                            U ${{ Number(acc.details.window_stats?.user_cost ?? acc.details.user_cost ?? 0).toFixed(2) }}
+                                                        </span>
+                                                    </div>
+
                                                     <div>
                                                         <div class="flex justify-between items-end mb-1.5">
                                                             <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest">5h</span>
@@ -3257,6 +3443,7 @@
                                                             <div class="h-full rounded-full transition-all duration-700 ease-out shadow-sm" :class="acc.details.codex_5h_used_percent >= 80 ? 'bg-rose-500' : (acc.details.codex_5h_used_percent >= 50 ? 'bg-amber-500' : 'bg-emerald-500')" :style="{ width: Math.min(100, Math.max(0, acc.details.codex_5h_used_percent)) + '%' }"></div>
                                                         </div>
                                                     </div>
+
                                                     <div>
                                                         <div class="flex justify-between items-end mb-1.5">
                                                             <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest">7d</span>
@@ -4147,6 +4334,69 @@
                             </div>
                         </div>
                         <div v-show="currentTab === 'concurrency'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-cyan-500 bg-gradient-to-br from-cyan-50/30 to-white lg:col-span-2">
+                                <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+                                    <div>
+                                        <h3 class="text-lg md:text-xl font-black text-cyan-700 flex items-center gap-2 tracking-tight">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 7h10v10H7z"></path></svg>
+                                            内存预测与实测监控
+                                        </h3>
+                                        <p class="text-xs text-slate-500 font-medium mt-2">根据当前配置估算低/中/高内存占用，并通过 psutil 显示当前 Python 进程 RSS。</p>
+                                    </div>
+                                    <button @click="fetchMemoryPrediction" :disabled="isLoadingMemoryPrediction" class="px-4 py-2.5 rounded-xl bg-cyan-600 text-white text-sm font-black shadow-md shadow-cyan-500/20 hover:bg-cyan-700 active:scale-95 disabled:opacity-60 disabled:cursor-wait transition-all flex items-center justify-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" :class="{'animate-spin': isLoadingMemoryPrediction}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                        重新估算
+                                    </button>
+                                </div>
+
+                                <div v-if="memoryPredictionError" class="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-bold">
+                                    {{ memoryPredictionError }}
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                    <div class="bg-white p-4 rounded-xl border border-cyan-100 shadow-sm">
+                                        <div class="text-[11px] text-slate-500 font-black uppercase tracking-wider mb-2">当前消耗内存 RSS</div>
+                                        <div class="text-2xl font-black text-cyan-700">{{ formatMemoryMb(memoryPrediction?.actual?.rss_mb ?? stats.memory?.rss_mb) }}</div>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                        <div class="text-[11px] text-slate-500 font-black uppercase tracking-wider mb-2">预测中等负载</div>
+                                        <div class="text-2xl font-black text-slate-700">{{ formatMemoryMb(memoryPrediction?.prediction?.predicted_mb?.mid ?? stats.memory?.predicted_mid_mb) }}</div>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                        <div class="text-[11px] text-slate-500 font-black uppercase tracking-wider mb-2">预测满载峰值</div>
+                                        <div class="text-2xl font-black text-slate-700">{{ formatMemoryMb(memoryPrediction?.prediction?.predicted_mb?.high ?? stats.memory?.predicted_high_mb) }}</div>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-xl border shadow-sm" :class="memorySafetyClass(memoryPrediction?.safety?.level ?? stats.memory?.safety_level)">
+                                        <div class="text-[11px] font-black uppercase tracking-wider mb-2 opacity-70">安全状态</div>
+                                        <div class="text-2xl font-black">{{ memoryPrediction?.safety?.label ?? stats.memory?.safety_label ?? '无数据' }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                                    <div class="lg:col-span-2 bg-slate-50/80 p-5 rounded-2xl border border-slate-200 shadow-inner">
+                                        <div class="text-xs font-black text-slate-600 uppercase tracking-wider mb-4">预测分解</div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                                            <div class="bg-white rounded-xl p-3 border border-slate-200"><span class="block text-[10px] text-slate-400 font-black uppercase mb-1">最低消耗</span><span class="font-black text-slate-700">{{ formatMemoryMb(memoryPrediction?.prediction?.predicted_mb?.low) }}</span></div>
+                                            <div class="bg-white rounded-xl p-3 border border-slate-200"><span class="block text-[10px] text-slate-400 font-black uppercase mb-1">标准负载</span><span class="font-black text-slate-700">{{ formatMemoryMb(memoryPrediction?.prediction?.predicted_mb?.mid) }}</span></div>
+                                            <div class="bg-white rounded-xl p-3 border border-slate-200"><span class="block text-[10px] text-slate-400 font-black uppercase mb-1">满载峰值</span><span class="font-black text-slate-700">{{ formatMemoryMb(memoryPrediction?.prediction?.predicted_mb?.high) }}</span></div>
+                                        </div>
+                                        <p class="text-xs text-slate-500 leading-relaxed font-medium">{{ memoryPrediction?.safety?.message || memoryPrediction?.prediction?.model_note || '切换到本页后会自动获取完整预测数据。' }}</p>
+                                        <p v-if="memoryPrediction?.actual?.note" class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-3 font-bold">{{ memoryPrediction.actual.note }}</p>
+                                    </div>
+                                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                        <div class="text-xs font-black text-slate-600 uppercase tracking-wider mb-4">配置快照</div>
+                                        <div class="space-y-2 text-xs font-bold text-slate-600">
+                                            <div class="flex justify-between gap-3"><span>注册并发线程</span><span class="text-cyan-700">{{ memoryPrediction?.prediction?.config_snapshot?.reg_threads ?? config.reg_threads }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>CPA 测活并发</span><span class="text-cyan-700">{{ memoryPrediction?.prediction?.config_snapshot?.cpa_threads ?? config.cpa_mode?.threads }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>Sub2API 并发</span><span class="text-cyan-700">{{ memoryPrediction?.prediction?.config_snapshot?.sub2api_threads ?? config.sub2api_mode?.threads }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>代理池载入规模</span><span class="text-cyan-700">{{ memoryPrediction?.prediction?.config_snapshot?.proxy_pool_size ?? 'N/A' }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>控制台日志行数</span><span class="text-cyan-700">{{ memoryPrediction?.prediction?.config_snapshot?.max_log_lines ?? config.max_log_lines }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>数据库连接类型</span><span class="text-cyan-700 uppercase">{{ memoryPrediction?.prediction?.config_snapshot?.db_type ?? config.database?.type }}</span></div>
+                                            <div class="flex justify-between gap-3"><span>系统物理内存使用率</span><span class="text-cyan-700">{{ memoryPrediction?.actual?.system_used_percent ?? 'N/A' }}%</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-indigo-500 bg-gradient-to-br from-indigo-50/20 to-white lg:col-span-2">
                                 <h3 class="text-lg md:text-xl font-black text-indigo-700 mb-6 flex items-center gap-2 tracking-tight"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7c0-1.105 3.582-2 8-2s8 .895 8 2-3.582 2-8 2-8-.895-8-2zm0 5c0 1.105 3.582 2 8 2s8-.895 8-2m-16 5c0 1.105 3.582 2 8 2s8-.895 8-2"></path></svg> 数据库存储引擎 <span class="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded border border-rose-100 ml-2">修改后需点左下角重启项目后生效</span></h3>
 

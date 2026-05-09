@@ -453,9 +453,13 @@ def test_cliproxy_auth_file(item: dict, api_url: str, api_token: str) -> Tuple[b
 def test_sub2api_account_direct(item: dict, proxy: str) -> Tuple[bool, str]:
     """直连 OpenAI 接口进行 Sub2API 账号测活，并实时提取真实额度"""
     credentials = item.get("credentials", {})
+    platform = item.get("platform", "")
     access_token = credentials.get("access_token")
     account_id = credentials.get("chatgpt_account_id", "")
-    
+    plan_type = credentials.get("plan_type", "")
+    if platform != "openai" or plan_type != "free":
+        return True, "非 OpenAI 免费号，跳过直连测活"
+
     if not access_token:
         return False, "缺少 access_token"
         
@@ -653,6 +657,14 @@ def _handle_dead_account(name: str, is_disabled: bool) -> None:
         print(f"[{ts()}] [WARNING] 凭证 {mask_email(name)} 已死亡，当前已是禁用状态，根据配置保留不删除。")
 
 def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: dict = None) -> str:
+    def _format_cooldown_time(cooldown_until: float) -> str:
+        if not cooldown_until:
+            return ""
+        try:
+            return datetime.fromtimestamp(float(cooldown_until)).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return ""
+
     if getattr(cfg, 'GLOBAL_STOP', False):
         return "stopped"
     global run_stats
@@ -693,7 +705,10 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
         token_json_str, password = result
         
     ret_status = "success"
-     
+    discarded_email_failure = run_ctx.get('discarded_email_failure', False) if run_ctx else False
+    domain_failure_reason = str(run_ctx.get('mail_domain_failure_reason', '') or '').strip().lower() if run_ctx else ''
+    domain_failure_event = mail_service.pop_last_domain_failure_event()
+
     if not token_json_str or token_json_str == "retry_403":
         if token_json_str == "retry_403":
             with _stats_lock: run_stats["retries"] += 1
@@ -701,15 +716,33 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             ret_status = "retry_403"
         else:
             with _stats_lock: run_stats["failed"] += 1
+            failure_domain = cur_dom
+            failure_reason = domain_failure_reason
+            if not failure_reason and discarded_email_failure:
+                failure_reason = 'discarded_email'
+            if not failure_reason and domain_failure_event:
+                failure_reason = str(domain_failure_event.get('reason') or '').strip().lower()
+                failure_domain = domain_failure_event.get('domain') or failure_domain
+            if failure_reason:
+                domain_result = mail_service.record_domain_failure(failure_domain, failure_reason)
+                if domain_result:
+                    cooldown_text = _format_cooldown_time(domain_result.get("cooldown_until", 0.0))
+                    extra_text = f"，冷却结束时间: {cooldown_text}" if cooldown_text else ""
+                    print(f"[{ts()}] [INFO] 失败域名 {mask_email(domain_result.get('domain', failure_domain or ''))} -> 异常 {domain_result.get('fail_count', 0)} / 成功 {domain_result.get('success_count', 0)} / 原因 {failure_reason}{extra_text}")
             ret_status = "failed"
         if cfg.ENABLE_SUB_DOMAINS:
-            mail_service.clear_sticky_domain() 
+            mail_service.clear_sticky_domain()
             print(f"[{ts()}] [系统] 域名 {mask_email(cur_dom or '')} 注册失败，下一轮重新生成。")
-            
+
     else:
         with _stats_lock: run_stats["success"] += 1
         token_data    = json.loads(token_json_str)
         account_email = token_data.get("email", "unknown")
+        domain_result = mail_service.record_domain_success(account_email if account_email and "@" in account_email else cur_dom)
+        if domain_result:
+            cooldown_text = _format_cooldown_time(domain_result.get("cooldown_until", 0.0))
+            extra_text = f"，冷却结束时间: {cooldown_text}" if cooldown_text else ""
+            print(f"[{ts()}] [INFO] 成功域名 {mask_email(domain_result.get('domain', cur_dom or ''))} -> 失败 {domain_result.get('fail_count', 0)} / 成功 {domain_result.get('success_count', 0)}{extra_text}")
 
         # 存入本地数据库
         if cpa_upload:
@@ -966,7 +999,7 @@ def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> 
     name = item.get("name", "unknown")
     account_id = item.get("id")
 
-    if _should_remove_sub2api_account(item):
+    if cfg.SUB2API_REMOVE_DEAD_ACCOUNTS:
         print(f"[{ts()}] [ERROR] 凭证 {mask_email(name)} 彻底死亡，执行物理剔除...")
         if hasattr(client, "delete_account") and account_id:
             client.delete_account(account_id)
@@ -1038,6 +1071,9 @@ def _should_remove_sub2api_account(item: dict) -> bool:
 def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: Any) -> str:
     """Sub2API 测活 Worker（使用 Sub2API /test SSE 接口），返回结果类别"""
     if hasattr(args, 'check_stop') and args.check_stop(): return "error"
+    creds = item.get("credentials", {})
+    if item.get("platform") != "openai" or str(creds.get("plan_type", "free")).lower() != "free":
+        return "ok"
     name = item.get("name", "unknown")
     account_id = item.get("id")
 
@@ -1257,8 +1293,9 @@ async def perform_cpa_check(args, async_stop_event, loop, executor=None):
     all_files = res.json().get("files", [])
     codex_files = [
         f for f in all_files
-        if "codex" in str(f.get("type", "")).lower()
-           or "codex" in str(f.get("provider", "")).lower()
+        if ("codex" in str(f.get("type", "")).lower() or "codex" in str(f.get("provider", "")).lower())
+           and (str(f.get("id_token", {}).get("plan_type", "")).lower() == "free"
+                or str(f.get("id_token", {}).get("planType", "")).lower() == "free")
     ]
     total_files = len(codex_files)
 
@@ -1289,6 +1326,13 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
         print(f"[{ts()}] [ERROR] 获取 Sub2API 全量库存失败: {account_list}")
         return 0, 0
 
+    # 过滤非 openai/free 账号
+    account_list = [
+        item for item in account_list
+        if item.get("platform") == "openai"
+           and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+    ]
+
     _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
     if _check_filter != 'all':
         before = len(account_list)
@@ -1300,14 +1344,14 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
     if executor is not None:
         futures = [
             loop.run_in_executor(executor, process_sub2api_worker, i, total_files, item, client, args)
-            for i, item in enumerate(account_list, 1)
+            for i, item in enumerate(filtered_list, 1)
         ]
         results = await asyncio.gather(*futures)
     else:
         with ThreadPoolExecutor(max_workers=cfg.SUB2API_THREADS) as _ex:
             futures = [
                 loop.run_in_executor(_ex, process_sub2api_worker, i, total_files, item, client, args)
-                for i, item in enumerate(account_list, 1)
+                for i, item in enumerate(filtered_list, 1)
             ]
             results = await asyncio.gather(*futures)
 
@@ -1378,8 +1422,9 @@ async def cpa_main_loop(args, async_stop_event: asyncio.Event, executor=None):
                 all_files = res.json().get("files", [])
                 codex_files = [
                     f for f in all_files
-                    if "codex" in str(f.get("type", "")).lower()
-                       or "codex" in str(f.get("provider", "")).lower()
+                    if ("codex" in str(f.get("type", "")).lower() or "codex" in str(f.get("provider", "")).lower())
+                       and (str(f.get("id_token", {}).get("plan_type", "")).lower() == "free"
+                            or str(f.get("id_token", {}).get("planType", "")).lower() == "free")
                 ]
                 total_files = len(codex_files)
                 valid_count = total_files
@@ -1527,6 +1572,13 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     except asyncio.TimeoutError: pass
                     continue
 
+                # 过滤非 openai/free 账号
+                account_list = [
+                    item for item in account_list
+                    if item.get("platform") == "openai"
+                       and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+                ]
+
                 _check_filter = getattr(cfg, 'SUB2API_CHECK_FILTER', 'all')
                 if _check_filter != 'all':
                     before = len(account_list)
@@ -1538,14 +1590,14 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                 if executor is not None:
                     futures = [
                         loop.run_in_executor(executor, process_sub2api_worker, i, total_files, item, client, args)
-                        for i, item in enumerate(account_list, 1)
+                        for i, item in enumerate(filtered_list, 1)
                     ]
                     results = await asyncio.gather(*futures)
                 else:
                     with ThreadPoolExecutor(max_workers=cfg.SUB2API_THREADS) as _ex:
                         futures = [
                             loop.run_in_executor(_ex, process_sub2api_worker, i, total_files, item, client, args)
-                            for i, item in enumerate(account_list, 1)
+                            for i, item in enumerate(filtered_list, 1)
                         ]
                         results = await asyncio.gather(*futures)
 
@@ -1563,7 +1615,13 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     except asyncio.TimeoutError:
                         pass
                     continue
-                total_files = len(account_list)
+
+                filtered_list = [
+                    item for item in account_list
+                    if item.get("platform") == "openai"
+                       and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
+                ]
+                total_files = len(filtered_list)
                 valid_count = total_files
                 print(f"[{ts()}] [INFO] 当前云端总数: {total_files} (未开启自动巡检，默认全部视为有效)")
 
@@ -1809,7 +1867,7 @@ class RegEngine:
             target=self._run_cpa_in_thread, args=(args,), daemon=True
         )
         self.current_thread.start()
-        
+
     def start_sub2api(self, args):
         if self.is_running():
             return
@@ -1853,7 +1911,7 @@ class RegEngine:
             self.loop.run_until_complete(sub2api_main_loop(args, self.async_stop_event, executor=self._executor))
         finally:
             self._finalize_thread_run()
-            
+
     async def _cpa_wrapper(self, args):
         self.async_stop_event = asyncio.Event()
         await cpa_main_loop(args, self.async_stop_event, executor=self._executor)
