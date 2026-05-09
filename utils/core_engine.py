@@ -1344,14 +1344,14 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
     if executor is not None:
         futures = [
             loop.run_in_executor(executor, process_sub2api_worker, i, total_files, item, client, args)
-            for i, item in enumerate(filtered_list, 1)
+            for i, item in enumerate(account_list, 1)
         ]
         results = await asyncio.gather(*futures)
     else:
         with ThreadPoolExecutor(max_workers=cfg.SUB2API_THREADS) as _ex:
             futures = [
                 loop.run_in_executor(_ex, process_sub2api_worker, i, total_files, item, client, args)
-                for i, item in enumerate(filtered_list, 1)
+                for i, item in enumerate(account_list, 1)
             ]
             results = await asyncio.gather(*futures)
 
@@ -1590,14 +1590,14 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                 if executor is not None:
                     futures = [
                         loop.run_in_executor(executor, process_sub2api_worker, i, total_files, item, client, args)
-                        for i, item in enumerate(filtered_list, 1)
+                        for i, item in enumerate(account_list, 1)
                     ]
                     results = await asyncio.gather(*futures)
                 else:
                     with ThreadPoolExecutor(max_workers=cfg.SUB2API_THREADS) as _ex:
                         futures = [
                             loop.run_in_executor(_ex, process_sub2api_worker, i, total_files, item, client, args)
-                            for i, item in enumerate(filtered_list, 1)
+                            for i, item in enumerate(account_list, 1)
                         ]
                         results = await asyncio.gather(*futures)
 
