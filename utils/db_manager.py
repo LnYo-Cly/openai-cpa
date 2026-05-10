@@ -11,7 +11,7 @@ from utils import config as cfg
 os.makedirs("data", exist_ok=True)
 DB_PATH = "data/data.db"
 _team_db_lock = threading.Lock()
-
+_sqlite_write_lock = threading.Lock()
 class get_db_conn:
     """抹平 SQLite 和 MySQL 连接差异"""
     def __init__(self, as_dict=False):
@@ -28,7 +28,7 @@ class get_db_conn:
                 charset='utf8mb4'
             )
         else:
-            self.conn = sqlite3.connect(DB_PATH, timeout=10)
+            self.conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level="IMMEDIATE")
             if self.as_dict:
                 self.conn.row_factory = sqlite3.Row
         return self.conn
@@ -146,6 +146,9 @@ def init_db():
 
 def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
     try:
+        if DB_TYPE != "mysql":
+            _sqlite_write_lock.acquire()
+
         # 从 token_data 提取 plan_type
         plan_type = ""
         try:
@@ -163,7 +166,9 @@ def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 数据库保存失败: {e}")
         return False
-
+    finally:
+            if DB_TYPE != "mysql" and _sqlite_write_lock.locked():
+                _sqlite_write_lock.release()
 
 def get_all_accounts() -> list:
     try:
@@ -246,7 +251,15 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
                 conditions.append("is_active = 0 AND push_platform IS NOT NULL AND push_platform != ''")
             elif status_filter == "unpushed":
                 conditions.append("(push_platform IS NULL OR push_platform = '')")
-
+            elif status_filter == "with_token":
+                conditions.append("(token_data LIKE ? AND token_data NOT LIKE ?)")
+                params.extend(['%"refresh_token"%', '%"image2api"%'])
+            elif status_filter == "reg_only":
+                conditions.append("token_data LIKE ?")
+                params.append('%"仅注册成功"%')
+            elif status_filter == "imgsub2api":
+                conditions.append("token_data LIKE ?")
+                params.append('%"image2api"%')
             where_clause = ""
             if conditions:
                 where_clause = " WHERE " + " AND ".join(conditions)
@@ -271,8 +284,8 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
                     "password": r[1],
                     "created_at": r[2],
                     "status": "image2api" if '"image2api"' in str(r[3] or "") else (
-                        "有凭证" if '"access_token"' in str(r[3] or "") else (
-                        "仅注册成功" if '"仅注册成功"' in str(r[3] or "") else "未知")),
+                        "有凭证" if '"refresh_token"' in str(r[3] or "") else (
+                            "仅注册成功" if '"仅注册成功"' in str(r[3] or "") else "未知")),
                     "is_active": r[4] if r[4] is not None else 1,
                     "push_platform": r[5],
                     "push_time": r[6]
@@ -407,7 +420,7 @@ def get_and_lock_unused_local_mailbox() -> dict:
                 execute_sql(c, "START TRANSACTION")
                 execute_sql(c, filter_sql + " FOR UPDATE")
             else:
-                execute_sql(c, "BEGIN EXCLUSIVE")
+                # execute_sql(c, "BEGIN EXCLUSIVE")
                 execute_sql(c, filter_sql)
 
             row = c.fetchone()
@@ -559,10 +572,11 @@ def update_account_push_info(emails: list, platform: str, mode: str = "overwrite
         with get_db_conn() as conn:
             c = get_cursor(conn)
             for email in emails:
+                like_pattern = f"{str(email).strip()}%"
                 new_val = target_platform
 
                 if mode == "sync":
-                    execute_sql(c, "SELECT push_platform FROM accounts WHERE email = ?", (email,))
+                    execute_sql(c, "SELECT push_platform FROM accounts WHERE email LIKE ?", (like_pattern,))
                     row = c.fetchone()
                     current_raw = row[0] if row and row[0] else ""
 
@@ -573,12 +587,12 @@ def update_account_push_info(emails: list, platform: str, mode: str = "overwrite
                         new_val = ",".join(sorted(list(p_set)))
                     else:
                         new_val = target_platform
-
                 execute_sql(c, """
                     UPDATE accounts 
                     SET push_platform = ?, push_time = COALESCE(push_time, ?) 
-                    WHERE email = ?
-                """, (new_val, now_str, email))
+                    WHERE email LIKE ?
+                """, (new_val, now_str, like_pattern))
+
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 更新推送状态失败: {e}")
 
@@ -587,30 +601,46 @@ def get_inventory_stats() -> dict:
         p = "%%" if DB_TYPE == "mysql" else "%"
         with get_db_conn() as conn:
             c = get_cursor(conn)
-            execute_sql(c, """
-                SELECT 
-                    COUNT(1) as total,
-                    SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 1 THEN 1 ELSE 0 END) as active_count,
-                    SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 0 THEN 1 ELSE 0 END) as disabled_count,
-                    SUM(CASE WHEN push_platform IS NULL OR push_platform = '' THEN 1 ELSE 0 END) as unpushed_count,
-                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' THEN 1 ELSE 0 END) as cpa_total,
-                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' AND is_active = 1 THEN 1 ELSE 0 END) as cpa_active,
-                    SUM(CASE WHEN push_platform LIKE '{p}CPA{p}' AND is_active = 0 THEN 1 ELSE 0 END) as cpa_disabled,
-                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' THEN 1 ELSE 0 END) as sub_total,
-                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' AND is_active = 1 THEN 1 ELSE 0 END) as sub_active,
-                    SUM(CASE WHEN push_platform LIKE '{p}SUB2API{p}' AND is_active = 0 THEN 1 ELSE 0 END) as sub_disabled,
-                    SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') THEN 1 ELSE 0 END) as cloud_total
-                FROM accounts
-            """)
+            sql = """
+                            SELECT 
+                                COUNT(1) as total,
+                                SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 1 THEN 1 ELSE 0 END) as active_count,
+                                SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') AND is_active = 0 THEN 1 ELSE 0 END) as disabled_count,
+                                SUM(CASE WHEN push_platform IS NULL OR push_platform = '' THEN 1 ELSE 0 END) as unpushed_count,
+                                SUM(CASE WHEN push_platform LIKE ? THEN 1 ELSE 0 END) as cpa_total,
+                                SUM(CASE WHEN push_platform LIKE ? AND is_active = 1 THEN 1 ELSE 0 END) as cpa_active,
+                                SUM(CASE WHEN push_platform LIKE ? AND is_active = 0 THEN 1 ELSE 0 END) as cpa_disabled,
+                                SUM(CASE WHEN push_platform LIKE ? THEN 1 ELSE 0 END) as sub_total,
+                                SUM(CASE WHEN push_platform LIKE ? AND is_active = 1 THEN 1 ELSE 0 END) as sub_active,
+                                SUM(CASE WHEN push_platform LIKE ? AND is_active = 0 THEN 1 ELSE 0 END) as sub_disabled,
+                                SUM(CASE WHEN (push_platform IS NOT NULL AND push_platform != '') THEN 1 ELSE 0 END) as cloud_total,
+
+                                SUM(CASE WHEN token_data LIKE ? AND token_data NOT LIKE ? THEN 1 ELSE 0 END) as with_token_count,
+                                SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as reg_only_count,
+                                SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as imgsub2api_count
+                            FROM accounts
+                        """
+            params = (
+                '%CPA%', '%CPA%', '%CPA%',
+                '%SUB2API%', '%SUB2API%', '%SUB2API%',
+                '%"refresh_token"%', '%"image2api"%',
+                '%"仅注册成功"%',
+                '%"image2api"%'
+            )
+
+            execute_sql(c, sql, params)
             row = c.fetchone()
-            r = [x or 0 for x in row] if row else [0] * 11
+            r = [x or 0 for x in row] if row else [0] * 14
 
             return {
                 "local": {
                     "total": r[0],
                     "active": r[1],
                     "disabled": r[2],
-                    "unpushed": r[3]
+                    "unpushed": r[3],
+                    "with_token": r[11],
+                    "reg_only": r[12],
+                    "imgsub2api": r[13]
                 },
                 "cloud": {
                     "total": r[10],
@@ -626,7 +656,8 @@ def get_inventory_stats() -> dict:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 获取统计数据失败: {e}")
         return {
-            "local": {"total": 0, "active": 0, "disabled": 0, "unpushed": 0},
+            "local": {"total": 0, "active": 0, "disabled": 0, "unpushed": 0, "with_token": 0, "reg_only": 0,
+                      "imgsub2api": 0},
             "cloud": {"total": 0, "enabled": 0, "cpa": 0, "cpa_active": 0, "cpa_disabled": 0, "sub2api": 0,
                       "sub2api_active": 0, "sub2api_disabled": 0}
         }
