@@ -683,8 +683,9 @@ async def save_config(new_config: dict, token: str = Depends(verify_token)):
 async def check_update(current_version: str, token: str = Depends(verify_token)):
     try:
         proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
+        update_repo = getattr(core_engine.cfg, 'UPDATE_REPO', None) or "LnYo-Cly/openai-cpa"
 
-        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
+        web_url = f"https://github.com/{update_repo}/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0) as client:
             resp = await client.head(web_url, headers=headers, follow_redirects=False)
@@ -695,7 +696,7 @@ async def check_update(current_version: str, token: str = Depends(verify_token))
                     return {"status": "error", "message": "无法从 GitHub 获取重定向地址"}
                 remote_version = redirect_url.split("/")[-1]
                 html_url = redirect_url
-                download_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{remote_version}.zip"
+                download_url = f"https://github.com/{update_repo}/archive/refs/tags/{remote_version}.zip"
             else:
                 return {"status": "error", "message": f"获取版本失败，状态码: {resp.status_code}"}
         def _parse(v):
@@ -1021,9 +1022,25 @@ def auto_update(token: str = Depends(verify_token)):
 def execute_docker_update():
     try:
         project_path = os.getenv("HOST_PROJECT_PATH")
-        image_name = "wenfxl/wenfxl-codex-manager:latest"
-        print(f"[{core_engine.ts()}] [系统] 🚀 正在通过官方 Compose 引擎执行重建...")
+        image_name = getattr(core_engine.cfg, 'UPDATE_DOCKER_IMAGE', None) or "ghcr.io/lnyo-cly/openai-cpa:latest"
+        print(f"[{core_engine.ts()}] [系统] 🚀 正在拉取最新镜像: {image_name}")
         subprocess.run(["docker", "pull", image_name], check=False)
+
+        compose_method = getattr(core_engine.cfg, 'UPDATE_COMPOSE_METHOD', 'run')
+        if compose_method == 'watchtower':
+            # 通过 Watchtower HTTP API 触发更新
+            try:
+                wt_url = os.getenv("WATCHTOWER_API_URL", "http://watchtower:8080/v1/update")
+                resp = requests.post(wt_url, json={"image": image_name}, timeout=10)
+                print(f"[{core_engine.ts()}] [系统] ✅ Watchtower 已接收更新指令")
+            except Exception:
+                pass
+            return {
+                "status": "success",
+                "message": "Watchtower 已接管更新，请等待容器自动重建..."
+            }
+
+        # docker compose 重建方式
         update_cmd = (
             f"nohup docker run --rm "
             f"-v /var/run/docker.sock:/var/run/docker.sock "
@@ -1056,7 +1073,7 @@ def execute_native_update():
         else:
             print(f"[{core_engine.ts()}] [系统] ⚠️ 未检测到全局代理，尝试直连下载...")
 
-        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
+        web_url = f"https://github.com/{getattr(core_engine.cfg, 'UPDATE_REPO', None) or 'LnYo-Cly/openai-cpa'}/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         release_response = requests.head(web_url, headers=headers, proxies=proxies, allow_redirects=False, timeout=15)
 

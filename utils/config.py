@@ -303,6 +303,9 @@ NEWAPI_CHANNEL_IDS: list = []
 NEWAPI_SAVE_TO_LOCAL: bool = True
 NEWAPI_PROXY: str = ""  # 渠道代理，用于 NewAPI 转发请求到 chatgpt.com
 
+UPDATE_REPO: str = "LnYo-Cly/openai-cpa"
+UPDATE_DOCKER_IMAGE: str = "ghcr.io/lnyo-cly/openai-cpa:latest"
+
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
 LUCKMAIL_VARIANT_MODE: str = ""
@@ -806,6 +809,12 @@ def reload_all_configs(new_config_dict=None):
     NEWAPI_CHANNEL_IDS = [int(x) for x in _raw_ids if str(x).strip().isdigit()]
     NEWAPI_SAVE_TO_LOCAL = safe_bool(_newapi.get("save_to_local", True))
     NEWAPI_PROXY = str(_newapi.get("proxy", "")).strip()
+
+    # 更新配置
+    _upd = _c.get("update_mode", {})
+    global UPDATE_REPO, UPDATE_DOCKER_IMAGE
+    UPDATE_REPO = _upd.get("repo", "LnYo-Cly/openai-cpa")
+    UPDATE_DOCKER_IMAGE = _upd.get("docker_image", "ghcr.io/lnyo-cly/openai-cpa:latest")
 
     reset_sub2api_proxy_rotation()
     _normal = _c.get("normal_mode", {})
