@@ -1,4 +1,4 @@
-﻿# Wenfxl Codex Manager Web Console
+﻿﻿# Wenfxl Codex Manager Web Console
 [![Telegram Group](https://img.shields.io/badge/Telegram-Community_Chat-0088cc?style=for-the-badge&logo=telegram)](https://t.me/+srBiKuPvn4A3YmNl)
 [![License](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/legalcode)
 
@@ -500,6 +500,16 @@ Check the following:
 - Prefer stronger secret handling for mailbox admin credentials, CPA tokens, and Clash controller secrets.
 - Restrict access to the output directory.
 - If used in a team environment, add audit logging and permission boundaries.
+
+## Contributors
+
+Thanks to all the developers who have contributed to this project:
+
+<a href="https://github.com/kamill7779"><img src="https://wsrv.nl/?url=github.com/kamill7779.png&mask=circle" width="80" title="kamill7779" alt="kamill7779"></a>
+<a href="https://github.com/s12ryt"><img src="https://wsrv.nl/?url=github.com/s12ryt.png&mask=circle" width="80" title="s12ryt" alt="s12ryt"></a>
+<a href="https://github.com/SYFATP"><img src="https://wsrv.nl/?url=github.com/SYFATP.png&mask=circle" width="80" title="SYFATP" alt="SYFATP"></a>
+<a href="https://github.com/YuHaiA"><img src="https://wsrv.nl/?url=github.com/YuHaiA.png&mask=circle" width="80" title="YuHaiA" alt="YuHaiA"></a>
+<a href="https://github.com/haocenchen-debug"><img src="https://wsrv.nl/?url=github.com/haocenchen-debug.png&mask=circle" width="80" title="haocenchen-debug" alt="haocenchen-debug"></a>
 
 ## Terms of Use & License
 
