@@ -1084,7 +1084,7 @@ def execute_native_update():
             latest_tag = redirect_url.split('/')[-1]
             print(f"[{core_engine.ts()}] [系统] 🎉 成功获取最新版本标签: {latest_tag}")
 
-            zip_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{latest_tag}.zip"
+            zip_url = f"https://github.com/{getattr(core_engine.cfg, 'UPDATE_REPO', None) or 'LnYo-Cly/openai-cpa'}/archive/refs/tags/{latest_tag}.zip"
         else:
             raise Exception(f"请求被拒绝或状态异常，状态码: {release_response.status_code}")
 
