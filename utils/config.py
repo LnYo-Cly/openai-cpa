@@ -407,6 +407,8 @@ GMAIL_OAUTH_SUFFIX_LEN_MIN: int = 8
 GMAIL_OAUTH_SUFFIX_LEN_MAX: int = 8
 DISABLE_FORCED_TAKEOVER: bool = True
 OPENAI_CPA_WEBHOOK_SECRET = ""
+USE_ORIGINAL_PASSWORD_FLOW: bool = False
+
 TEAM_MODE_ENABLE: bool = False
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
@@ -489,7 +491,7 @@ def reload_all_configs(new_config_dict=None):
     global DUCKMAIL_FORWARD_MODE, DUCKMAIL_FORWARD_EMAIL
     global DUCK_USE_PROXY
     global GMAIL_ALIAS_BASE_EMAIL
-    global CLUSTER_NODE_NAME, CLUSTER_MASTER_URL, CLUSTER_SECRET
+    global CLUSTER_NODE_NAME, CLUSTER_MASTER_URL, CLUSTER_SECRET, CLUSTER_UPLOAD_TIMEOUT_SEC
     global REG_MODE
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
@@ -510,7 +512,7 @@ def reload_all_configs(new_config_dict=None):
     global SMSBOWER_REUSE_PHONE, SMSBOWER_REUSE_MAX
     global HERO_SMS_REUSE_PHONE, HERO_SMS_REUSE_MAX
     global FIVESIM_REUSE_PHONE, FIVESIM_REUSE_MAX
-    global OPENAI_CPA_WEBHOOK_SECRET
+    global OPENAI_CPA_WEBHOOK_SECRET, USE_ORIGINAL_PASSWORD_FLOW
     global TEAM_MODE_ENABLE
     base_yaml_config = init_config()
 
@@ -717,6 +719,7 @@ def reload_all_configs(new_config_dict=None):
 
     _ocpa = _c.get("openai_cpa", {})
     OPENAI_CPA_WEBHOOK_SECRET = str(_ocpa.get("webhook_secret", "")).strip()
+    USE_ORIGINAL_PASSWORD_FLOW = bool(_ocpa.get("use_original_password_flow", False))
 
     DEFAULT_PROXY = format_docker_url(_c.get("default_proxy", ""))
 
@@ -969,6 +972,7 @@ def reload_all_configs(new_config_dict=None):
     CLUSTER_NODE_NAME = str(_c.get("cluster_node_name", "")).strip()
     CLUSTER_MASTER_URL = str(_c.get("cluster_master_url", "")).strip().rstrip("/")
     CLUSTER_SECRET = str(_c.get("cluster_secret", "wenfxl666")).strip()
+    CLUSTER_UPLOAD_TIMEOUT_SEC = min(3600, safe_int(_c.get("cluster_upload_timeout_sec", 15), 15, minimum=15))
 
     REG_MODE = str(_c.get("reg_mode", "protocol")).strip().lower()
 
