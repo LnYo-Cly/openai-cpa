@@ -1027,40 +1027,27 @@ def execute_docker_update():
 
         pull_result = subprocess.run(["docker", "pull", image_name], capture_output=True, text=True, check=False)
         if pull_result.returncode != 0:
-            print(f"[{core_engine.ts()}] [系统] ⚠️ 镜像拉取可能失败: {pull_result.stderr.strip()}")
-        else:
-            print(f"[{core_engine.ts()}] [系统] ✅ 镜像拉取成功")
+            return {"status": "error", "message": f"镜像拉取失败: {pull_result.stderr.strip()}"}
 
-        # 优先尝试 Watchtower HTTP API（容器内可直接调用）
-        try:
-            wt_url = os.getenv("WATCHTOWER_API_URL", "http://watchtower:8080/v1/update")
-            resp = requests.post(wt_url, json={"image": image_name}, timeout=10)
-            print(f"[{core_engine.ts()}] [系统] ✅ Watchtower 已接收更新指令")
-            return {
-                "status": "success",
-                "message": "Watchtower 已接管更新，请等待容器自动重建..."
-            }
-        except Exception:
-            print(f"[{core_engine.ts()}] [系统] ⚠️ Watchtower API 不可用，尝试 docker compose 重建...")
+        print(f"[{core_engine.ts()}] [系统] ✅ 镜像拉取成功，正在重建容器...")
 
-        # fallback: docker compose 重建方式
         if not project_path:
-            return {"status": "error", "message": "缺少 HOST_PROJECT_PATH 环境变量，无法执行 compose 重建"}
+            return {"status": "error", "message": "缺少 HOST_PROJECT_PATH 环境变量"}
 
+        # docker compose 重建容器（仅更新 codex-web，不影响其他服务）
         update_cmd = (
             f"nohup docker run --rm "
             f"-v /var/run/docker.sock:/var/run/docker.sock "
             f"-v {project_path}:{project_path} "
             f"-w {project_path} "
-            f"docker/compose:latest up -d --no-deps codex-web > /dev/null 2>&1 &"
+            f"docker/compose:latest up -d --no-deps --pull never codex-web > /dev/null 2>&1 &"
         )
 
-        print(f"[{core_engine.ts()}] [系统] 🔄 指令已发出，由官方引擎接管重建任务...")
         subprocess.Popen(update_cmd, shell=True)
 
         return {
             "status": "success",
-            "message": "更新指令已由官方引擎接管！系统正在自我重建，请 20 秒后刷新网页..."
+            "message": "镜像已拉取，容器正在重建，请约 20 秒后刷新网页..."
         }
 
     except Exception as e:

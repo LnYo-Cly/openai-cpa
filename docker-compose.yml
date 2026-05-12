@@ -29,3 +29,5 @@ services:
     command: --label-enable --scope openai-cpa --interval 86400 --cleanup --api
     expose:
       - "8080"
+    profiles:
+      - auto-update
