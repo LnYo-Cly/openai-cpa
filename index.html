@@ -428,8 +428,8 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-show="currentTab === 'cluster'" class="h-full flex flex-col space-y-6">
-                            <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60 mb-4" v-if="config">
+                        <div v-if="currentTab === 'cluster'" class="h-full flex flex-col space-y-6">
+                            <div v-if="config" class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60 mb-4">
                                 <h3 class="text-lg font-black text-indigo-700 mb-4 flex items-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.256-3.905 14.16 0M1 9.828c5.857-5.858 15.355-5.858 21.213 0"></path></svg> 分布式节点通信配置</h3>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
                                     <div>
@@ -554,7 +554,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-show="currentTab === 'accounts'" class="inventory-shell inventory-panel mobile-table-priority rounded-2xl overflow-hidden transition-shadow duration-300 hover:shadow-md">
+                        <div v-if="currentTab === 'accounts'" class="inventory-shell inventory-panel mobile-table-priority rounded-2xl overflow-hidden transition-shadow duration-300 hover:shadow-md">
                             <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4">
                                 <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
                                     <div class="flex items-center gap-3">
@@ -817,7 +817,7 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'mailboxes'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative transition-shadow duration-300 hover:shadow-md">
+                        <div v-if="currentTab === 'mailboxes'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative transition-shadow duration-300 hover:shadow-md">
 
                             <div v-if="showNewapiChannelModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                                 <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg flex flex-col">
@@ -977,7 +977,7 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'email'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+                        <div v-if="currentTab === 'email' && config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60">
                                 <h3 class="text-lg md:text-xl font-black text-blue-600 mb-5 flex items-center gap-2 tracking-tight"><span><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7l9 6 9-6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"></path></svg></span> 基础发信设置</h3>
                                 <label class="block text-slate-700 text-sm font-extrabold mb-2">API 模式选择 (email_api_mode)</label>
@@ -2584,7 +2584,7 @@
                         </div>
                         </div>
 
-                        <div v-show="currentTab === 'sms'" v-if="config" class="space-y-5 md:space-y-8">
+                        <div v-if="currentTab === 'sms' && config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 lg:col-span-2 border-t-4 border-t-orange-500 bg-gradient-to-b from-orange-50/30 to-white" v-if="config.hero_sms">
                                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-orange-100 pb-5 gap-4">
                                     <h3 class="text-xl md:text-2xl font-black text-orange-600 tracking-tight flex items-center flex-wrap gap-2">
@@ -3054,7 +3054,7 @@
 
 
                         <!-- ═══ Team 管理 ═══ -->
-                        <div v-show="currentTab === 'team'" class="space-y-5 md:space-y-8">
+                        <div v-if="currentTab === 'team'" class="space-y-5 md:space-y-8">
                             <!-- 管理者选择 -->
                             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
                                 <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">管理者账号</h3>
@@ -3256,7 +3256,7 @@
                         </div>
 
 
-                        <div v-show="currentTab === 'proxy'" v-if="config" class="space-y-5 md:space-y-8">
+                        <div v-if="currentTab === 'proxy' && config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 lg:max-w-3xl">
                                 <h3 class="text-lg md:text-xl font-black text-emerald-600 mb-5 flex items-center gap-2 tracking-tight"><span><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 md:w-6 md:h-6 inline-block align-text-bottom text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"></circle><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c2.8 2.4 4.5 5.6 4.5 9s-1.7 6.6-4.5 9c-2.8-2.4-4.5-5.6-4.5-9S9.2 5.4 12 3z"></path></svg></span> 基础代理设置</h3>
                                 <label class="block text-slate-700 text-sm font-extrabold mb-1">全局默认代理</label>
@@ -3615,7 +3615,7 @@
 
                         </div>
 
-                        <div v-show="currentTab === 'cloud'" class="inventory-shell inventory-panel mobile-table-priority mobile-cloud-priority rounded-2xl overflow-hidden hover:shadow-md transition-shadow duration-300">
+                        <div v-if="currentTab === 'cloud'" class="inventory-shell inventory-panel mobile-table-priority mobile-cloud-priority rounded-2xl overflow-hidden hover:shadow-md transition-shadow duration-300">
                             <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100">
                                 <div class="cloud-toolbar-shell">
                                     <div class="cloud-toolbar-side">
@@ -3979,7 +3979,7 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'team_accounts'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
+                        <div v-if="currentTab === 'team_accounts'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
                             <div v-if="showImportTeamModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                                 <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col">
                                     <h3 class="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></span> 批量导入 Team Token</h3>
@@ -4055,7 +4055,7 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'relay'" v-if="config" class="space-y-5 md:space-y-8">
+                        <div v-if="currentTab === 'relay' && config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-emerald-500 bg-gradient-to-br from-emerald-50/20 to-white" v-if="config.cpa_mode">
                                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
                                     <h3 class="text-xl md:text-2xl font-black text-emerald-700 tracking-tight flex items-center gap-2"><span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg></span> CPA 仓管中心
@@ -4666,7 +4666,7 @@
 
 
                         </div>
-                        <div v-show="currentTab === 'notify'" v-if="config" class="space-y-5 md:space-y-8">
+                        <div v-if="currentTab === 'notify' && config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-sky-400 lg:max-w-3xl">
                                 <h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight mb-6 flex items-center gap-2"><svg class="w-5 h-5 inline-block align-text-bottom shrink-0" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5ZM12 4.15L6.04 7.5L12 10.85L17.96 7.5L12 4.15Z"></path></svg> Telegram 机器人通知</h3>
                                 <div class="bg-gradient-to-br from-sky-50/80 to-blue-50/30 p-5 md:p-6 rounded-2xl border border-sky-100 shadow-inner">
@@ -4742,7 +4742,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-show="currentTab === 'concurrency'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+                        <div v-if="currentTab === 'concurrency' && config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-cyan-500 bg-gradient-to-br from-cyan-50/30 to-white lg:col-span-2">
                                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
                                     <div>
