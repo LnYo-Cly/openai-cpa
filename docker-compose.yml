@@ -26,4 +26,6 @@ services:
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --label-enable --scope openai-cpa --interval 86400 --cleanup
+    command: --label-enable --scope openai-cpa --interval 86400 --cleanup --api
+    expose:
+      - "8080"

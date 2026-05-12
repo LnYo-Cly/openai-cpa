@@ -1024,23 +1024,29 @@ def execute_docker_update():
         project_path = os.getenv("HOST_PROJECT_PATH")
         image_name = getattr(core_engine.cfg, 'UPDATE_DOCKER_IMAGE', None) or "ghcr.io/lnyo-cly/openai-cpa:latest"
         print(f"[{core_engine.ts()}] [系统] 🚀 正在拉取最新镜像: {image_name}")
-        subprocess.run(["docker", "pull", image_name], check=False)
 
-        compose_method = getattr(core_engine.cfg, 'UPDATE_COMPOSE_METHOD', 'run')
-        if compose_method == 'watchtower':
-            # 通过 Watchtower HTTP API 触发更新
-            try:
-                wt_url = os.getenv("WATCHTOWER_API_URL", "http://watchtower:8080/v1/update")
-                resp = requests.post(wt_url, json={"image": image_name}, timeout=10)
-                print(f"[{core_engine.ts()}] [系统] ✅ Watchtower 已接收更新指令")
-            except Exception:
-                pass
+        pull_result = subprocess.run(["docker", "pull", image_name], capture_output=True, text=True, check=False)
+        if pull_result.returncode != 0:
+            print(f"[{core_engine.ts()}] [系统] ⚠️ 镜像拉取可能失败: {pull_result.stderr.strip()}")
+        else:
+            print(f"[{core_engine.ts()}] [系统] ✅ 镜像拉取成功")
+
+        # 优先尝试 Watchtower HTTP API（容器内可直接调用）
+        try:
+            wt_url = os.getenv("WATCHTOWER_API_URL", "http://watchtower:8080/v1/update")
+            resp = requests.post(wt_url, json={"image": image_name}, timeout=10)
+            print(f"[{core_engine.ts()}] [系统] ✅ Watchtower 已接收更新指令")
             return {
                 "status": "success",
                 "message": "Watchtower 已接管更新，请等待容器自动重建..."
             }
+        except Exception:
+            print(f"[{core_engine.ts()}] [系统] ⚠️ Watchtower API 不可用，尝试 docker compose 重建...")
 
-        # docker compose 重建方式
+        # fallback: docker compose 重建方式
+        if not project_path:
+            return {"status": "error", "message": "缺少 HOST_PROJECT_PATH 环境变量，无法执行 compose 重建"}
+
         update_cmd = (
             f"nohup docker run --rm "
             f"-v /var/run/docker.sock:/var/run/docker.sock "
