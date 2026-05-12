@@ -365,7 +365,7 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'console'" class="h-full flex flex-col">
+                        <div v-if="currentTab === 'console'" class="h-full flex flex-col">
                             <div class="flex justify-between items-end mb-3 md:mb-4">
                                 <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">实时运行日志</h2>
                                 <button @click="clearLogs" class="text-xs md:text-sm bg-white/80 backdrop-blur-md text-slate-600 px-4 py-2 rounded-xl hover:bg-white active:scale-95 transition-all font-bold shadow-sm border border-slate-200 flex items-center gap-2">
