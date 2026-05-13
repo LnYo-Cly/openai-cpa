@@ -21,7 +21,7 @@ class NewAPIClient:
         self.models = getattr(cfg, "NEWAPI_MODELS", "")
         self.group = getattr(cfg, "NEWAPI_GROUP", "default")
         self.channel_name = getattr(cfg, "NEWAPI_CHANNEL_NAME", self.DEFAULT_CHANNEL_NAME)
-        self.proxy = getattr(cfg, "NEWAPI_PROXY", "")
+        self.proxy = getattr(cfg, "NEWAPI_PROXY", "") or getattr(cfg, "DEFAULT_PROXY", "")
 
     def _build_headers(self) -> dict:
         return {
