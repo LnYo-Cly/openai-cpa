@@ -682,7 +682,7 @@ async def save_config(new_config: dict, token: str = Depends(verify_token)):
 @router.get("/api/system/check_update")
 async def check_update(current_version: str, token: str = Depends(verify_token)):
     try:
-        proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
+        proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None) or None
         update_repo = getattr(core_engine.cfg, 'UPDATE_REPO', None) or "LnYo-Cly/openai-cpa"
 
         web_url = f"https://github.com/{update_repo}/releases/latest"
