@@ -114,9 +114,10 @@ class NewAPIClient:
         )
         if resp.status_code in (200, 201, 204):
             try:
-                return True, resp.json() if resp.text else {}
+                data = resp.json() if resp.text else {}
+                return True, data
             except ValueError:
-                return True, resp.text
+                return False, f"响应非 JSON: {resp.text[:200]}"
         error_msg = f"HTTP {resp.status_code}"
         try:
             detail = resp.json()
@@ -151,6 +152,8 @@ class NewAPIClient:
             ok, data = self._do_request("get", "/api/channel/")
             if not ok:
                 return False, data
+            if not isinstance(data, (dict, list)):
+                return False, f"响应格式异常: {type(data).__name__}"
             channels = data if isinstance(data, list) else data.get("data", [])
             result = []
             for ch in channels:
