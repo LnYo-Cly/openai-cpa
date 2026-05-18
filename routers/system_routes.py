@@ -1,3 +1,4 @@
+import hashlib
 import os
 import time
 import secrets
@@ -11,6 +12,8 @@ import requests
 import zipfile
 import io
 import shutil
+import json
+from pathlib import Path
 
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, HTTPException
@@ -28,6 +31,8 @@ import utils.config as cfg
 
 router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_cluster_sync_worker_started = False
+_cluster_sync_worker_lock = threading.Lock()
 
 class DummyArgs:
     def __init__(self, proxy=None, once=False):
@@ -36,7 +41,21 @@ class DummyArgs:
 
 class LoginData(BaseModel): password: str
 class DomainRuntimeActionReq(BaseModel): domain: str
-class ClusterUploadAccountsReq(BaseModel): node_name: str; secret: str; accounts: list
+class ClusterSyncTaskCreateReq(BaseModel):
+    node_name: str
+    secret: str
+    task_id: str
+    file_path: str
+    file_size: int = 0
+    total_count: int = 0
+    file_sha256: str = ""
+class ClusterUploadAccountsReq(BaseModel):
+    node_name: str
+    secret: str
+    accounts: list
+    batch_index: Optional[int] = None
+    total_batches: Optional[int] = None
+    total_uploaded: Optional[int] = None
 class ClusterReportReq(BaseModel): node_name: str; secret: str; stats: dict; logs: list
 class ClusterControlReq(BaseModel): node_name: str; action: str
 class GitSyncReq(BaseModel):
@@ -213,6 +232,239 @@ def _normalize_bool(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return False
+
+
+def _is_default_cluster_secret(secret: str) -> bool:
+    return str(secret or "").strip() in {"", "wenfxl666"}
+
+
+def _is_custom_cluster_secret_enforced() -> bool:
+    return bool(getattr(cfg, "CLUSTER_SYNC_REQUIRE_CUSTOM_SECRET", True))
+
+
+def _validate_cluster_secret(secret: str) -> tuple[bool, str]:
+    current_secret = str(getattr(core_engine.cfg, '_c', {}).get("cluster_secret", "wenfxl666")).strip()
+    if _is_custom_cluster_secret_enforced() and _is_default_cluster_secret(current_secret):
+        return False, "请先配置自定义 cluster_secret"
+    if str(secret or "").strip() != current_secret:
+        return False, "密钥错误"
+    return True, ""
+
+
+def _resolve_cluster_sync_path(file_path: str) -> Path:
+    candidate = Path(str(file_path or "")).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(BASE_DIR) / candidate
+    return candidate.resolve()
+
+
+def _get_cluster_sync_max_file_size_bytes() -> int:
+    return max(1, int(getattr(cfg, "CLUSTER_SYNC_MAX_FILE_SIZE_MB", 20) or 20)) * 1024 * 1024
+
+
+def _calculate_file_sha256(file_path: Path) -> str:
+    digest = hashlib.sha256()
+    with file_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if chunk:
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _delete_cluster_sync_file(file_path: str) -> tuple[bool, str]:
+    try:
+        if not _is_cluster_sync_path_allowed(file_path):
+            return False, "同步文件路径不在共享目录内"
+        target_path = _resolve_cluster_sync_path(file_path)
+        if not target_path.exists():
+            return True, ""
+        target_path.unlink()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def _cleanup_stale_cluster_sync_files() -> None:
+    try:
+        shared_dir = _resolve_cluster_sync_shared_dir()
+        if not shared_dir.exists() or not shared_dir.is_dir():
+            return
+        max_age_hours = max(1, int(getattr(cfg, "CLUSTER_SYNC_STALE_FILE_MAX_AGE_HOURS", 12) or 12))
+        cutoff_ts = time.time() - (max_age_hours * 3600)
+        for target_path in shared_dir.rglob("*.jsonl"):
+            try:
+                resolved = target_path.resolve()
+                resolved.relative_to(shared_dir)
+                if not resolved.is_file():
+                    continue
+                if resolved.stat().st_mtime > cutoff_ts:
+                    continue
+                resolved.unlink()
+                print(f"[{core_engine.ts()}] [系统] 🧹 已自动清理超时同步文件: {resolved}")
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f"[{core_engine.ts()}] [WARNING] 清理超时同步文件失败: {e}")
+    except Exception as e:
+        print(f"[{core_engine.ts()}] [WARNING] 扫描超时同步文件失败: {e}")
+
+
+def _verify_cluster_sync_file(file_path: str, expected_size: int = 0, expected_sha256: str = "", expected_total_count: int = 0) -> tuple[bool, str, Optional[Path]]:
+    if not _is_cluster_sync_path_allowed(file_path):
+        return False, "同步文件路径不在共享目录内", None
+    try:
+        target_path = _resolve_cluster_sync_path(file_path)
+    except Exception:
+        return False, "同步文件路径非法", None
+    if not target_path.exists() or not target_path.is_file():
+        return False, "同步文件不存在", target_path
+    actual_size = int(target_path.stat().st_size or 0)
+    max_size = _get_cluster_sync_max_file_size_bytes()
+    if actual_size > max_size:
+        return False, "同步文件大小超限", target_path
+    declared_size = max(0, int(expected_size or 0))
+    if declared_size and declared_size != actual_size:
+        return False, "同步文件大小校验失败", target_path
+    max_records = max(1, int(getattr(cfg, "CLUSTER_SYNC_MAX_RECORDS", 100000) or 100000))
+    declared_total_count = max(0, int(expected_total_count or 0))
+    if declared_total_count > max_records:
+        return False, "同步记录数量超限", target_path
+    actual_sha256 = _calculate_file_sha256(target_path)
+    normalized_expected_sha256 = str(expected_sha256 or "").strip().lower()
+    if normalized_expected_sha256 and actual_sha256 != normalized_expected_sha256:
+        return False, "同步文件摘要校验失败", target_path
+    return True, "", target_path
+
+
+def _finalize_cluster_sync_task_with_cleanup(task_id: str, status: str, success_count: int, fail_count: int, error_message: str = "", file_path: str = "") -> bool:
+    final_error_message = str(error_message or "")
+    if file_path:
+        deleted, delete_error = _delete_cluster_sync_file(file_path)
+        if not deleted:
+            final_error_message = f"{final_error_message}；同步文件清理失败：{delete_error}" if final_error_message else f"同步文件清理失败：{delete_error}"
+            print(f"[{core_engine.ts()}] [WARNING] 同步任务 {task_id} 文件清理失败：{delete_error}")
+    return db_manager.finalize_cluster_sync_task(task_id, status, success_count, fail_count, final_error_message)
+
+
+def _resolve_cluster_sync_shared_dir() -> Path:
+    raw_path = str(getattr(cfg, "CLUSTER_SYNC_SHARED_DIR", "data/cluster_sync") or "data/cluster_sync").strip()
+    shared_dir = Path(raw_path)
+    if not shared_dir.is_absolute():
+        shared_dir = Path(BASE_DIR) / shared_dir
+    return shared_dir.resolve()
+
+
+def _is_cluster_sync_path_allowed(file_path: str) -> bool:
+    try:
+        shared_dir = _resolve_cluster_sync_shared_dir()
+        candidate = Path(str(file_path or "")).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(BASE_DIR) / candidate
+        candidate = candidate.resolve()
+        candidate.relative_to(shared_dir)
+        return True
+    except Exception:
+        return False
+
+
+def _serialize_cluster_sync_task(task: Optional[dict]) -> Optional[dict]:
+    if not task:
+        return None
+    success_count = int(task.get("success_count") or 0)
+    fail_count = int(task.get("fail_count") or 0)
+    total_count = int(task.get("total_count") or 0)
+    processed_count = success_count + fail_count
+    progress_pct = round(processed_count / total_count * 100, 2) if total_count > 0 else 0.0
+    payload = dict(task)
+    payload["processed_count"] = processed_count
+    payload["progress_pct"] = progress_pct
+    return payload
+
+
+def _run_cluster_sync_task(task: dict):
+    task_id = str(task.get("task_id") or "").strip()
+    if not task_id:
+        return
+    success_count = 0
+    fail_count = 0
+    flush_every = max(1, int(getattr(cfg, "CLUSTER_SYNC_PROGRESS_FLUSH_EVERY", 100) or 100))
+    file_path = str(task.get("file_path") or "").strip()
+    file_sha256 = str(task.get("file_sha256") or "").strip().lower()
+    file_size = max(0, int(task.get("file_size") or 0))
+    total_count = max(0, int(task.get("total_count") or 0))
+    cancelled = False
+    try:
+        if db_manager.get_cluster_sync_task_status(task_id) in {"cancel_requested", "cancelled"}:
+            _finalize_cluster_sync_task_with_cleanup(task_id, "cancelled", 0, 0, "用户取消任务", file_path)
+            print(f"[{core_engine.ts()}] [系统] 🛑 同步任务 {task_id} 在开始前已取消。")
+            return
+        verified, verify_message, target_path = _verify_cluster_sync_file(
+            file_path,
+            expected_size=file_size,
+            expected_sha256=file_sha256,
+            expected_total_count=total_count,
+        )
+        if not verified or target_path is None:
+            raise RuntimeError(verify_message or "同步文件校验失败")
+        with target_path.open("r", encoding="utf-8") as handle:
+            for index, raw_line in enumerate(handle, start=1):
+                if index > max(1, int(getattr(cfg, "CLUSTER_SYNC_MAX_RECORDS", 100000) or 100000)):
+                    raise RuntimeError("同步记录数量超限")
+                if db_manager.get_cluster_sync_task_status(task_id) in {"cancel_requested", "cancelled"}:
+                    db_manager.update_cluster_sync_task_progress(task_id, success_count, fail_count)
+                    cancelled = True
+                    break
+                line = str(raw_line or "").strip()
+                if not line:
+                    continue
+                try:
+                    acc = json.loads(line)
+                    if acc.get("email") and acc.get("token_data") and db_manager.save_account_to_db(
+                        acc.get("email"), acc.get("password"), acc.get("token_data")
+                    ):
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                except Exception:
+                    fail_count += 1
+                if index % flush_every == 0:
+                    db_manager.update_cluster_sync_task_progress(task_id, success_count, fail_count)
+                    print(f"[{core_engine.ts()}] [系统] 📥 同步任务 {task_id} 导入进度：成功 {success_count}，失败 {fail_count}。")
+        db_manager.update_cluster_sync_task_progress(task_id, success_count, fail_count)
+        if cancelled or db_manager.get_cluster_sync_task_status(task_id) in {"cancel_requested", "cancelled"}:
+            _finalize_cluster_sync_task_with_cleanup(task_id, "cancelled", success_count, fail_count, "用户取消任务", file_path)
+            print(f"[{core_engine.ts()}] [系统] 🛑 同步任务 {task_id} 已取消，当前成功 {success_count}，失败 {fail_count}。")
+            return
+        final_status = "success" if fail_count == 0 else ("partial_success" if success_count > 0 else "failed")
+        _finalize_cluster_sync_task_with_cleanup(task_id, final_status, success_count, fail_count, "", file_path)
+        print(f"[{core_engine.ts()}] [系统] ✅ 同步任务 {task_id} 导入完成，成功 {success_count}，失败 {fail_count}。")
+    except Exception as e:
+        _finalize_cluster_sync_task_with_cleanup(task_id, "failed", success_count, fail_count, str(e), file_path)
+        print(f"[{core_engine.ts()}] [ERROR] 同步任务 {task_id} 导入失败：{e}")
+
+
+def _cluster_sync_worker_loop():
+    while True:
+        try:
+            _cleanup_stale_cluster_sync_files()
+            task = db_manager.claim_next_cluster_sync_task()
+            if task:
+                _run_cluster_sync_task(task)
+                continue
+        except Exception as e:
+            print(f"[{core_engine.ts()}] [ERROR] 同步任务 worker 异常: {e}")
+        time.sleep(max(1, int(getattr(cfg, "CLUSTER_SYNC_IMPORT_POLL_SEC", 2) or 2)))
+
+
+def ensure_cluster_sync_worker_started():
+    global _cluster_sync_worker_started
+    if _cluster_sync_worker_started:
+        return
+    with _cluster_sync_worker_lock:
+        if _cluster_sync_worker_started:
+            return
+        threading.Thread(target=_cluster_sync_worker_loop, daemon=True).start()
+        _cluster_sync_worker_started = True
 
 
 def _normalize_mail_domain_grouping_payload(config_data: dict) -> Optional[str]:
@@ -682,10 +934,9 @@ async def save_config(new_config: dict, token: str = Depends(verify_token)):
 @router.get("/api/system/check_update")
 async def check_update(current_version: str, token: str = Depends(verify_token)):
     try:
-        proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None) or None
-        update_repo = getattr(core_engine.cfg, 'UPDATE_REPO', None) or "LnYo-Cly/openai-cpa"
+        proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
 
-        web_url = f"https://github.com/{update_repo}/releases/latest"
+        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0) as client:
             resp = await client.head(web_url, headers=headers, follow_redirects=False)
@@ -696,7 +947,7 @@ async def check_update(current_version: str, token: str = Depends(verify_token))
                     return {"status": "error", "message": "无法从 GitHub 获取重定向地址"}
                 remote_version = redirect_url.split("/")[-1]
                 html_url = redirect_url
-                download_url = f"https://github.com/{update_repo}/archive/refs/tags/{remote_version}.zip"
+                download_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{remote_version}.zip"
             else:
                 return {"status": "error", "message": f"获取版本失败，状态码: {resp.status_code}"}
         def _parse(v):
@@ -778,11 +1029,85 @@ async def cluster_view(token: str = Depends(verify_token)):
         return {"status": "success", "nodes": CLUSTER_NODES}
 
 
+@router.post("/api/cluster/sync_tasks")
+def create_cluster_sync_task(req: ClusterSyncTaskCreateReq):
+    valid_secret, secret_message = _validate_cluster_secret(req.secret)
+    if not valid_secret:
+        return {"status": "error", "message": secret_message}
+    verified, verify_message, target_path = _verify_cluster_sync_file(
+        req.file_path,
+        expected_size=req.file_size,
+        expected_sha256=req.file_sha256,
+        expected_total_count=req.total_count,
+    )
+    if not verified or target_path is None:
+        return {"status": "error", "message": verify_message or "同步文件校验失败"}
+    ensure_cluster_sync_worker_started()
+    if not db_manager.create_cluster_sync_task(
+        task_id=req.task_id,
+        node_name=req.node_name,
+        file_path=str(target_path),
+        file_size=max(0, int(req.file_size or 0)),
+        total_count=max(0, int(req.total_count or 0)),
+        max_retries=0,
+        file_sha256=str(req.file_sha256 or '').strip().lower(),
+    ):
+        return {"status": "error", "message": "同步任务已存在"}
+    print(f"[{core_engine.ts()}] [系统] 📦 已接收来自子控 [{req.node_name}] 的同步任务 {req.task_id}，等待导入。")
+    task = _serialize_cluster_sync_task(db_manager.get_cluster_sync_task(req.task_id))
+    return {"status": "success", "task_id": req.task_id, "task": task}
+
+
+@router.get("/api/cluster/sync_tasks")
+async def list_cluster_sync_tasks(limit: int = Query(20), node_name: str = Query(""), status: str = Query(""), token: str = Depends(verify_token)):
+    ensure_cluster_sync_worker_started()
+    tasks = db_manager.list_cluster_sync_tasks(limit=max(1, min(limit, 100)), node_name=node_name.strip(), status=status.strip())
+    return {"status": "success", "tasks": [_serialize_cluster_sync_task(task) for task in tasks]}
+
+
+@router.get("/api/cluster/sync_tasks/{task_id}")
+async def get_cluster_sync_task(task_id: str, token: str = Depends(verify_token)):
+    ensure_cluster_sync_worker_started()
+    task = _serialize_cluster_sync_task(db_manager.get_cluster_sync_task(task_id))
+    if not task:
+        return {"status": "error", "message": "同步任务不存在"}
+    return {"status": "success", "task": task}
+
+
+@router.post("/api/cluster/sync_tasks/clear_terminal")
+async def clear_terminal_cluster_sync_tasks(token: str = Depends(verify_token)):
+    ensure_cluster_sync_worker_started()
+    cleared = db_manager.clear_cluster_sync_terminal_tasks()
+    return {"status": "success", "message": f"已清理 {cleared} 条终态任务", "cleared": cleared}
+
+
+@router.post("/api/cluster/sync_tasks/{task_id}/retry")
+async def retry_cluster_sync_task(task_id: str, token: str = Depends(verify_token)):
+    ensure_cluster_sync_worker_started()
+    task = db_manager.get_cluster_sync_task(task_id)
+    if not task:
+        return {"status": "error", "message": "同步任务不存在"}
+    return {"status": "error", "message": "旧任务文件已清理，请重新同步"}
+
+
+@router.post("/api/cluster/sync_tasks/{task_id}/cancel")
+async def cancel_cluster_sync_task(task_id: str, token: str = Depends(verify_token)):
+    ensure_cluster_sync_worker_started()
+    task = db_manager.get_cluster_sync_task(task_id)
+    if not task:
+        return {"status": "error", "message": "同步任务不存在"}
+    if not db_manager.cancel_cluster_sync_task(task_id):
+        return {"status": "error", "message": "仅排队中或导入中的任务支持取消"}
+    print(f"[{core_engine.ts()}] [系统] 🛑 同步任务 {task_id} 已请求取消。")
+    task = _serialize_cluster_sync_task(db_manager.get_cluster_sync_task(task_id))
+    return {"status": "success", "message": f"同步任务 {task_id} 已取消", "task": task}
+
+
 @router.post("/api/cluster/report")
 async def cluster_report(req: ClusterReportReq):
-    cf_dict = getattr(core_engine.cfg, '_c', {})
-    if req.secret != str(cf_dict.get("cluster_secret", "wenfxl666")).strip(): return {"status": "error",
-                                                                                      "message": "密钥错误"}
+    valid_secret, secret_message = _validate_cluster_secret(req.secret)
+    if not valid_secret:
+        return {"status": "error", "message": secret_message}
 
     target_cmd = NODE_COMMANDS.get(req.node_name, "none")
     node_is_running = req.stats.get("is_running", False)
@@ -804,7 +1129,8 @@ async def cluster_report(req: ClusterReportReq):
 @router.websocket("/api/cluster/report_ws")
 async def ws_cluster_report(websocket: WebSocket, node_name: str, secret: str):
     await websocket.accept()
-    if secret != str(getattr(core_engine.cfg, '_c', {}).get("cluster_secret", "wenfxl666")).strip():
+    valid_secret, _ = _validate_cluster_secret(secret)
+    if not valid_secret:
         await websocket.close(code=1008, reason="Secret Mismatch")
         return
     try:
@@ -848,21 +1174,31 @@ async def cluster_view_ws(websocket: WebSocket, token: str = Query(None)):
 
 @router.post("/api/cluster/upload_accounts")
 def cluster_upload_accounts(req: ClusterUploadAccountsReq):
-    if req.secret != str(getattr(core_engine.cfg, '_c', {}).get("cluster_secret", "wenfxl666")).strip(): return {
-        "status": "error", "message": "密钥错误"}
+    valid_secret, secret_message = _validate_cluster_secret(req.secret)
+    if not valid_secret:
+        return {"status": "error", "message": secret_message}
     success_count = 0
     for acc in req.accounts:
         if acc.get("email") and acc.get("token_data"):
             if db_manager.save_account_to_db(acc.get("email"), acc.get("password"),
-                                             acc.get("token_data")): success_count += 1
+                                             acc.get("token_data")):
+                success_count += 1
 
-    msg = f"[{core_engine.ts()}] [系统] 📦 成功从子控 [{req.node_name}] 提取并完美入库 {success_count} 个账号！"
+    msg = f"[{core_engine.ts()}] [系统] 📦 第 {req.batch_index}/{req.total_batches} 批账号接收完成，来自子控 [{req.node_name}]，本批入库 {success_count} 个。" if req.batch_index and req.total_batches else f"[{core_engine.ts()}] [系统] 📦 成功从子控 [{req.node_name}] 提取并完美入库 {success_count} 个账号！"
     print(msg)
-    try:
-        append_log(msg)
-    except:
-        pass
-    return {"status": "success", "message": f"成功接收 {success_count} 个账号"}
+    done = bool(req.batch_index and req.total_batches and req.batch_index == req.total_batches)
+    if done:
+        done_msg = f"[{core_engine.ts()}] [系统] ✅ 账号批量接收完成，来自子控 [{req.node_name}]，共 {req.total_batches} 批，累计入库 {req.total_uploaded or success_count} 个。"
+        print(done_msg)
+    return {
+        "status": "success",
+        "message": f"成功接收 {success_count} 个账号",
+        "accepted_count": success_count,
+        "batch_index": req.batch_index,
+        "total_batches": req.total_batches,
+        "total_uploaded": req.total_uploaded or success_count,
+        "done": done,
+    }
 
 #模式二注册
 @router.get("/api/ext/generate_task")
@@ -1022,32 +1358,23 @@ def auto_update(token: str = Depends(verify_token)):
 def execute_docker_update():
     try:
         project_path = os.getenv("HOST_PROJECT_PATH")
-        image_name = getattr(core_engine.cfg, 'UPDATE_DOCKER_IMAGE', None) or "ghcr.io/lnyo-cly/openai-cpa:latest"
-        print(f"[{core_engine.ts()}] [系统] 🚀 正在拉取最新镜像: {image_name}")
-
-        pull_result = subprocess.run(["docker", "pull", image_name], capture_output=True, text=True, check=False)
-        if pull_result.returncode != 0:
-            return {"status": "error", "message": f"镜像拉取失败: {pull_result.stderr.strip()}"}
-
-        print(f"[{core_engine.ts()}] [系统] ✅ 镜像拉取成功，正在重建容器...")
-
-        if not project_path:
-            return {"status": "error", "message": "缺少 HOST_PROJECT_PATH 环境变量"}
-
-        # docker compose 重建容器（仅更新 codex-web，不影响其他服务）
+        image_name = "wenfxl/wenfxl-codex-manager:latest"
+        print(f"[{core_engine.ts()}] [系统] 🚀 正在通过官方 Compose 引擎执行重建...")
+        subprocess.run(["docker", "pull", image_name], check=False)
         update_cmd = (
             f"nohup docker run --rm "
             f"-v /var/run/docker.sock:/var/run/docker.sock "
             f"-v {project_path}:{project_path} "
             f"-w {project_path} "
-            f"docker/compose:latest up -d --no-deps --pull never codex-web > /dev/null 2>&1 &"
+            f"docker/compose:latest up -d --no-deps codex-web > /dev/null 2>&1 &"
         )
 
+        print(f"[{core_engine.ts()}] [系统] 🔄 指令已发出，由官方引擎接管重建任务...")
         subprocess.Popen(update_cmd, shell=True)
 
         return {
             "status": "success",
-            "message": "镜像已拉取，容器正在重建，请约 20 秒后刷新网页..."
+            "message": "更新指令已由官方引擎接管！系统正在自我重建，请 20 秒后刷新网页..."
         }
 
     except Exception as e:
@@ -1066,7 +1393,7 @@ def execute_native_update():
         else:
             print(f"[{core_engine.ts()}] [系统] ⚠️ 未检测到全局代理，尝试直连下载...")
 
-        web_url = f"https://github.com/{getattr(core_engine.cfg, 'UPDATE_REPO', None) or 'LnYo-Cly/openai-cpa'}/releases/latest"
+        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         release_response = requests.head(web_url, headers=headers, proxies=proxies, allow_redirects=False, timeout=15)
 
@@ -1077,7 +1404,7 @@ def execute_native_update():
             latest_tag = redirect_url.split('/')[-1]
             print(f"[{core_engine.ts()}] [系统] 🎉 成功获取最新版本标签: {latest_tag}")
 
-            zip_url = f"https://github.com/{getattr(core_engine.cfg, 'UPDATE_REPO', None) or 'LnYo-Cly/openai-cpa'}/archive/refs/tags/{latest_tag}.zip"
+            zip_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{latest_tag}.zip"
         else:
             raise Exception(f"请求被拒绝或状态异常，状态码: {release_response.status_code}")
 

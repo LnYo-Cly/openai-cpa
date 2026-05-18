@@ -5,7 +5,7 @@
 __pycache__/
 *.pyc
 *.pyo
-# *.pyd  # 不排除 — auth_core.pyd 是必需的编译模块
+*.pyd
 .Python
 env/
 venv/

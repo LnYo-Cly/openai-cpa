@@ -11,7 +11,6 @@ from utils import core_engine, db_manager
 import utils.config as cfg
 from utils.integrations.sub2api_client import Sub2APIClient, build_sub2api_export_bundle, get_sub2api_push_settings
 from utils.integrations.image2api_client import Image2APIClient
-from utils.integrations.newapi_client import NewAPIClient
 from utils.auth_core import email_jwt
 router = APIRouter()
 
@@ -178,12 +177,6 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 return {"status": "error", "message": "🚫 推送失败：未开启 Image2API 模式！"}
             img_client = Image2APIClient()
             print(f"[{cfg.ts()}] [系统] 🖼️ 收到指令，准备将 {len(target_emails)} 个账号推送至 Image2API...")
-        elif action == "push_newapi":
-            if not getattr(core_engine.cfg, 'NEWAPI_MODE_ENABLE', False):
-                return {"status": "error", "message": "🚫 推送失败：未开启 NewAPI 模式！"}
-            newapi_client = NewAPIClient()
-            newapi_channel_ids = data.get("channel_ids", [])  # 手动选择追加到哪些渠道
-            print(f"[{cfg.ts()}] [系统] 收到指令，准备将 {len(target_emails)} 个账号推送至 NewAPI (渠道: {newapi_channel_ids or '自动'})...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -218,32 +211,6 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                         last_error = resp
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
-                elif action == "push_newapi":
-                    newapi_mode = getattr(core_engine.cfg, 'NEWAPI_CHANNEL_MODE', 'single')
-                    if newapi_channel_ids:
-                        # 手动选了渠道：追加到每个选中的渠道（multi）
-                        import logging as _log
-                        _log.getLogger(__name__).warning("NewAPI multi 模式: Codex 渠道的 Token 自动刷新和用量查询不可用")
-                        all_ok = True
-                        msgs = []
-                        for cid in newapi_channel_ids:
-                            ok, msg = newapi_client.add_key_to_channel(int(cid), token_data)
-                            msgs.append(msg)
-                            if not ok:
-                                all_ok = False
-                        success = all_ok
-                        resp = "; ".join(msgs)
-                    elif newapi_mode == "single":
-                        # single 模式：为该账号创建独立渠道
-                        success, resp = newapi_client.add_account_single(token_data)
-                    else:
-                        # multi 模式：追加到默认渠道
-                        success, resp = newapi_client.add_account_multi(token_data)
-                    if not success:
-                        last_error = resp
-                        print(f"[{cfg.ts()}] [错误] ❌ 推送 NewAPI 失败 ({mask_email(email)}): {resp}")
-                    else:
-                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 NewAPI！")
                 if success:
                     success_emails.append(email)
                 else:
@@ -259,8 +226,7 @@ def account_action(data: dict, token: str = Depends(verify_token)):
             platform_map = {
                 "push": "CPA",
                 "push_sub2api": "SUB2API",
-                "push_image2api": "IMAGE2API",
-                "push_newapi": "NEWAPI"
+                "push_image2api": "IMAGE2API"
             }
             platform_marker = platform_map.get(action, "UNKNOWN")
             db_manager.update_account_push_info(success_emails, platform_marker)
@@ -317,7 +283,6 @@ def _background_sync_cloud_data(combined_data):
         cpa_emails = [x["credential"] for x in combined_data if x["account_type"] == "cpa"]
         sub_emails = [x["credential"] for x in combined_data if x["account_type"] == "sub2api"]
         img2_emails = [x["credential"] for x in combined_data if x["account_type"] == "image2api"]
-        newapi_emails = [x["credential"] for x in combined_data if x["account_type"] == "newapi"]
 
         if cpa_emails:
             db_manager.update_account_push_info(cpa_emails, "CPA", mode="sync")
@@ -325,8 +290,6 @@ def _background_sync_cloud_data(combined_data):
             db_manager.update_account_push_info(sub_emails, "SUB2API", mode="sync")
         if img2_emails:
             db_manager.update_account_push_info(img2_emails, "IMAGE2API", mode="sync")
-        if newapi_emails:
-            db_manager.update_account_push_info(newapi_emails, "NEWAPI", mode="sync")
 
         active_emails = [x["credential"] for x in combined_data if x["status"] == "active"]
         inactive_emails = [x["credential"] for x in combined_data if x["status"] in ["disabled", "dead"]]
@@ -430,33 +393,10 @@ def get_cloud_accounts(background_tasks: BackgroundTasks, types: str = "sub2api,
         except Exception as e:
             print(f"[{cfg.ts()}] [IMAGE2API] 拉取 Image2API 数据异常，如果未填写相关数据可忽略该提示，将跳过: {e}")
 
-    if "newapi" in type_list and getattr(cfg, 'NEWAPI_MODE_ENABLE', False):
-        try:
-            from utils.integrations.newapi_client import NewAPIClient
-            newapi_client = NewAPIClient()
-            ok, channels = newapi_client.list_codex_channels()
-            if ok and isinstance(channels, list):
-                for ch in channels:
-                    combined_data.append({
-                        "id": str(ch.get("id", "")),
-                        "account_type": "newapi",
-                        "credential": ch.get("name", "未知渠道"),
-                        "status": "active" if ch.get("status", 1) == 1 else "disabled",
-                        "last_check": "-",
-                        "details": {
-                            "key_count": ch.get("key_count", 0),
-                            "group": ch.get("group", "default"),
-                            "models": ch.get("models", "")
-                        }
-                    })
-        except Exception as e:
-            print(f"[{cfg.ts()}] [NEWAPI] 拉取 NewAPI 数据异常，如果未填写相关数据可忽略该提示，将跳过: {e}")
-
     try:
         cpa_list = [x for x in combined_data if x["account_type"] == "cpa"]
         sub2api_list = [x for x in combined_data if x["account_type"] == "sub2api"]
         image2api_list = [x for x in combined_data if x["account_type"] == "image2api"]
-        newapi_list = [x for x in combined_data if x["account_type"] == "newapi"]
 
         cloud_stats = {
             "total": len(combined_data),
@@ -469,10 +409,7 @@ def get_cloud_accounts(background_tasks: BackgroundTasks, types: str = "sub2api,
             "sub2api_disabled": sum(1 for x in sub2api_list if x["status"] != "active"),
             "image2api": len(image2api_list),
             "image2api_active": sum(1 for x in image2api_list if x["status"] == "active"),
-            "image2api_disabled": sum(1 for x in image2api_list if x["status"] != "active"),
-            "newapi": len(newapi_list),
-            "newapi_active": sum(1 for x in newapi_list if x["status"] == "active"),
-            "newapi_disabled": sum(1 for x in newapi_list if x["status"] != "active")
+            "image2api_disabled": sum(1 for x in image2api_list if x["status"] != "active")
         }
         if combined_data:
             background_tasks.add_task(_background_sync_cloud_data, combined_data)
@@ -879,11 +816,15 @@ async def import_team_accounts(req: ImportTeamReq, token: str = Depends(verify_t
     for line in lines:
         acc_token = line.strip()
         if not acc_token or len(acc_token) < 50: continue
+        parts = line.split("----")
+        acc_token = parts[0].strip()
+        cookies = parts[1].strip() if len(parts) > 1 else ""
         jwt_data = email_jwt(acc_token)
         real_email = jwt_data.get("email", "") if isinstance(jwt_data, dict) else ""
         parsed_teams.append({
             "email": real_email if real_email else "未知邮箱(解析失败)",
             "access_token": acc_token,
+            "cookies": cookies,
             "status": 1
         })
     if not parsed_teams: return {"status": "error", "message": "未能识别出有效 Token"}
@@ -933,25 +874,3 @@ async def reset_auth(req: ResetAuthReq, token: str = Depends(verify_token)):
         return {"status": "success", "message": "选中的授权凭据已成功重置，请重启程序。"}
     else:
         return {"status": "error", "message": "数据库删除操作失败"}
-
-
-@router.get("/api/newapi/channels")
-def list_newapi_channels(token: str = Depends(verify_token)):
-    """获取 NewAPI 中所有 Codex 渠道列表（供前端选择）"""
-    if not getattr(core_engine.cfg, 'NEWAPI_MODE_ENABLE', False):
-        return {"status": "error", "message": "未开启 NewAPI 模式"}
-    client = NewAPIClient()
-    ok, result = client.list_codex_channels()
-    if ok:
-        return {"status": "success", "data": result}
-    return {"status": "error", "message": str(result)}
-
-
-@router.get("/api/newapi/groups")
-def list_newapi_groups(token: str = Depends(verify_token)):
-    """获取 NewAPI 中所有可用分组列表"""
-    client = NewAPIClient()
-    ok, result = client.fetch_groups()
-    if ok:
-        return {"status": "success", "data": result}
-    return {"status": "error", "message": str(result)}

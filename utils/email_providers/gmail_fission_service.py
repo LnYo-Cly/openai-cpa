@@ -176,16 +176,12 @@ class GmailFissionService:
                 proxy_info = httplib2.ProxyInfo(
                     proxy_type=socks.PROXY_TYPE_SOCKS5,
                     proxy_host=parsed.hostname,
-                    proxy_port=parsed.port or 1080,
-                    proxy_user=urllib.parse.unquote(parsed.username or ""),
-                    proxy_pass=urllib.parse.unquote(parsed.password or ""),
+                    proxy_port=parsed.port
                 )
                 custom_http = httplib2.Http(proxy_info=proxy_info)
 
             if custom_http:
-                import google_auth_httplib2
-                authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=custom_http)
-                service = build('gmail', 'v1', http=authed_http, static_discovery=False)
+                service = build('gmail', 'v1', credentials=creds, http=custom_http, static_discovery=False)
             else:
                 service = build('gmail', 'v1', credentials=creds, static_discovery=False)
 

@@ -1,5 +1,4 @@
 import os
-import time
 import asyncio
 import httpx
 import json
@@ -16,7 +15,6 @@ from utils import core_engine
 import utils.config as cfg
 import utils.integrations.clash_manager as clash_manager
 from utils.email_providers.gmail_oauth_handler import GmailOAuthHandler
-from utils.auth_core import code_pool, cache_lock
 
 router = APIRouter()
 
@@ -245,45 +243,6 @@ def get_sub2api_groups(token: str = Depends(verify_token)):
     except Exception as exc:
         return {"status": "error", "message": f"Failed to fetch Sub2API groups: {exc}"}
 
-@router.get("/api/sub2api/proxies")
-def get_sub2api_proxies(token: str = Depends(verify_token)):
-    from curl_cffi import requests as cffi_requests
-    sub2api_url = getattr(core_engine.cfg, "SUB2API_URL", "").strip()
-    sub2api_key = getattr(core_engine.cfg, "SUB2API_KEY", "").strip()
-    if not sub2api_url or not sub2api_key:
-        return {"status": "error", "message": "Please save the Sub2API URL and API key first."}
-    try:
-        all_proxies = []
-        page = 1
-        while True:
-            response = cffi_requests.get(
-                f"{sub2api_url.rstrip('/')}/api/v1/admin/proxies",
-                headers={"x-api-key": sub2api_key, "Content-Type": "application/json"},
-                params={"page": page, "page_size": 100}, timeout=10,
-                impersonate="chrome110",
-            )
-            if response.status_code != 200:
-                break
-            data = response.json()
-            items = data.get("data", {}).get("items", []) if isinstance(data.get("data"), dict) else []
-            if not items:
-                break
-            all_proxies.extend(items)
-            total = data.get("data", {}).get("total", 0) if isinstance(data.get("data"), dict) else 0
-            if len(all_proxies) >= total:
-                break
-            page += 1
-        return {"status": "success", "data": all_proxies}
-    except Exception as exc:
-        return {"status": "error", "message": f"Failed to fetch Sub2API proxies: {exc}"}
-
-@router.get("/api/sub2api/check_history")
-async def get_sub2api_check_history(token: str = Depends(verify_token)):
-    from utils.core_engine import _check_history, _check_history_lock
-    with _check_history_lock:
-        history = list(reversed(_check_history))
-    return {"status": "success", "data": history}
-
 @router.get("/api/clash/status")
 def get_clash_status(token: str = Depends(verify_token)):
     res = clash_manager.get_pool_status()
@@ -347,84 +306,6 @@ async def post_clash_subscription_delete(req: ClashSubscriptionDeleteReq, token:
     return {"status": "success" if success else "error", "message": msg}
 
 
-# ── 验证码内存池管理 ──
-_code_meta = {}     # {email: {"received_at": float_timestamp}}
-_seen_keys = set()
-
-def _sync_code_meta():
-    """同步 code_pool 与元数据追踪，新出现的 key 记录首次发现时间"""
-    global _seen_keys
-    current_keys = set(code_pool.keys())
-    now = time.time()
-    for key in current_keys - _seen_keys:
-        _code_meta[key] = {"received_at": now}
-    for key in _seen_keys - current_keys:
-        _code_meta.pop(key, None)
-    _seen_keys = current_keys
-
-
-@router.get("/api/webhook/codes")
-async def list_codes(email: str = "", token: str = Depends(verify_token)):
-    """列出内存池中的验证码，支持按邮箱筛选"""
-    _sync_code_meta()
-    async with cache_lock:
-        results = []
-        email_filter = email.lower().strip()
-        for addr, content in code_pool.items():
-            if email_filter and email_filter not in addr.lower():
-                continue
-            meta = _code_meta.get(addr, {})
-            ts = meta.get("received_at")
-            # 提取6位验证码
-            import re
-            code = ""
-            m = re.search(r"(?<!\d)(\d{6})(?!\d)", content)
-            if m:
-                code = m.group(1)
-            results.append({
-                "email": addr,
-                "code": code,
-                "full_content": content,
-                "received_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "",
-            })
-        return {"status": "success", "data": results, "total": len(code_pool)}
-
-
-@router.delete("/api/webhook/codes/{email:path}")
-async def delete_code(email: str, token: str = Depends(verify_token)):
-    """删除指定邮箱的验证码"""
-    key = email.lower().strip()
-    async with cache_lock:
-        code_pool.pop(key, None)
-        _code_meta.pop(key, None)
-        _seen_keys.discard(key)
-    return {"status": "success"}
-
-
-class ClearCodesReq(BaseModel):
-    older_than_hours: float = 0
-
-@router.post("/api/webhook/codes/clear")
-async def clear_codes(req: ClearCodesReq, token: str = Depends(verify_token)):
-    """清空验证码：older_than_hours=0 清空全部，否则清空超过指定小时的"""
-    _sync_code_meta()
-    now = time.time()
-    async with cache_lock:
-        to_remove = []
-        for addr in list(_code_meta.keys()):
-            if req.older_than_hours <= 0:
-                to_remove.append(addr)
-            else:
-                age_hours = (now - _code_meta[addr].get("received_at", now)) / 3600
-                if age_hours >= req.older_than_hours:
-                    to_remove.append(addr)
-        for addr in to_remove:
-            code_pool.pop(addr, None)
-            _code_meta.pop(addr, None)
-            _seen_keys.discard(addr)
-    return {"status": "success", "cleared": len(to_remove)}
-
-
 @router.post("/api/notify/test_tg")
 async def test_tg_notification(req: TestTgReq, token: str = Depends(verify_token)):
     if not req.token or not req.chat_id:
@@ -448,7 +329,6 @@ async def test_tg_notification(req: TestTgReq, token: str = Depends(verify_token
             return {"status": "error", "message": f"TG 接口报错: {data.get('description', '未知错误')}"}
     except Exception as e:
         return {"status": "error", "message": f"网络通信异常，请检查代理: {str(e)}"}
-
 
 
 @router.post("/api/cloudflare/add_zones")
@@ -780,10 +660,6 @@ async def cloudflare_setup_catch_all(req: CFSetupRoutingReq, token: str = Depend
     except Exception as e:
         print(f"[{core_engine.ts()}] [CF 路由] ❌ 发生异常: {str(e)}")
         return {"status": "error", "message": str(e)}
-
-
-
-
 async def validate_webhook_domain(url: str) -> tuple[bool, str]:
     parsed = urllib.parse.urlparse(url)
     hostname = parsed.hostname

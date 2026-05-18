@@ -4,7 +4,7 @@ import json
 import datetime
 import os
 import threading
-from typing import Any
+from typing import Any, Optional
 from utils.config import DB_TYPE, MYSQL_CFG
 from utils import config as cfg
 
@@ -104,14 +104,34 @@ def init_db():
             )
         ''')
         execute_sql(c, '''
-                    CREATE TABLE IF NOT EXISTS team_accounts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        email TEXT,
-                        access_token TEXT,
-                        status INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS cluster_sync_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT UNIQUE,
+                node_name TEXT,
+                file_path TEXT,
+                file_size INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                file_sha256 VARCHAR(255) DEFAULT '',
+                success_count INTEGER DEFAULT 0,
+                fail_count INTEGER DEFAULT 0,
+                status TEXT,
+                error_message TEXT,
+                retry_count INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 3,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP DEFAULT NULL,
+                finished_at TIMESTAMP DEFAULT NULL,
+                last_heartbeat TIMESTAMP DEFAULT NULL
             )
         ''')
+        try:
+            execute_sql(c, 'ALTER TABLE cluster_sync_tasks ADD COLUMN file_sha256 VARCHAR(255) DEFAULT \'\';')
+        except Exception:
+            pass
+        try:
+            execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN cookies TEXT;')
+        except Exception:
+            pass
         try:
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN fission_count INTEGER DEFAULT 0;')
             execute_sql(c, 'ALTER TABLE local_mailboxes ADD COLUMN retry_master INTEGER DEFAULT 0;')
@@ -125,24 +145,6 @@ def init_db():
         except Exception:
             pass
         try:
-            execute_sql(c, 'ALTER TABLE accounts ADD COLUMN plan_type VARCHAR(50) DEFAULT NULL;')
-        except Exception:
-            pass
-
-        execute_sql(c, '''
-            CREATE TABLE IF NOT EXISTS team_invite_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                manager_email TEXT,
-                target_email TEXT,
-                workspace_id TEXT,
-                state TEXT DEFAULT 'pending',
-                last_error TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        try:
             execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN access_token TEXT;')
         except Exception:
             pass
@@ -151,19 +153,12 @@ def init_db():
 
 def save_account_to_db(email: str, password: str, token_json_str: str) -> bool:
     try:
-        # 从 token_data 提取 plan_type
-        plan_type = ""
-        try:
-            td = json.loads(token_json_str)
-            plan_type = td.get("plan_type", "")
-        except Exception:
-            pass
         with get_db_conn(is_write=True) as conn:
             c = get_cursor(conn)
             execute_sql(c, '''
-                INSERT OR REPLACE INTO accounts (email, password, token_data, plan_type)
-                VALUES (?, ?, ?, ?)
-            ''', (email, password, token_json_str, plan_type))
+                INSERT OR REPLACE INTO accounts (email, password, token_data)
+                VALUES (?, ?, ?)
+            ''', (email, password, token_json_str))
             return True
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 数据库保存失败: {e}")
@@ -327,16 +322,230 @@ def get_sys_kv(key: str, default=None):
     return default
 
 
-def get_all_accounts_with_token(limit: int = 10000) -> list:
+def get_all_accounts_with_token(limit: int = 10000, offset: int = 0) -> list:
     try:
         with get_db_conn() as conn:
             c = get_cursor(conn)
-            execute_sql(c, "SELECT email, password, token_data FROM accounts ORDER BY id DESC LIMIT ?", (limit,))
+            if limit and int(limit) > 0:
+                execute_sql(c, "SELECT email, password, token_data FROM accounts ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+            else:
+                execute_sql(c, "SELECT email, password, token_data FROM accounts ORDER BY id DESC")
             rows = c.fetchall()
             return [{"email": r[0], "password": r[1], "token_data": r[2]} for r in rows]
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 提取完整账号数据失败: {e}")
         return []
+
+
+def create_cluster_sync_task(task_id: str, node_name: str, file_path: str, file_size: int, total_count: int, max_retries: int, file_sha256: str = "") -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "SELECT 1 FROM cluster_sync_tasks WHERE task_id = ?", (task_id,))
+            if c.fetchone():
+                return False
+            execute_sql(c, '''
+                INSERT INTO cluster_sync_tasks (
+                    task_id, node_name, file_path, file_size, total_count, file_sha256,
+                    success_count, fail_count, status, error_message,
+                    retry_count, max_retries, created_at, started_at,
+                    finished_at, last_heartbeat
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'pending', '', 0, ?, CURRENT_TIMESTAMP, NULL, NULL, NULL)
+            ''', (task_id, node_name, file_path, file_size, total_count, str(file_sha256 or '').strip(), max_retries))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 创建同步任务失败: {e}")
+        return False
+
+
+def get_cluster_sync_task(task_id: str) -> Optional[dict]:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, "SELECT * FROM cluster_sync_tasks WHERE task_id = ?", (task_id,))
+            row = c.fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取同步任务失败: {e}")
+        return None
+
+
+def list_cluster_sync_tasks(limit: int = 20, node_name: str = "", status: str = "") -> list:
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            conditions = []
+            params = []
+            if node_name:
+                conditions.append("node_name = ?")
+                params.append(node_name)
+            if status:
+                conditions.append("status = ?")
+                params.append(status)
+            where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+            execute_sql(c, f"SELECT * FROM cluster_sync_tasks{where_clause} ORDER BY id DESC LIMIT ?", tuple(params + [limit]))
+            rows = c.fetchall()
+            return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取同步任务列表失败: {e}")
+        return []
+
+
+def claim_next_cluster_sync_task() -> Optional[dict]:
+    try:
+        with get_db_conn(is_write=True, as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, "SELECT task_id FROM cluster_sync_tasks WHERE status IN ('pending', 'retry_wait') ORDER BY id ASC LIMIT 1")
+            row = c.fetchone()
+            if not row:
+                return None
+            task_id = row['task_id'] if DB_TYPE == 'mysql' else row[0]
+            execute_sql(c, '''
+                UPDATE cluster_sync_tasks
+                SET status = 'running', started_at = CURRENT_TIMESTAMP, finished_at = NULL,
+                    error_message = '', success_count = 0, fail_count = 0,
+                    last_heartbeat = CURRENT_TIMESTAMP
+                WHERE task_id = ?
+            ''', (task_id,))
+        return get_cluster_sync_task(task_id)
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 抢占同步任务失败: {e}")
+        return None
+
+
+def update_cluster_sync_task_progress(task_id: str, success_count: int, fail_count: int) -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                UPDATE cluster_sync_tasks
+                SET success_count = ?, fail_count = ?, last_heartbeat = CURRENT_TIMESTAMP
+                WHERE task_id = ?
+            ''', (success_count, fail_count, task_id))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 更新同步任务进度失败: {e}")
+        return False
+
+
+def finalize_cluster_sync_task(task_id: str, status: str, success_count: int, fail_count: int, error_message: str = "") -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                UPDATE cluster_sync_tasks
+                SET status = ?, success_count = ?, fail_count = ?, error_message = ?,
+                    finished_at = CURRENT_TIMESTAMP, last_heartbeat = CURRENT_TIMESTAMP
+                WHERE task_id = ?
+            ''', (status, success_count, fail_count, error_message, task_id))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 完成同步任务失败: {e}")
+        return False
+
+
+def mark_cluster_sync_task_for_retry(task_id: str, error_message: str = "") -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                UPDATE cluster_sync_tasks
+                SET status = 'retry_wait', retry_count = retry_count + 1,
+                    error_message = ?, finished_at = NULL, last_heartbeat = CURRENT_TIMESTAMP
+                WHERE task_id = ?
+            ''', (error_message, task_id))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 标记同步任务重试失败: {e}")
+        return False
+
+
+def retry_cluster_sync_task(task_id: str) -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                UPDATE cluster_sync_tasks
+                SET status = 'pending', success_count = 0, fail_count = 0,
+                    error_message = '', started_at = NULL, finished_at = NULL,
+                    last_heartbeat = NULL
+                WHERE task_id = ? AND status IN ('failed', 'partial_success')
+            ''', (task_id,))
+            return c.rowcount > 0
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 重试同步任务失败: {e}")
+        return False
+
+
+def get_cluster_sync_task_status(task_id: str) -> Optional[str]:
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "SELECT status FROM cluster_sync_tasks WHERE task_id = ?", (task_id,))
+            row = c.fetchone()
+            if row:
+                return row[0]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取同步任务状态失败: {e}")
+    return None
+
+
+def cancel_cluster_sync_task(task_id: str) -> bool:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "SELECT status FROM cluster_sync_tasks WHERE task_id = ?", (task_id,))
+            row = c.fetchone()
+            if not row:
+                return False
+            status = row[0]
+            if status == 'pending':
+                execute_sql(c, '''
+                    UPDATE cluster_sync_tasks
+                    SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP, last_heartbeat = CURRENT_TIMESTAMP,
+                        error_message = '用户取消任务'
+                    WHERE task_id = ?
+                ''', (task_id,))
+                return c.rowcount > 0
+            if status == 'running':
+                execute_sql(c, '''
+                    UPDATE cluster_sync_tasks
+                    SET status = 'cancel_requested', last_heartbeat = CURRENT_TIMESTAMP,
+                        error_message = '用户请求取消'
+                    WHERE task_id = ?
+                ''', (task_id,))
+                return c.rowcount > 0
+            return False
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 取消同步任务失败: {e}")
+        return False
+
+
+def clear_cluster_sync_terminal_tasks() -> int:
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, '''
+                DELETE FROM cluster_sync_tasks
+                WHERE status IN ('success', 'partial_success', 'failed', 'cancelled')
+            ''')
+            return max(0, int(c.rowcount or 0))
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 清理终态同步任务失败: {e}")
+        return 0
+
+
+def get_cluster_sync_retry_state(task_id: str) -> tuple[int, int]:
+    try:
+        with get_db_conn() as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "SELECT retry_count, max_retries FROM cluster_sync_tasks WHERE task_id = ?", (task_id,))
+            row = c.fetchone()
+            if row:
+                return int(row[0] or 0), int(row[1] or 0)
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取同步任务重试状态失败: {e}")
+    return 0, 0
 
 
 def import_local_mailboxes(mailboxes_data: list) -> int:
@@ -579,30 +788,46 @@ def update_account_push_info(emails: list, platform: str, mode: str = "overwrite
     try:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         target_platform = platform.strip().upper()
+        target_prefixes = tuple(str(e).strip() for e in emails if str(e).strip())
+        if not target_prefixes:
+            return
 
         with get_db_conn(is_write=True) as conn:
             c = get_cursor(conn)
-            for email in emails:
-                like_pattern = f"{str(email).strip()}%"
-                new_val = target_platform
+            execute_sql(c, "SELECT email, push_platform FROM accounts")
+            all_local_accounts = c.fetchall()
 
-                if mode == "sync":
-                    execute_sql(c, "SELECT push_platform FROM accounts WHERE email LIKE ?", (like_pattern,))
-                    row = c.fetchone()
-                    current_raw = row[0] if row and row[0] else ""
+            update_params = []
 
-                    if current_raw:
-                        parts = [p.strip().upper() for p in current_raw.split(',') if p.strip()]
-                        p_set = set(parts)
-                        p_set.add(target_platform)
-                        new_val = ",".join(sorted(list(p_set)))
+            for row in all_local_accounts:
+                db_email = row[0]
+                if not db_email:
+                    continue
+
+                if db_email.startswith(target_prefixes):
+                    current_raw = row[1] if row[1] else ""
+
+                    if mode == "sync":
+                        if current_raw:
+                            parts = [p.strip().upper() for p in current_raw.split(',') if p.strip()]
+                            p_set = set(parts)
+                            p_set.add(target_platform)
+                            new_val = ",".join(sorted(list(p_set)))
+                        else:
+                            new_val = target_platform
                     else:
                         new_val = target_platform
-                execute_sql(c, """
+                    update_params.append((new_val, now_str, db_email))
+
+            if update_params:
+                base_sql = """
                     UPDATE accounts 
                     SET push_platform = ?, push_time = COALESCE(push_time, ?) 
-                    WHERE email LIKE ?
-                """, (new_val, now_str, like_pattern))
+                    WHERE email = ?
+                """
+                if DB_TYPE == "mysql":
+                    base_sql = base_sql.replace('?', '%s')
+                c.executemany(base_sql, update_params)
 
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 更新推送状态失败: {e}")
@@ -754,9 +979,10 @@ def import_team_accounts(team_data_list: list) -> int:
             for td in team_data_list:
                 try:
                     execute_sql(c, '''
-                        INSERT OR IGNORE INTO team_accounts (email, access_token, status)
-                        VALUES (?, ?, ?)
-                    ''', (td['email'], td['access_token'], td.get('status', 1)))
+                        INSERT OR IGNORE INTO team_accounts (email, access_token, cookies, status)
+                        VALUES (?, ?, ?, ?)
+                    ''', (
+                    td.get('email', ''), td.get('access_token', ''), td.get('cookies', ''), td.get('status', 1)))
                     if c.rowcount > 0:
                         count += 1
                 except Exception as ex:
@@ -792,7 +1018,7 @@ def get_team_accounts_page(page: int = 1, page_size: int = 50, search: str = Non
             total = total_row['cnt'] if DB_TYPE == "mysql" else total_row[0]
             offset = (page - 1) * page_size
 
-            data_sql = f"SELECT id, email, access_token, status, created_at FROM team_accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            data_sql = f"SELECT id, email, access_token, cookies, status, created_at FROM team_accounts{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
             data_params = tuple(params + [page_size, offset])
             execute_sql(c, data_sql, data_params)
             rows = c.fetchall()
@@ -833,7 +1059,7 @@ def get_random_team_account() -> dict:
             with get_db_conn(as_dict=True) as conn:
                 c = get_cursor(conn, as_dict=True)
                 order_clause = "RAND()" if DB_TYPE == "mysql" else "RANDOM()"
-                sql = f"SELECT id, email, access_token FROM team_accounts WHERE status = 1 ORDER BY {order_clause} LIMIT 1"
+                sql = f"SELECT id, email, access_token, cookies FROM team_accounts WHERE status = 1 ORDER BY {order_clause} LIMIT 1"
                 execute_sql(c, sql)
                 row = c.fetchone()
                 if row:
@@ -848,105 +1074,12 @@ def get_all_team_accounts() -> list:
     try:
         with get_db_conn(as_dict=True) as conn:
             c = get_cursor(conn, as_dict=True)
-            execute_sql(c, "SELECT id, email, access_token FROM team_accounts WHERE status = 1")
+            execute_sql(c, "SELECT id, email, access_token, cookies FROM team_accounts WHERE status = 1")
             rows = c.fetchall()
             return [dict(r) for r in rows]
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 获取所有 Team 账号失败: {e}")
         return []
-
-
-def _extract_plan_from_jwt(access_token: str) -> str:
-    """从 access_token JWT 中提取 chatgpt_plan_type"""
-    try:
-        payload = access_token.split('.')[1]
-        import base64
-        padding = 4 - len(payload) % 4
-        if padding != 4:
-            payload += '=' * padding
-        data = json.loads(base64.urlsafe_b64decode(payload))
-        auth_claims = data.get("https://api.openai.com/auth", {})
-        plan_type = str(auth_claims.get("chatgpt_plan_type") or "").strip().lower()
-        return plan_type
-    except Exception:
-        return ""
-
-
-def get_accounts_with_token() -> list:
-    """获取有 token_data 的账号列表（含 plan_type），供 Team 管理下拉使用"""
-    try:
-        with get_db_conn(as_dict=True) as conn:
-            c = get_cursor(conn, as_dict=True)
-            execute_sql(c, """
-                SELECT email, token_data, plan_type FROM accounts
-                WHERE token_data IS NOT NULL AND token_data != ''
-                ORDER BY id DESC
-            """)
-            rows = c.fetchall()
-            results = []
-            for r in rows:
-                td = r.get("token_data", "")
-                plan = r.get("plan_type") or ""
-                if not plan and td:
-                    try:
-                        d = json.loads(td)
-                        at = d.get("access_token", "")
-                        if at:
-                            plan = _extract_plan_from_jwt(at)
-                    except Exception:
-                        pass
-                plan_display = {"chatgptteamplan": "Team", "chatgptplusplan": "Plus", "chatgptproplan": "Pro"}.get(plan, "Free" if plan else "")
-                results.append({"email": r["email"], "plan_type": plan_display})
-            return results
-    except Exception as e:
-        print(f"[{cfg.ts()}] [ERROR] 获取有 token 的账号列表失败: {e}")
-        return []
-
-
-def save_team_invite_record(manager_email: str, target_email: str, workspace_id: str, state: str, error: str = "") -> bool:
-    try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
-            execute_sql(c, '''
-                INSERT INTO team_invite_records (manager_email, target_email, workspace_id, state, last_error)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (manager_email, target_email, workspace_id, state, error))
-            return True
-    except Exception as e:
-        print(f"[{cfg.ts()}] [ERROR] 保存 Team 邀请记录失败: {e}")
-        return False
-
-
-def get_team_invite_records(manager_email: str = None, workspace_id: str = None) -> list:
-    try:
-        with get_db_conn(as_dict=True) as conn:
-            c = get_cursor(conn, as_dict=True)
-            sql = "SELECT * FROM team_invite_records WHERE 1=1"
-            params = []
-            if manager_email:
-                sql += " AND manager_email = ?"
-                params.append(manager_email)
-            if workspace_id:
-                sql += " AND workspace_id = ?"
-                params.append(workspace_id)
-            sql += " ORDER BY created_at DESC"
-            execute_sql(c, sql, params)
-            return [dict(r) for r in c.fetchall()]
-    except Exception as e:
-        print(f"[{cfg.ts()}] [ERROR] 获取 Team 邀请记录失败: {e}")
-        return []
-
-
-def clear_team_invite_records() -> bool:
-    try:
-        with get_db_conn() as conn:
-            c = get_cursor(conn)
-            execute_sql(c, "DELETE FROM team_invite_records")
-            return True
-    except Exception as e:
-        print(f"[{cfg.ts()}] [ERROR] 清除 Team 邀请记录失败: {e}")
-
-
 
 
 def delete_sys_kvs(keys: list) -> bool:

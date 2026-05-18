@@ -329,7 +329,6 @@ createApp({
                     { id: 'accounts', name: '账号库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>' },
                     { id: 'cloud', name: '云端库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
                     { id: 'sms', name: '手机接码', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>' },
-					{ id: 'team', name: 'Team管理', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>' },
                     { id: 'proxy', name: '网络代理', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>' },
                     { id: 'relay', name: '中转管仓', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
                     { id: 'notify', name: '消息通知', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h6a3 3 0 013 3v1a3 3 0 01-3 3H9.436c-1.532 0-2.22.24-2.893.542z"></path></svg>' },
@@ -434,11 +433,11 @@ createApp({
                 tmailor_token: false,
                 fvia_token: false,
                 subUrl: false,
+                showMailboxesPlaintext: false,
                 db_pass: false,
                 master_rt: false,
                 image2api_url: true,
-                image2api_key: false,
-                newapi: false
+                image2api_key: false
             },
 
             toasts: [],
@@ -465,7 +464,7 @@ createApp({
             cloudAccounts: [],
             rawCloudAccounts: [],
             selectedCloud: [],
-            cloudFilters: ['sub2api', 'cpa', "image2api", "newapi"],
+            cloudFilters: ['sub2api', 'cpa', "image2api"],
             showCloudPlaintext: false,
             cloudPage: 1,
             cloudPageSize: 10,
@@ -484,6 +483,9 @@ createApp({
             currentCloudDetail: null,
             nowTimestamp: Math.floor(Date.now() / 1000),
             clusterNodes: {},
+            clusterSyncTasks: [],
+            clusterSyncTasksLoading: false,
+            showClusterSyncErrors: true,
             mailboxes: [],
             selectedMailboxes: [],
             mailboxPage: 1,
@@ -492,14 +494,6 @@ createApp({
             showImportMailboxModal: false,
             importMailboxText: '',
             isImportingMailbox: false,
-            showMailboxesPlaintext: false,
-            showNewapiChannelModal: false,
-            newapiChannels: [],
-            newapiSelectedChannels: [],
-            newapiPendingAccount: null,
-            newapiPendingEmails: [],
-            isLoadingNewapiChannels: false,
-            newapiGroups: [],
             outlookAuth: {
                 showModal: false,
                 mailbox: null,
@@ -565,52 +559,12 @@ createApp({
             teamPage: 1,
             teamPageSize: 50,
             totalTeamAccounts: 0,
-            teamSelectedManager: '',
-            teamSelectedWorkspace: null,
-            teamSelectedWorkspaceName: '',
-            teamWorkspaces: [],
-            teamMembers: [],
-            teamInvites: [],
-            teamInviteEmails: '',
-            teamInviteRecords: [],
-            isLoadingTeam: false,
-            checkHistory: [],
-            isLoadingCheckHistory: false,
-            webhookCodeFilter: '',
-            webhookCodes: [],
-            isLoadingWebhookCodes: false,
-            viewCodeDetail: null,
-            codeViewMode: 'preview',
-            isTestingTg: false,
-            sub2apiProxies: [],
-            selectedSub2apiProxyId: null,
-            clearOlderHours: 24,
             authResetModal: {
                 show: false,
                 clearLicense: true,
                 clearHwid: true,
                 clearLease: true
             },
-            checkFilterOptions: [
-                { label: '全部账号', value: 'all' },
-                { label: '仅存活', value: 'active' },
-                { label: '仅限流', value: 'rate_limited' },
-                { label: '仅失效', value: 'inactive' },
-            ],
-            cronPresets: [
-                { label: '每30分钟', expr: '*/30 * * * *' },
-                { label: '每小时', expr: '0 * * * *' },
-                { label: '每2小时', expr: '0 */2 * * *' },
-                { label: '每6小时', expr: '0 */6 * * *' },
-                { label: '每天0点', expr: '0 0 * * *' },
-                { label: '每天8点', expr: '0 8 * * *' },
-            ],
-            cronFields: { minute: '*', hour: '*', day: '*', month: '*', weekday: '*' },
-            cronMinuteOptions: ['*', '*/5', '*/10', '*/15', '*/30', '0', '5', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
-            cronHourOptions: ['*', '*/2', '*/3', '*/4', '*/6', '*/8', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'],
-            cronDayOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'],
-            cronMonthOptions: ['*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
-            cronWeekdayOptions: ['*', '0', '1', '2', '3', '4', '5', '6'],
             cfTools: {
                 workerName: 'openai-cpa',
                 deleteDomains: '',
@@ -710,11 +664,6 @@ createApp({
         },
         mailboxTotalPages() {
             return Math.ceil(this.totalMailboxes / this.mailboxPageSize) || 1;
-        },
-        filteredWebhookCodes() {
-            if (!this.webhookCodeFilter) return this.webhookCodes;
-            const term = this.webhookCodeFilter.toLowerCase();
-            return this.webhookCodes.filter(c => c.email && c.email.toLowerCase().includes(term));
         },
         availableMailDomainCount() {
             return this.mailDomainRuntimeStats.filter(item => item && item.is_available).length;
@@ -949,6 +898,9 @@ createApp({
             this.isDarkMode = !this.isDarkMode;
             this.applyTheme();
             this.showToast(this.isDarkMode ? '已切换为护眼模式' : '已切换为日间模式', 'info');
+        },
+        isDefaultClusterSecret(secret) {
+            return ['','wenfxl666'].includes(String(secret || '').trim());
         },
         showToast(message, type = 'info') {
             const id = this.toastId++;
@@ -1243,11 +1195,11 @@ createApp({
             this.startStatsPolling();
             this.checkUpdate();
             this.fetchInventoryStats();
-            if (this.config?.newapi_mode?.enable) {
-                this.fetchNewapiGroups();
-            }
             if (this.config && this.config.reg_mode === 'extension') {
                 this.listenToExtension();
+            }
+            if (this.currentTab === 'cluster') {
+                this.fetchClusterSyncTasks();
             }
             if (this.currentTab === 'proxy') {
                 this.fetchClashPool();
@@ -1322,6 +1274,7 @@ createApp({
                     if (cData.status === 'success') {
                         this.clusterNodes = cData.nodes;
                     }
+                    await this.fetchClusterSyncTasks({ silent: true });
                 }
             } catch(e) {
 
@@ -1374,6 +1327,7 @@ createApp({
                         this.config.smsbower.reuse_phone = normalizeBooleanLike(this.config.smsbower.reuse_phone, true);
                         this.config.smsbower.verify_on_register = normalizeBooleanLike(this.config.smsbower.verify_on_register, false);
                         if(this.config.smsbower.reuse_max === undefined) this.config.smsbower.reuse_max = 2;
+                        if(this.config.smsbower.use_proxy === undefined) this.config.smsbower.use_proxy = false;
                     }
 
                     if (!this.config.fivesim) {
@@ -1384,11 +1338,13 @@ createApp({
                         };
                     } else {
                         if(this.config.fivesim.reuse_max === undefined) this.config.fivesim.reuse_max = 2;
+                        if(this.config.fivesim.use_proxy === undefined) this.config.fivesim.use_proxy = false;
                     }
 
                     if (this.config.hero_sms) {
                         this.config.hero_sms.enabled = normalizeBooleanLike(this.config.hero_sms.enabled, false);
                         if(this.config.hero_sms.reuse_max === undefined) this.config.hero_sms.reuse_max = 2;
+                        if(this.config.hero_sms.use_proxy === undefined) this.config.hero_sms.use_proxy = false;
                     }
                 }
 
@@ -1431,7 +1387,11 @@ createApp({
                     }
                 }
                 if (!this.config.team_mode) {
-                    this.config.team_mode = { enable: false };
+                    this.config.team_mode = { enable: false, overspeed: false };
+                } else {
+                    if (this.config.team_mode.overspeed === undefined) {
+                        this.config.team_mode.overspeed = false;
+                    }
                 }
                 if (!this.config.fvia) {
                     this.config.fvia = { token: '' };
@@ -2163,7 +2123,20 @@ createApp({
                     if (this.config?.reg_mode === 'extension') {
                         this.showToast("📡 正在探测节点在线状态...", "info");
                         try {
-                            const localId = localStorage.getItem('local_worker_id') || 'Node-Pilot-01';
+                            const localId = localStorage.getItem('local_worker_id');
+                            if (!localId) {
+                                const now = new Date();
+            const timeStr = formatMainlandTime(now);
+                                this.showToast("🚫 启动失败：未检测到插件节点身份，请先刷新插件连接", "error");
+                                this.logs.push({
+                                    parsed: true,
+                                    time: timeStr,
+                                    level: '系统',
+                                    text: '🛑 未检测到有效插件节点身份，请确认插件已连接并刷新页面后重试。',
+                                    raw: `[${timeStr}] [系统] 🛑 未检测到有效插件节点身份，请确认插件已连接并刷新页面后重试。`
+                                });
+                                return;
+                            }
                             const checkRes = await this.authFetch(`/api/ext/check_node?worker_id=${localId}`);
                             const checkData = await checkRes.json();
                             if (!checkData.online) {
@@ -2380,20 +2353,6 @@ createApp({
                     this.showToast("⚠️ 该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
                 }
             }
-            if (action === 'push_newapi') {
-                if (!this.config.newapi_mode || !this.config.newapi_mode.enable) {
-                    this.showToast("无法推送：请先配置 NewAPI 参数！", "warning"); return;
-                }
-                if (account.push_platform && account.push_platform.toUpperCase().includes('NEWAPI')) {
-                    this.showToast("该账号已在 NewAPI 平台，无需重复推送！", "warning"); return;
-                }
-                // 打开渠道选择器
-                this.newapiPendingAccount = account;
-                this.newapiPendingEmails = [account.email];
-                this.newapiSelectedChannels = [];
-                this.openNewapiChannelModal();
-                return;
-            }
             this.currentTab = 'console';
             try {
                 const res = await this.authFetch('/api/account/action', {
@@ -2408,75 +2367,6 @@ createApp({
             } catch (e) {
                 this.showToast("请求异常", "error");
             }
-        },
-        async openNewapiChannelModal() {
-            this.showNewapiChannelModal = true;
-            this.isLoadingNewapiChannels = true;
-            this.newapiChannels = [];
-            try {
-                const res = await this.authFetch('/api/newapi/channels');
-                const json = await res.json();
-                if (json.status === 'success') {
-                    this.newapiChannels = json.data || [];
-                } else {
-                    this.showToast(json.message || '获取渠道列表失败', 'warning');
-                }
-            } catch (e) {
-                this.showToast('获取渠道列表异常', 'error');
-            }
-            this.isLoadingNewapiChannels = false;
-        },
-        async confirmNewapiPush() {
-            const emails = this.newapiPendingEmails;
-            const channelIds = this.newapiSelectedChannels;
-            this.showNewapiChannelModal = false;
-            this.currentTab = 'console';
-            try {
-                const res = await this.authFetch('/api/account/action', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        emails: emails,
-                        action: 'push_newapi',
-                        channel_ids: channelIds
-                    })
-                });
-                const result = await res.json();
-                this.showToast(result.message, result.status);
-                if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
-                if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
-            } catch (e) {
-                this.showToast("推送请求异常", "error");
-            }
-        },
-        async fetchNewapiGroups() {
-            try {
-                const res = await this.authFetch('/api/newapi/groups');
-                const json = await res.json();
-                if (json.status === 'success' && Array.isArray(json.data)) {
-                    this.newapiGroups = json.data;
-                    // 确保 config.newapi_mode.group 存在
-                    if (!this.config.newapi_mode.group) {
-                        this.config.newapi_mode.group = '';
-                    }
-                } else {
-                    this.showToast(json.message || '获取分组失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('获取 NewAPI 分组失败', 'error');
-            }
-        },
-        toggleNewapiGroup(group) {
-            if (!this.config.newapi_mode.group) {
-                this.config.newapi_mode.group = '';
-            }
-            const current = this.config.newapi_mode.group.split(',').filter(g => g.trim());
-            const idx = current.indexOf(group);
-            if (idx >= 0) {
-                current.splice(idx, 1);
-            } else {
-                current.push(group);
-            }
-            this.config.newapi_mode.group = current.join(',');
         },
         async fetchInventoryStats() {
             try {
@@ -2974,24 +2864,6 @@ createApp({
             else ids.push(value);
             this.config.sub2api_mode.account_group_ids = ids.join(',');
         },
-        onCronExprInput() {
-            if (!this.config.sub2api_mode) return;
-            const parts = (this.config.sub2api_mode.check_cron || '').split(/\s+/);
-            if (parts.length === 5) {
-                this.cronFields = {
-                    minute: parts[0], hour: parts[1], day: parts[2], month: parts[3], weekday: parts[4]
-                };
-            }
-        },
-        onCronFieldChange() {
-            if (!this.config.sub2api_mode) return;
-            this.config.sub2api_mode.check_cron = [this.cronFields.minute, this.cronFields.hour, this.cronFields.day, this.cronFields.month, this.cronFields.weekday].join(' ');
-        },
-        selectCronPreset(preset) {
-            if (!this.config.sub2api_mode) return;
-            this.config.sub2api_mode.check_cron = preset.expr;
-            this.onCronExprInput();
-        },
         async startManualCheck() {
             if(this.isRunning) {
                 this.showToast('请先停止当前运行的任务', 'warning');
@@ -3363,22 +3235,20 @@ async exportSub2Api() {
         },
         filterByCard(platformType, status) {
             if (platformType === 'all') {
-                this.cloudFilters = ['sub2api', 'cpa', 'image2api', 'newapi'];
+                this.cloudFilters = ['sub2api', 'cpa', 'image2api'];
             } else if (platformType === 'cpa') {
                 this.cloudFilters = ['cpa'];
             } else if (platformType === 'sub2api') {
                 this.cloudFilters = ['sub2api'];
-            } else if (platformType === 'image2api') {
-                this.cloudFilters = ['image2api'];
-            } else if (platformType === 'newapi') {
-                this.cloudFilters = ['newapi'];
+            }else if (platformType === 'image2api') {
+                this.cloudFilters = ['image2api']
             }
             this.cloudStatusFilter = status || 'all';
             this.cloudPage = 1;
             this.fetchCloudAccounts();
-            const nameMap = { all: '全部平台', cpa: 'CPA', sub2api: 'Sub2API', image2api: 'Image2API', newapi: 'NewAPI' };
+            const typeName = platformType === 'all' ? '全部平台' : (platformType === 'cpa' ? 'CPA' : (platformType === 'sub2api' ? 'Sub2API' : 'Image2API'));
             const statusName = status === 'active' ? '存活' : (status === 'disabled' ? '失效' : '全部');
-            this.showToast(`已筛选: ${nameMap[platformType] || platformType} - ${statusName}账号`, 'info');
+            this.showToast(`已筛选: ${typeName} - ${statusName}账号`, 'info');
         },
         async bulkCloudAction(action) {
             if (this.selectedCloud.length === 0) {
@@ -3462,12 +3332,125 @@ async exportSub2Api() {
                 const data = await res.json();
                 if (data.status === 'success') {
                     this.showToast(`✅ 指令 [${action}] 已成功发送至节点: ${nodeName}`, 'success');
+                    if (action === 'export_accounts') {
+                        setTimeout(() => this.fetchClusterSyncTasks({ silent: true }), 1000);
+                    }
                 } else {
                     this.showToast(data.message, 'warning');
                 }
             } catch (e) {
                 this.showToast('控制请求异常', 'error');
             }
+        },
+        async fetchClusterSyncTasks(options = {}) {
+            const { silent = false } = options;
+            if (!silent) {
+                this.clusterSyncTasksLoading = true;
+            }
+            try {
+                const res = await this.authFetch('/api/cluster/sync_tasks?limit=20');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.clusterSyncTasks = Array.isArray(data.tasks) ? data.tasks : [];
+                } else if (!silent) {
+                    this.showToast(data.message || '同步任务列表获取失败', 'warning');
+                }
+            } catch (e) {
+                if (!silent) {
+                    this.showToast('同步任务列表获取失败', 'error');
+                }
+            } finally {
+                if (!silent) {
+                    this.clusterSyncTasksLoading = false;
+                }
+            }
+        },
+        async clearTerminalClusterSyncTasks() {
+            const confirmed = await this.customConfirm('确定清理所有已完成、已取消和已中断的同步任务吗？此操作不可恢复。');
+            if (!confirmed) return;
+            try {
+                const res = await this.authFetch('/api/cluster/sync_tasks/clear_terminal', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || '终态同步任务已清理', 'success');
+                    await this.fetchClusterSyncTasks();
+                } else {
+                    this.showToast(data.message || '终态同步任务清理失败', 'warning');
+                }
+            } catch (e) {
+                this.showToast('终态同步任务清理失败', 'error');
+            }
+        },
+        async retryClusterSyncTask(taskId) {
+            if (!taskId) return;
+            try {
+                const res = await this.authFetch(`/api/cluster/sync_tasks/${encodeURIComponent(taskId)}/retry`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || `同步任务 ${taskId} 已重新排队`, 'success');
+                    await this.fetchClusterSyncTasks({ silent: true });
+                } else {
+                    this.showToast(data.message || '同步任务重试失败', 'warning');
+                }
+            } catch (e) {
+                this.showToast('同步任务重试失败', 'error');
+            }
+        },
+        async cancelClusterSyncTask(taskId) {
+            if (!taskId) return;
+            try {
+                const res = await this.authFetch(`/api/cluster/sync_tasks/${encodeURIComponent(taskId)}/cancel`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast(data.message || `同步任务 ${taskId} 已取消`, 'success');
+                    await this.fetchClusterSyncTasks({ silent: true });
+                } else {
+                    this.showToast(data.message || '同步任务取消失败', 'warning');
+                }
+            } catch (e) {
+                this.showToast('同步任务取消失败', 'error');
+            }
+        },
+        formatClusterSyncStatus(status) {
+            const statusMap = {
+                pending: '排队中',
+                running: '导入中',
+                success: '已完成',
+                partial_success: '部分成功',
+                failed: '失败',
+                retry_wait: '待重试',
+                cancel_requested: '取消中',
+                cancelled: '已取消'
+            };
+            return statusMap[String(status || '').trim()] || (status || '未知');
+        },
+        clusterSyncStatusClass(status) {
+            const normalized = String(status || '').trim();
+            if (normalized === 'success') return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+            if (normalized === 'partial_success') return 'bg-amber-50 text-amber-600 border-amber-200';
+            if (normalized === 'failed') return 'bg-rose-50 text-rose-600 border-rose-200';
+            if (normalized === 'retry_wait') return 'bg-orange-50 text-orange-600 border-orange-200';
+            if (normalized === 'cancel_requested') return 'bg-slate-100 text-slate-600 border-slate-300';
+            if (normalized === 'cancelled') return 'bg-slate-100 text-slate-500 border-slate-200';
+            if (normalized === 'running') return 'bg-sky-50 text-sky-600 border-sky-200';
+            return 'bg-slate-100 text-slate-600 border-slate-200';
+        },
+        formatClusterSyncTime(value) {
+            if (!value) return '-';
+            const normalized = String(value).replace(' ', 'T');
+            const date = new Date(normalized);
+            if (Number.isNaN(date.getTime())) return value;
+            return this.formatMainlandDateTime(date);
+        },
+        formatClusterSyncError(errorMessage) {
+            const text = String(errorMessage || '').trim();
+            return text || '-';
         },
         formatDuration(seconds) {
             if (!seconds || seconds < 0) return "0s";
@@ -3515,6 +3498,7 @@ async exportSub2Api() {
                 const res = JSON.parse(event.data);
                 if (res.status === 'success') {
                     this.clusterNodes = res.nodes;
+                    this.fetchClusterSyncTasks({ silent: true });
                 }
             };
 
@@ -4628,265 +4612,23 @@ async exportSub2Api() {
                 this.showToast('清空异常', 'error');
             }
         },
-        async discoverTeamWorkspaces() {
-            if (!this.teamSelectedManager) {
-                this.showToast('请先选择管理者账号', 'warning');
-                return;
-            }
-            this.isLoadingTeam = true;
-            this.teamWorkspaces = [];
-            this.teamSelectedWorkspace = null;
-            try {
-                const res = await this.authFetch('/api/team/workspaces', {
-                    method: 'POST',
-                    body: JSON.stringify({ manager_email: this.teamSelectedManager })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamWorkspaces = data.data || [];
-                    this.showToast(`发现 ${this.teamWorkspaces.length} 个工作区`, 'success');
-                } else {
-                    this.showToast(data.message || '发现工作区失败', 'error');
+        async handleOverspeedToggle(event) {
+            const isTurningOn = event.target.checked;
+            if (isTurningOn) {
+                const hasCookie = this.teamAccounts && this.teamAccounts.some(team => team.cookies && team.cookies.trim() !== '');
+
+                if (!hasCookie) {
+                    this.showToast('⛔ 开启失败：当前账号库中未检测到完整的 Cookie 数据！', 'error');
+                    this.showToast('请先按 access_token----cookies 格式导入数据。', 'warning');
+                    event.target.checked = false;
+                    this.config.team_mode.overspeed = false;
+                    return;
                 }
-            } catch (e) {
-                this.showToast('发现工作区异常', 'error');
-            } finally {
-                this.isLoadingTeam = false;
             }
-        },
-        async fetchTeamMembers(workspaceId, workspaceName) {
-            this.teamSelectedWorkspace = workspaceId;
-            this.teamSelectedWorkspaceName = workspaceName;
-            this.isLoadingTeam = true;
-            this.teamMembers = [];
-            this.teamInvites = [];
-            try {
-                const res = await this.authFetch('/api/team/members', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        manager_email: this.teamSelectedManager,
-                        workspace_id: workspaceId
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamMembers = data.members || [];
-                    this.teamInvites = data.invites || [];
-                } else {
-                    this.showToast(data.message || '获取成员失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('获取成员异常', 'error');
-            } finally {
-                this.isLoadingTeam = false;
-            }
-        },
-        async inviteTeamMembers() {
-            if (!this.teamInviteEmails.trim()) return;
-            this.isLoadingTeam = true;
-            try {
-                const res = await this.authFetch('/api/team/invite', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        manager_email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        emails: this.teamInviteEmails
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast(data.message || '邀请已发送', 'success');
-                    this.teamInviteEmails = '';
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                } else {
-                    this.showToast(data.message || '邀请失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('邀请异常', 'error');
-            } finally {
-                this.isLoadingTeam = false;
-            }
-        },
-        async removeTeamMember(userId, email) {
-            try {
-                const res = await this.authFetch('/api/team/member/remove', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        manager_email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        user_id: userId
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast(`${email} 已移除`, 'success');
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                } else {
-                    this.showToast(data.message || '移除失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('移除异常', 'error');
-            }
-        },
-        async revokeTeamInvite(email) {
-            try {
-                const res = await this.authFetch('/api/team/invite/revoke', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        manager_email: this.teamSelectedManager,
-                        workspace_id: this.teamSelectedWorkspace,
-                        email: email
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast(`${email} 邀请已撤回`, 'success');
-                    this.fetchTeamMembers(this.teamSelectedWorkspace, this.teamSelectedWorkspaceName);
-                } else {
-                    this.showToast(data.message || '撤回失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('撤回异常', 'error');
-            }
-        },
-        async fetchCheckHistory() {
-            this.isLoadingCheckHistory = true;
-            try {
-                const res = await this.authFetch('/api/sub2api/check_history');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.checkHistory = data.data || [];
-                }
-            } catch (e) {
-                // silent
-            } finally {
-                this.isLoadingCheckHistory = false;
-            }
-        },
-        async fetchWebhookCodes() {
-            this.isLoadingWebhookCodes = true;
-            try {
-                const res = await this.authFetch('/api/webhook/codes');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.webhookCodes = data.data || [];
-                }
-            } catch (e) {
-                // silent
-            } finally {
-                this.isLoadingWebhookCodes = false;
-            }
-        },
-        async deleteWebhookCode(email) {
-            try {
-                const res = await this.authFetch(`/api/webhook/codes/${encodeURIComponent(email)}`, { method: 'DELETE' });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast('已删除', 'success');
-                    this.fetchWebhookCodes();
-                } else {
-                    this.showToast(data.message || '删除失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('删除异常', 'error');
-            }
-        },
-        async clearWebhookCodes(olderHours) {
-            try {
-                const res = await this.authFetch('/api/webhook/codes/clear', {
-                    method: 'POST',
-                    body: JSON.stringify({ older_hours: olderHours || 0 })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.showToast(data.message || '已清除', 'success');
-                    this.fetchWebhookCodes();
-                } else {
-                    this.showToast(data.message || '清除失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('清除异常', 'error');
-            }
-        },
-        async clearGmailCredentials() {
-            const confirmed = await this.customConfirm('确定要清除 Gmail 凭据吗？');
-            if (!confirmed) return;
-            try {
-                const res = await this.authFetch('/api/gmail/clear-credentials', { method: 'POST' });
-                const data = await res.json();
-                this.showToast(data.message || (data.status === 'success' ? '已清除' : '清除失败'), data.status);
-            } catch (e) {
-                this.showToast('清除异常', 'error');
-            }
-        },
-        async fetchSub2apiProxies() {
-            try {
-                const res = await this.authFetch('/api/sub2api/proxies');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.sub2apiProxies = data.data || [];
-                }
-            } catch (e) {
-                // silent
-            }
-        },
-        onSub2apiProxySelect(proxyId) {
-            this.selectedSub2apiProxyId = proxyId;
-            if (proxyId && this.config && this.config.sub2api_mode) {
-                this.config.sub2api_mode.account_proxy_id = proxyId;
-                // Also build the proxy URL and fill default_proxy
-                const proxy = this.sub2apiProxies.find(p => p.id === proxyId);
-                if (proxy) {
-                    const auth = proxy.username ? `${proxy.username}:${proxy.password}@` : '';
-                    this.config.sub2api_mode.default_proxy = `${proxy.protocol}://${auth}${proxy.host}:${proxy.port}`;
-                }
-                this.saveConfig();
-            }
-        },
-        async fetchTeamInviteRecords() {
-            try {
-                const res = await this.authFetch('/api/team/invite_records');
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamInviteRecords = data.data || [];
-                }
-            } catch (e) {
-                // silent
-            }
-        },
-        async clearTeamInviteRecords() {
-            const confirmed = await this.customConfirm('确定要清除所有邀请记录吗？');
-            if (!confirmed) return;
-            try {
-                const res = await this.authFetch('/api/team/invite_records/clear', { method: 'POST' });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    this.teamInviteRecords = [];
-                    this.showToast('已清除', 'success');
-                } else {
-                    this.showToast(data.message || '清除失败', 'error');
-                }
-            } catch (e) {
-                this.showToast('清除异常', 'error');
-            }
-        },
-        async testTgNotification() {
-            this.isTestingTg = true;
-            try {
-                const res = await this.authFetch('/api/notify/test_tg', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        token: this.config.tg_bot.token,
-                        chat_id: this.config.tg_bot.chat_id
-                    })
-                });
-                const data = await res.json();
-                this.showToast(data.message || (data.status === 'success' ? '发送成功' : '发送失败'), data.status);
-            } catch (e) {
-                this.showToast('发送异常', 'error');
-            } finally {
-                this.isTestingTg = false;
-            }
+            this.config.team_mode.overspeed = isTurningOn;
+            await this.saveConfig();
+            this.showToast(`🏎️ 超速妙模式已${isTurningOn ? '开启' : '关闭'}`, 'success');
+            this.showToast(`超速妙模式最大4线程，线程请不要设置过高，正常账号请不要开启该功能`, 'success');
         },
         async uploadLicenseFile() {
             const fileInput = document.getElementById('licenseFileInput');
@@ -5167,13 +4909,3 @@ async exportSub2Api() {
         },
     }
 }).mount('#app');
-
-// Debug: catch render errors to pinpoint missing properties
-window.__vueApp__ = document.querySelector('#app').__vue_app__;
-const origWarn = console.warn;
-console.warn = function(...args) {
-    if (args[0] && args[0].includes && args[0].includes('not defined on instance')) {
-        console.error('[Vue MISSING PROP]', args[0]);
-    }
-    origWarn.apply(console, args);
-};

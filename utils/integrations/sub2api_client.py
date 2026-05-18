@@ -36,7 +36,6 @@ def get_sub2api_push_settings() -> Dict[str, Any]:
         "priority": as_int(getattr(cfg, "SUB2API_ACCOUNT_PRIORITY", 1), 1, 1),
         "rate_multiplier": as_float(getattr(cfg, "SUB2API_ACCOUNT_RATE_MULTIPLIER", 1.0), 1.0, 0.0),
         "group_ids": group_ids,
-        "proxy_id": as_int(getattr(cfg, "SUB2API_ACCOUNT_PROXY_ID", 0), 0, 0),
         "enable_ws": bool(getattr(cfg, "SUB2API_ENABLE_WS_MODE", True)),
     }
 
@@ -332,37 +331,6 @@ class Sub2APIClient:
         except (TypeError, ValueError):
             return False, f"Sub2API total 字段异常: {total}"
 
-    def get_proxies(self, page: int = 1, page_size: int = 100) -> Tuple[bool, Any]:
-        url = f"{self.api_url}/api/v1/admin/proxies"
-        params = {"page": page, "page_size": page_size}
-        try:
-            response = cffi_requests.get(url, headers=self.headers, params=params, **self.request_kwargs)
-            return self._handle_response(response)
-        except Exception as exc:
-            logger.error("Get Sub2API proxies failed: %s", exc)
-            return False, str(exc)
-
-    def get_all_proxies(self, page_size: int = 100) -> Tuple[bool, Any]:
-        all_items: List[dict] = []
-        page = 1
-        while True:
-            ok, data = self.get_proxies(page=page, page_size=page_size)
-            if not ok:
-                if page == 1:
-                    return False, data
-                break
-            inner = data.get("data", {}) if isinstance(data, dict) else {}
-            items = inner.get("items", [])
-            if not items:
-                break
-            all_items.extend(items)
-            total = inner.get("total", 0)
-            if len(all_items) >= total:
-                break
-            page += 1
-        logger.info("Fetched %s Sub2API proxies", len(all_items))
-        return True, all_items
-
     def get_account_usage(self, account_id: str) -> Tuple[bool, Any]:
         url = f"{self.api_url}/api/v1/admin/accounts/{account_id}/usage"
         params = {"timezone": "Asia/Shanghai"}
@@ -377,7 +345,6 @@ class Sub2APIClient:
         except Exception as exc:
             logger.error("Get Sub2API account usage %s failed: %s", account_id, exc)
             return False, str(exc)
-
 
     def add_account(self, token_data: Dict[str, Any]) -> Tuple[bool, str]:
         settings = self._get_push_settings()
@@ -422,8 +389,6 @@ class Sub2APIClient:
 
         if settings["group_ids"]:
             payload["group_ids"] = settings["group_ids"]
-        if settings["proxy_id"]:
-            payload["proxy_id"] = settings["proxy_id"]
 
         try:
             response = cffi_requests.post(
