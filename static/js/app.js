@@ -4624,6 +4624,7 @@ async exportSub2Api() {
                     this.config.team_mode.overspeed = false;
                     return;
                 }
+                this.config.team_mode.enable = true;
             }
             this.config.team_mode.overspeed = isTurningOn;
             await this.saveConfig();

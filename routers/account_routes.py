@@ -132,11 +132,12 @@ async def export_selected_accounts(req: ExportReq, token: str = Depends(verify_t
 @router.post("/api/accounts/delete")
 async def delete_selected_accounts(req: DeleteReq, token: str = Depends(verify_token)):
     if not req.emails: return {"status": "error", "message": "未收到任何要删除的账号"}
-    chunk_size = 900
-    success = True
-    for i in range(0, len(req.emails), chunk_size):
-        if not db_manager.delete_accounts_by_emails(req.emails[i:i + chunk_size]):
-            success = False
+    # chunk_size = 900
+    # success = True
+    # for i in range(0, len(req.emails), chunk_size):
+    #     if not db_manager.delete_accounts_by_emails(req.emails[i:i + chunk_size]):
+    #         success = False
+    success = db_manager.delete_accounts_by_emails(req.emails)
     return {"status": "success", "message": f"成功删除所选账号"} if success else {"status": "error", "message": "部分删除操作失败"}
 
 
@@ -275,10 +276,10 @@ async def clear_all_accounts_api(token: str = Depends(verify_token)):
 
 
 def _background_sync_cloud_data(combined_data):
-    global _last_cloud_sync_time
-    if time.time() - _last_cloud_sync_time < 30:
-        return
-    _last_cloud_sync_time = time.time()
+    # global _last_cloud_sync_time
+    # if time.time() - _last_cloud_sync_time < 30:
+    #     return
+    # _last_cloud_sync_time = time.time()
     try:
         cpa_emails = [x["credential"] for x in combined_data if x["account_type"] == "cpa"]
         sub_emails = [x["credential"] for x in combined_data if x["account_type"] == "sub2api"]
