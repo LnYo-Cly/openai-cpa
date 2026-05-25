@@ -174,54 +174,45 @@ def clear_team_invite_records(token: str = Depends(verify_token)):
 
 @router.post("/api/team/sys-allocate")
 def sys_allocate_team(req: SysAllocateReq, token: str = Depends(verify_token)):
-    """通过 sys_node_allocate 将账号分配到 Team 工作区并获取 refresh_token"""
+    """用浏览器 cookies 走 PKCE OAuth 获取 refresh_token（不走 sys_node_allocate）"""
     from curl_cffi import requests as cffi_requests
-    from utils.auth_core import sys_node_allocate, sys_node_release
     from utils.auth_pipeline.oauth import generate_oauth_url, submit_callback_url
     from utils.auth_pipeline.http_utils import _follow_redirect_chain_local, _oai_headers
     from utils.auth_pipeline.common import _parse_workspace_from_auth_cookie
 
-    access_token = req.access_token.strip()
     did = req.did.strip()
     proxy = cfg.format_docker_url(req.proxy.strip()) if req.proxy else ""
     if proxy and proxy.startswith("socks5://"):
         proxy = proxy.replace("socks5://", "socks5h://")
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
-    if not access_token:
-        return {"status": "error", "message": "access_token 不能为空"}
     if not did:
         return {"status": "error", "message": "did 不能为空"}
+    if not req.cookies.strip():
+        return {"status": "error", "message": "cookies 不能为空，需要浏览器端的 auth.openai.com cookies"}
 
-    h1 = h2 = h3 = ""
     session = None
     try:
         session = cffi_requests.Session(proxies=proxies, impersonate="chrome110")
         session.headers.update({"Connection": "close"})
         session.timeout = 30
 
-        # 0. 注入浏览器 cookies 到 session
+        # 1. 注入浏览器 cookies
         raw_cookies = req.cookies.strip()
-        if raw_cookies:
-            for pair in raw_cookies.split(";"):
-                pair = pair.strip()
-                if "=" not in pair:
-                    continue
-                name, _, value = pair.partition("=")
-                name = name.strip()
-                value = value.strip()
-                if name and value:
-                    session.cookies.set(name, value, domain="auth.openai.com")
-                    session.cookies.set(name, value, domain=".openai.com")
-                    session.cookies.set(name, value, domain="chatgpt.com")
-                    session.cookies.set(name, value, domain=".chatgpt.com")
+        for pair in raw_cookies.split(";"):
+            pair = pair.strip()
+            if "=" not in pair:
+                continue
+            name, _, value = pair.partition("=")
+            name = name.strip()
+            value = value.strip()
+            if name and value:
+                session.cookies.set(name, value, domain="auth.openai.com")
+                session.cookies.set(name, value, domain=".openai.com")
+                session.cookies.set(name, value, domain="chatgpt.com")
+                session.cookies.set(name, value, domain=".chatgpt.com")
 
-        # 1. sys_node_allocate
-        is_alloc, h1, h2, h3 = sys_node_allocate(session, did, access_token, proxies)
-        if not is_alloc:
-            return {"status": "error", "message": "sys_node_allocate 返回失败"}
-
-        # 2. 生成新 PKCE 参数
+        # 2. 生成 PKCE 参数
         oauth = generate_oauth_url()
 
         # 3. 用 session 走 OAuth redirect chain
@@ -280,14 +271,8 @@ def sys_allocate_team(req: SysAllocateReq, token: str = Depends(verify_token)):
         }
 
     except Exception as e:
-        return {"status": "error", "message": f"sys-allocate 异常: {str(e)}"}
+        return {"status": "error", "message": f"OAuth 异常: {str(e)}"}
     finally:
-        # 清理: 释放 sys_node
-        if h1 or h2 or h3:
-            try:
-                sys_node_release(access_token, h1, h2, h3, proxies)
-            except Exception:
-                pass
         if session:
             try:
                 session.close()
