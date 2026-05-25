@@ -36,6 +36,7 @@ class SysAllocateReq(BaseModel):
     access_token: str
     did: str
     proxy: str = ""
+    cookies: str = ""
 
 
 # ── 端点 ──
@@ -198,6 +199,22 @@ def sys_allocate_team(req: SysAllocateReq, token: str = Depends(verify_token)):
         session = cffi_requests.Session(proxies=proxies, impersonate="chrome110")
         session.headers.update({"Connection": "close"})
         session.timeout = 30
+
+        # 0. 注入浏览器 cookies 到 session
+        raw_cookies = req.cookies.strip()
+        if raw_cookies:
+            for pair in raw_cookies.split(";"):
+                pair = pair.strip()
+                if "=" not in pair:
+                    continue
+                name, _, value = pair.partition("=")
+                name = name.strip()
+                value = value.strip()
+                if name and value:
+                    session.cookies.set(name, value, domain="auth.openai.com")
+                    session.cookies.set(name, value, domain=".openai.com")
+                    session.cookies.set(name, value, domain="chatgpt.com")
+                    session.cookies.set(name, value, domain=".chatgpt.com")
 
         # 1. sys_node_allocate
         is_alloc, h1, h2, h3 = sys_node_allocate(session, did, access_token, proxies)
