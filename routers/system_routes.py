@@ -936,7 +936,7 @@ async def check_update(current_version: str, token: str = Depends(verify_token))
     try:
         proxy_url = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
 
-        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
+        web_url = "https://github.com/LnYo-Cly/openai-cpa/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0) as client:
             resp = await client.head(web_url, headers=headers, follow_redirects=False)
@@ -1358,8 +1358,8 @@ def auto_update(token: str = Depends(verify_token)):
 def execute_docker_update():
     try:
         project_path = os.getenv("HOST_PROJECT_PATH")
-        image_name = "wenfxl/wenfxl-codex-manager:latest"
-        print(f"[{core_engine.ts()}] [系统] 🚀 正在通过官方 Compose 引擎执行重建...")
+        image_name = os.getenv("DOCKER_IMAGE_NAME", "ghcr.io/lnyo-cly/openai-cpa:latest")
+        print(f"[{core_engine.ts()}] [系统] 🚀 正在拉取最新镜像: {image_name}")
         subprocess.run(["docker", "pull", image_name], check=False)
         update_cmd = (
             f"nohup docker run --rm "
@@ -1393,7 +1393,7 @@ def execute_native_update():
         else:
             print(f"[{core_engine.ts()}] [系统] ⚠️ 未检测到全局代理，尝试直连下载...")
 
-        web_url = "https://github.com/wenfxl/openai-cpa/releases/latest"
+        web_url = "https://github.com/LnYo-Cly/openai-cpa/releases/latest"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         release_response = requests.head(web_url, headers=headers, proxies=proxies, allow_redirects=False, timeout=15)
 
@@ -1404,7 +1404,7 @@ def execute_native_update():
             latest_tag = redirect_url.split('/')[-1]
             print(f"[{core_engine.ts()}] [系统] 🎉 成功获取最新版本标签: {latest_tag}")
 
-            zip_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{latest_tag}.zip"
+            zip_url = f"https://github.com/LnYo-Cly/openai-cpa/archive/refs/tags/{latest_tag}.zip"
         else:
             raise Exception(f"请求被拒绝或状态异常，状态码: {release_response.status_code}")
 
