@@ -4174,7 +4174,7 @@
                                     </h3>
                                     <div class="flex items-center gap-3">
                                         <label class="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" v-model="config.plus_activation.enable" class="sr-only peer">
+                                            <input type="checkbox" v-model="config.plus_activation.enable" @change="togglePlusEnable" class="sr-only peer">
                                             <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                                         </label>
                                         <button @click="startPlusWorker" v-if="!plusStatus.is_running" class="px-4 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">启动 Worker</button>
@@ -4968,6 +4968,6 @@
     </div>
     </div>
     <script src="/static/js/index.js?v=20260520-15"></script>
-    <script src="/static/js/app.js?v=20260527-01"></script>
+    <script src="/static/js/app.js?v=20260527-02"></script>
 </body>
 </html>

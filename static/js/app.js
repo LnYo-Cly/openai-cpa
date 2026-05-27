@@ -1771,7 +1771,6 @@ createApp({
         },
         async saveConfig() {
             try {
-                this.plusEnableBefore = this.config.plus_activation?.enable || false;
                 if(this.config.clash_proxy_pool) {
                     this.config.clash_proxy_pool.blacklist = this.blacklistStr.split('\n').map(s => s.trim()).filter(s => s);
                     this.config.clash_proxy_pool.cluster_count = parseInt(this.clashPool.count) || 5;
@@ -1854,16 +1853,6 @@ createApp({
                     await this.fetchConfig();
                     await this.fetchMailDomainRuntimeStats({ force: true });
                     this.queuePollStats();
-                    // Auto start/stop Plus worker when enable toggled
-                    const newEnable = this.config.plus_activation?.enable;
-                    if (newEnable !== this.plusEnableBefore) {
-                        if (newEnable) {
-                            try { await this.authFetch('/api/plus/start', { method: 'POST' }); this.showToast('Plus 激活已启动', 'success'); } catch(e) {}
-                        } else {
-                            try { await this.authFetch('/api/plus/stop', { method: 'POST' }); this.showToast('Plus 激活已停止', 'info'); } catch(e) {}
-                        }
-                        this.fetchPlusStatus();
-                    }
                 } else { this.showToast("保存失败：" + data.message, "error"); }
             } catch (e) { this.showToast("保存失败网络异常", "error"); }
         },
@@ -4991,6 +4980,20 @@ async exportSub2Api() {
                 await this.authFetch('/api/plus/queue/clear', { method: 'POST' });
                 this.showToast('已清理完成任务', 'success');
                 this.fetchPlusQueue();
+                this.fetchPlusStatus();
+            } catch (e) { this.showToast('操作失败', 'error'); }
+        },
+        async togglePlusEnable() {
+            const enabled = this.config.plus_activation.enable;
+            try {
+                await this.saveConfig();
+                if (enabled) {
+                    await this.authFetch('/api/plus/start', { method: 'POST' });
+                    this.showToast('Plus 激活已启用并启动 Worker', 'success');
+                } else {
+                    await this.authFetch('/api/plus/stop', { method: 'POST' });
+                    this.showToast('Plus 激活已关闭', 'info');
+                }
                 this.fetchPlusStatus();
             } catch (e) { this.showToast('操作失败', 'error'); }
         },
