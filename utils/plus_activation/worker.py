@@ -124,11 +124,11 @@ class PlusActivationWorker:
                     # Reload SMS pool before each activation
                     sms_pool.reload_pool()
 
-                    success = await activate_plus(
+                    browser_creds = await activate_plus(
                         browser_instance, context_opts, page_timeout, access_token
                     )
 
-                    if success:
+                    if browser_creds.get("activation_success"):
                         _log(f"Plus 激活成功: {email}", "SUCCESS")
 
                         # Step 3: Refresh RT again to get final credentials
@@ -141,18 +141,22 @@ class PlusActivationWorker:
                                     "access_token": final_tokens.get("access_token", access_token),
                                     "refresh_token": final_tokens.get("refresh_token", new_rt),
                                     "id_token": final_tokens.get("id_token", id_token),
-                                    "plan_type": "plus",
                                 })
                         except Exception:
                             _log(f"最终令牌刷新失败，使用当前令牌: {email}", "WARN")
 
-                        # Step 4: Push to targets
+                        # Step 4: Build codex format credentials
+                        from utils.plus_activation.browser import build_codex_credentials
+                        codex = build_codex_credentials(token_data, browser_creds, email)
+                        _log(f"凭证构建完成: account_id={codex.get('chatgpt_account_id', '')}, plan={codex.get('chatgpt_plan_type', '')}")
+
+                        # Step 5: Push to targets
                         from utils.plus_activation.push_handler import push_activated_account
                         push_targets = getattr(cfg, "PLUS_ACT_PUSH_TARGETS", [])
                         if push_targets:
                             _log(f"正在推送至 {push_targets}: {email}")
                             results = await loop.run_in_executor(
-                                None, push_activated_account, token_data, push_targets
+                                None, push_activated_account, codex, push_targets
                             )
                             for target, result in results.items():
                                 status = "成功" if result.get("success") else f"失败: {result.get('message')}"

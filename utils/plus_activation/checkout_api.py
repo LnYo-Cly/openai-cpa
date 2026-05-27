@@ -2,9 +2,59 @@
 
 import random
 import string
+import time
 from curl_cffi import requests
 
 from utils import config as cfg
+
+FIRST_NAMES = [
+    "James", "John", "Robert", "Michael", "William", "David", "Richard",
+    "Joseph", "Thomas", "Christopher", "Mary", "Patricia", "Jennifer",
+    "Linda", "Barbara", "Elizabeth", "Susan", "Jessica", "Sarah", "Karen",
+    "Daniel", "Matthew", "Anthony", "Mark", "Donald", "Steven", "Andrew",
+    "Paul", "Joshua", "Kenneth", "Emma", "Olivia", "Ava", "Isabella",
+    "Sophia", "Mia", "Charlotte", "Amelia", "Harper", "Evelyn",
+]
+
+LAST_NAMES = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
+    "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez",
+    "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin",
+    "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark",
+    "Ramirez", "Lewis", "Robinson",
+]
+
+SEED_ADDRESSES = {
+    "US": [
+        {"address1": "Broadway", "city": "New York", "region": "New York", "postalCode": "10007"},
+        {"address1": "Market St", "city": "San Francisco", "region": "California", "postalCode": "94105"},
+        {"address1": "Michigan Ave", "city": "Chicago", "region": "Illinois", "postalCode": "60601"},
+    ],
+    "AU": [
+        {"address1": "George St", "city": "Sydney", "region": "NSW", "postalCode": "2000"},
+        {"address1": "Collins St", "city": "Melbourne", "region": "VIC", "postalCode": "3000"},
+    ],
+    "DE": [
+        {"address1": "Friedrichstrasse", "city": "Berlin", "region": "Berlin", "postalCode": "10117"},
+        {"address1": "Marienplatz", "city": "Munich", "region": "Bavaria", "postalCode": "80331"},
+    ],
+    "FR": [
+        {"address1": "Rue de Rivoli", "city": "Paris", "region": "Ile-de-France", "postalCode": "75001"},
+        {"address1": "Rue de la Republique", "city": "Lyon", "region": "Auvergne-Rhone-Alpes", "postalCode": "69002"},
+    ],
+    "ID": [
+        {"address1": "Jl. Sudirman", "city": "Jakarta", "region": "DKI Jakarta", "postalCode": "10220"},
+        {"address1": "Jl. Gatot Subroto", "city": "Jakarta", "region": "DKI Jakarta", "postalCode": "10270"},
+    ],
+    "JP": [
+        {"address1": "Ginza", "city": "Tokyo", "region": "Tokyo", "postalCode": "1040061"},
+        {"address1": "Shinsaibashi", "city": "Osaka", "region": "Osaka", "postalCode": "5420085"},
+    ],
+    "KR": [
+        {"address1": "Gangnam-daero", "city": "Seoul", "region": "Seoul", "postalCode": "06123"},
+        {"address1": "Sejong-daero", "city": "Seoul", "region": "Seoul", "postalCode": "04521"},
+    ],
+}
 
 
 def create_checkout(accessToken: str) -> dict:
@@ -38,46 +88,55 @@ def create_checkout(accessToken: str) -> dict:
 
 
 def fetch_us_address() -> dict:
-    api_url = getattr(cfg, "PLUS_ACT_ADDRESS_API_URL", "")
+    """Generate a random identity with address. Prefers local seed, falls back to API."""
+    country = getattr(cfg, "PLUS_ACT_COUNTRY", "US")
     proxy = getattr(cfg, "PLUS_ACT_PROXY", "")
+    first = random.choice(FIRST_NAMES)
+    last = random.choice(LAST_NAMES)
 
     proxies = None
     if proxy:
         proxies = {"http": proxy, "https": proxy}
 
+    # Try address API first
+    api_url = getattr(cfg, "PLUS_ACT_ADDRESS_API_URL", "")
     if api_url:
         try:
             resp = requests.post(api_url, json={"path": "/", "method": "address"},
                                  timeout=10, proxies=proxies, impersonate="chrome110")
             if resp.ok:
-                return resp.json()
+                addr = resp.json()
+                addr.setdefault("name", f"{first} {last}")
+                addr.setdefault("firstName", first)
+                addr.setdefault("lastName", last)
+                return addr
         except Exception:
             pass
 
-    try:
-        resp = requests.get("https://randomuser.me/api/?nat=us&inc=location&noinfo",
-                            timeout=10, proxies=proxies, impersonate="chrome110")
-        if resp.ok:
-            loc = resp.json()["results"][0]["location"]
-            return {
-                "name": f"{loc['street']['name']} {loc['street']['number']}",
-                "address": f"{loc['street']['number']} {loc['street']['name']}",
-                "city": loc["city"],
-                "state": loc["state"],
-                "zip": str(loc["postcode"]),
-                "country": "US",
-            }
-    except Exception:
-        pass
-
+    # Use local seed addresses
+    country_addrs = SEED_ADDRESSES.get(country, SEED_ADDRESSES["US"])
+    seed = random.choice(country_addrs)
     return {
-        "name": "123 Main St",
-        "address": "123 Main St",
-        "city": "New York",
-        "state": "NY",
-        "zip": "10001",
-        "country": "US",
+        "name": f"{first} {last}",
+        "firstName": first,
+        "lastName": last,
+        "address": seed["address1"],
+        "address1": seed["address1"],
+        "city": seed["city"],
+        "state": seed["region"],
+        "region": seed["region"],
+        "zip": seed["postalCode"],
+        "postalCode": seed["postalCode"],
+        "country": country,
     }
+
+
+def generate_random_birthday() -> dict:
+    """Generate random birthday for age 19-25."""
+    year = time.localtime().tm_year - random.randint(19, 25)
+    month = random.randint(1, 12)
+    day = random.randint(1, 28)
+    return {"year": str(year), "month": str(month), "day": str(day)}
 
 
 def generate_random_email() -> str:
@@ -110,9 +169,12 @@ def generate_visa_card() -> str:
 
 
 def generate_card_expiry() -> str:
+    """Generate card expiry in MM / YY format (matching PayPal expected format)."""
+    import time as _time
     month = random.randint(1, 12)
-    year = random.randint(2027, 2030)
-    return f"{month:02d}/{year}"
+    current_year_2digit = _time.localtime().tm_year % 100
+    year = current_year_2digit + random.randint(2, 5)
+    return f"{month:02d} / {year}"
 
 
 def generate_card_cvv() -> str:
