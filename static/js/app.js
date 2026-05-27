@@ -346,7 +346,9 @@ createApp({
 			plusStatus: { is_running: false, queue_stats: {}, sms_pool: {}, current_account: '' },
 			plusQueue: [],
 			plusQueueLoading: false,
-			plusSmsPoolText: '',
+			plusSmsImportText: '',
+				plusSmsSelectedEntries: [],
+				plusEnableBefore: false,
             heroSmsBalance: '0.00',
             heroSmsPrices: [],
             isLoadingBalance: false,
@@ -1329,7 +1331,7 @@ createApp({
                             enable: false, max_concurrent: 1, retry_limit: 3, retry_delay_sec: 30,
                             headless: true, browser_timeout_sec: 120, checkout_api_url: '',
                             country: 'US', payment_method: 'paypal', address_api_url: '',
-                            sms_pool_file: 'data/sms_pool.txt', push_targets: [], proxy: '',
+                            push_targets: [], proxy: '',
                             shop_merchant_token: '', shop_goods_id: 0,
                         };
                     }
@@ -1770,6 +1772,7 @@ createApp({
         },
         async saveConfig() {
             try {
+                this.plusEnableBefore = this.config.plus_activation?.enable || false;
                 if(this.config.clash_proxy_pool) {
                     this.config.clash_proxy_pool.blacklist = this.blacklistStr.split('\n').map(s => s.trim()).filter(s => s);
                     this.config.clash_proxy_pool.cluster_count = parseInt(this.clashPool.count) || 5;
@@ -1852,6 +1855,16 @@ createApp({
                     await this.fetchConfig();
                     await this.fetchMailDomainRuntimeStats({ force: true });
                     this.queuePollStats();
+                    // Auto start/stop Plus worker when enable toggled
+                    const newEnable = this.config.plus_activation?.enable;
+                    if (newEnable !== this.plusEnableBefore) {
+                        if (newEnable) {
+                            try { await this.authFetch('/api/plus/start', { method: 'POST' }); this.showToast('Plus 激活已启动', 'success'); } catch(e) {}
+                        } else {
+                            try { await this.authFetch('/api/plus/stop', { method: 'POST' }); this.showToast('Plus 激活已停止', 'info'); } catch(e) {}
+                        }
+                        this.fetchPlusStatus();
+                    }
                 } else { this.showToast("保存失败：" + data.message, "error"); }
             } catch (e) { this.showToast("保存失败网络异常", "error"); }
         },
@@ -4982,12 +4995,63 @@ async exportSub2Api() {
                 if (this.plusStatus) this.plusStatus.sms_pool = data;
             } catch (e) {}
         },
-        async reloadPlusSmsPool() {
+        async importPlusSmsPool() {
+            if (!this.plusSmsImportText.trim()) { this.showToast('请输入接码池数据', 'warning'); return; }
             try {
-                await this.authFetch('/api/plus/sms_pool/reload', { method: 'POST' });
-                this.showToast('SMS 接码池已重新加载', 'success');
+                const res = await this.authFetch('/api/plus/sms_pool/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: this.plusSmsImportText }),
+                });
+                const data = await res.json();
+                this.showToast(data.message || '导入成功', 'success');
+                this.plusSmsImportText = '';
                 this.fetchPlusSmsPool();
-            } catch (e) { this.showToast('加载失败', 'error'); }
+            } catch (e) { this.showToast('导入失败', 'error'); }
+        },
+        async deletePlusSmsEntry(index) {
+            try {
+                const res = await this.authFetch('/api/plus/sms_pool/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ indices: [index] }),
+                });
+                const data = await res.json();
+                this.showToast(data.message, 'success');
+                this.plusSmsSelectedEntries = [];
+                this.fetchPlusSmsPool();
+            } catch (e) { this.showToast('删除失败', 'error'); }
+        },
+        async deleteSelectedPlusSmsEntries() {
+            if (this.plusSmsSelectedEntries.length === 0) return;
+            try {
+                const res = await this.authFetch('/api/plus/sms_pool/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ indices: this.plusSmsSelectedEntries }),
+                });
+                const data = await res.json();
+                this.showToast(data.message, 'success');
+                this.plusSmsSelectedEntries = [];
+                this.fetchPlusSmsPool();
+            } catch (e) { this.showToast('删除失败', 'error'); }
+        },
+        async clearAllPlusSmsEntries() {
+            if (!confirm('确定要清空所有接码池条目吗？')) return;
+            try {
+                const res = await this.authFetch('/api/plus/sms_pool/clear', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message, 'success');
+                this.plusSmsSelectedEntries = [];
+                this.fetchPlusSmsPool();
+            } catch (e) { this.showToast('清空失败', 'error'); }
+        },
+        toggleAllSmsEntries(event) {
+            if (event.target.checked) {
+                this.plusSmsSelectedEntries = this.plusStatus.sms_pool.entries.map((_, i) => i);
+            } else {
+                this.plusSmsSelectedEntries = [];
+            }
         },
         togglePlusPushTarget(target) {
             if (!this.config.plus_activation.push_targets) this.config.plus_activation.push_targets = [];

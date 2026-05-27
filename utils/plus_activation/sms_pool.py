@@ -155,6 +155,7 @@ def get_pool_status() -> dict:
         "entries": [
             {
                 "phone": e.phone,
+                "verify_url": e.verify_url,
                 "use_count": e.use_count,
                 "failures": e.consecutive_failures,
                 "disabled": e.disabled,
@@ -162,3 +163,77 @@ def get_pool_status() -> dict:
             for e in entries
         ],
     }
+
+
+def import_entries(text: str) -> int:
+    """Import entries from text (one per line: phone----url). Returns count added."""
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip() and not line.strip().startswith("#")]
+    new_entries = []
+    for line in lines:
+        if "----" in line:
+            parts = line.split("----", 1)
+            phone = parts[0].strip()
+            url = parts[1].strip()
+            if phone and url:
+                new_entries.append(SMSPoolEntry(phone=phone, verify_url=url))
+    if not new_entries:
+        return 0
+
+    with _pool_lock:
+        existing_keys = {e.phone + e.verify_url for e in _entries}
+        added = 0
+        for ne in new_entries:
+            key = ne.phone + ne.verify_url
+            if key not in existing_keys:
+                _entries.append(ne)
+                existing_keys.add(key)
+                added += 1
+        _save_pool_file()
+    return added
+
+
+def delete_entry(index: int) -> bool:
+    """Delete entry by index. Returns True if deleted."""
+    with _pool_lock:
+        if 0 <= index < len(_entries):
+            _entries.pop(index)
+            _save_pool_file()
+            return True
+    return False
+
+
+def delete_entries(indices: list) -> int:
+    """Delete entries by indices. Returns count deleted."""
+    with _pool_lock:
+        to_remove = set(indices)
+        before = len(_entries)
+        _entries[:] = [e for i, e in enumerate(_entries) if i not in to_remove]
+        removed = before - len(_entries)
+        if removed:
+            _save_pool_file()
+        return removed
+
+
+def clear_all() -> int:
+    """Clear all entries. Returns count removed."""
+    with _pool_lock:
+        count = len(_entries)
+        _entries.clear()
+        _save_pool_file()
+    return count
+
+
+def _save_pool_file():
+    """Write current entries to pool file."""
+    pool_file = getattr(cfg, "PLUS_ACT_SMS_POOL_FILE", "")
+    if not pool_file:
+        return
+    if not os.path.isabs(pool_file):
+        pool_file = os.path.join(cfg.BASE_DIR, pool_file)
+    try:
+        os.makedirs(os.path.dirname(pool_file), exist_ok=True)
+        with open(pool_file, "w", encoding="utf-8") as f:
+            for e in _entries:
+                f.write(f"{e.phone}----{e.verify_url}\n")
+    except Exception:
+        pass

@@ -1,6 +1,8 @@
 """Plus 激活控制接口"""
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import List, Optional
 
 from global_state import verify_token
 from utils.plus_activation import (
@@ -59,3 +61,29 @@ def api_plus_sms_pool():
 def api_plus_sms_pool_reload():
     sms_pool.reload_pool()
     return {"ok": True, "message": "SMS 池已重新加载"}
+
+
+class SmsImportRequest(BaseModel):
+    text: str
+
+
+class SmsDeleteRequest(BaseModel):
+    indices: List[int]
+
+
+@router.post("/sms_pool/import", dependencies=[Depends(verify_token)])
+def api_plus_sms_pool_import(req: SmsImportRequest):
+    count = sms_pool.import_entries(req.text)
+    return {"ok": True, "message": f"已导入 {count} 条接码池条目", "count": count}
+
+
+@router.post("/sms_pool/delete", dependencies=[Depends(verify_token)])
+def api_plus_sms_pool_delete(req: SmsDeleteRequest):
+    count = sms_pool.delete_entries(req.indices)
+    return {"ok": True, "message": f"已删除 {count} 条", "count": count}
+
+
+@router.post("/sms_pool/clear", dependencies=[Depends(verify_token)])
+def api_plus_sms_pool_clear():
+    count = sms_pool.clear_all()
+    return {"ok": True, "message": f"已清空 {count} 条接码池条目", "count": count}
