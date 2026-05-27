@@ -715,6 +715,18 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             success_text = f"🎉 注册成功\n账号: {final_email}\n密码: {final_password}\n时间: {current_time}\n(温馨提示: 您的TG单号自定义模板配置有误)"
 
         send_tg_msg_sync(success_text)
+
+        # Plus 激活入队
+        if getattr(cfg, 'PLUS_ACT_ENABLE', False):
+            try:
+                from utils.plus_activation import enqueue
+                result = enqueue(account_email, password, token_json_str)
+                if result == -1:
+                    print(f"[Plus激活] 账号 {account_email} 已在队列中，跳过")
+                else:
+                    print(f"[Plus激活] 账号 {account_email} 已加入激活队列 (id={result})")
+            except Exception as e:
+                print(f"[Plus激活] 入队失败 {account_email}: {e}")
     return ret_status
 
 def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False, assigned_domain=None, batch_id=None, worker_index=None):

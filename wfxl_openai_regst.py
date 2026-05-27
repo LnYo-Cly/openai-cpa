@@ -245,6 +245,14 @@ def _worker_push_thread():
         elif getattr(core_engine.cfg, 'ENABLE_SUB2API_MODE', False): engine.start_sub2api(args)
         else: engine.start_normal(args)
 
+        if getattr(core_engine.cfg, 'PLUS_ACT_ENABLE', False):
+            try:
+                from utils.plus_activation import start as plus_start
+                plus_start()
+                print("[系统] Plus 激活 Worker 已启动")
+            except Exception as e:
+                print(f"[系统] Plus 激活 Worker 启动失败: {e}")
+
     async def _ws_loop():
         nonlocal last_role
         try: import websockets

@@ -947,7 +947,7 @@ async def check_update(current_version: str, token: str = Depends(verify_token))
                     return {"status": "error", "message": "无法从 GitHub 获取重定向地址"}
                 remote_version = redirect_url.split("/")[-1]
                 html_url = redirect_url
-                download_url = f"https://github.com/wenfxl/openai-cpa/archive/refs/tags/{remote_version}.zip"
+                download_url = f"https://github.com/LnYo-Cly/openai-cpa/archive/refs/tags/{remote_version}.zip"
             else:
                 return {"status": "error", "message": f"获取版本失败，状态码: {resp.status_code}"}
         def _parse(v):

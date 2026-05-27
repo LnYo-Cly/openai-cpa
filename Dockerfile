@@ -10,6 +10,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+RUN apt-get update && \
+    playwright install chromium --with-deps && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY . .
 
 RUN rm -rf utils/auth_core/*.py 2>/dev/null || true

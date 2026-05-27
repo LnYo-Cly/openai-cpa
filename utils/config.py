@@ -964,6 +964,29 @@ def reload_all_configs(new_config_dict=None):
     TEAM_MODE_ENABLE = safe_bool(_team.get("enable", False))
     TEAM_MODE_OVERSPEED = safe_bool(_team.get("overspeed", False))
 
+    global PLUS_ACT_ENABLE, PLUS_ACT_MAX_CONCURRENT, PLUS_ACT_RETRY_LIMIT, PLUS_ACT_RETRY_DELAY
+    global PLUS_ACT_HEADLESS, PLUS_ACT_BROWSER_TIMEOUT, PLUS_ACT_CHECKOUT_API_URL
+    global PLUS_ACT_COUNTRY, PLUS_ACT_PAYMENT_METHOD, PLUS_ACT_ADDRESS_API_URL
+    global PLUS_ACT_SMS_POOL_FILE, PLUS_ACT_PUSH_TARGETS, PLUS_ACT_PROXY
+    global PLUS_ACT_SHOP_MERCHANT_TOKEN, PLUS_ACT_SHOP_GOODS_ID
+
+    _plus = _c.get("plus_activation", {})
+    PLUS_ACT_ENABLE = safe_bool(_plus.get("enable", False))
+    PLUS_ACT_MAX_CONCURRENT = safe_int(_plus.get("max_concurrent", 1), 1)
+    PLUS_ACT_RETRY_LIMIT = safe_int(_plus.get("retry_limit", 3), 3)
+    PLUS_ACT_RETRY_DELAY = safe_int(_plus.get("retry_delay_sec", 30), 30)
+    PLUS_ACT_HEADLESS = safe_bool(_plus.get("headless", True))
+    PLUS_ACT_BROWSER_TIMEOUT = safe_int(_plus.get("browser_timeout_sec", 120), 120)
+    PLUS_ACT_CHECKOUT_API_URL = str(_plus.get("checkout_api_url", "")).strip()
+    PLUS_ACT_COUNTRY = str(_plus.get("country", "US")).strip()
+    PLUS_ACT_PAYMENT_METHOD = str(_plus.get("payment_method", "paypal")).strip()
+    PLUS_ACT_ADDRESS_API_URL = str(_plus.get("address_api_url", "")).strip()
+    PLUS_ACT_SMS_POOL_FILE = str(_plus.get("sms_pool_file", "")).strip()
+    PLUS_ACT_PUSH_TARGETS = _plus.get("push_targets", [])
+    PLUS_ACT_PROXY = str(_plus.get("proxy", "")).strip()
+    PLUS_ACT_SHOP_MERCHANT_TOKEN = str(_plus.get("shop_merchant_token", "")).strip()
+    PLUS_ACT_SHOP_GOODS_ID = safe_int(_plus.get("shop_goods_id", 0), 0)
+
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")
 

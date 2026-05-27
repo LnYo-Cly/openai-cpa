@@ -148,6 +148,20 @@ def init_db():
             execute_sql(c, 'ALTER TABLE team_accounts ADD COLUMN access_token TEXT;')
         except Exception:
             pass
+
+        execute_sql(c, '''
+            CREATE TABLE IF NOT EXISTS plus_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                password TEXT NOT NULL,
+                token_data TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0,
+                error_msg TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
     print(f"[{cfg.ts()}] [系统] 数据库模块初始化完成 (引擎: {DB_TYPE.upper()})")
 
 

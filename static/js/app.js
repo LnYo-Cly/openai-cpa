@@ -331,6 +331,7 @@ createApp({
                     { id: 'sms', name: '手机接码', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>' },
                     { id: 'proxy', name: '网络代理', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>' },
                     { id: 'relay', name: '中转管仓', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
+                    { id: 'plus', name: 'Plus 激活', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>' },
                     { id: 'notify', name: '消息通知', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h6a3 3 0 013 3v1a3 3 0 01-3 3H9.436c-1.532 0-2.22.24-2.893.542z"></path></svg>' },
                     { id: 'concurrency', name: '并发与系统', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>' },
 				// { id: 'cf_routes', name: 'CF 路由', icon: '🌍' },
@@ -342,6 +343,10 @@ createApp({
             luckmailManualAutoTag: false,
             isManualBuying: false,
 			cfRoutes: [],
+			plusStatus: { is_running: false, queue_stats: {}, sms_pool: {}, current_account: '' },
+			plusQueue: [],
+			plusQueueLoading: false,
+			plusSmsPoolText: '',
             heroSmsBalance: '0.00',
             heroSmsPrices: [],
             isLoadingBalance: false,
@@ -1209,6 +1214,11 @@ createApp({
                 this.fetchGitSyncStatus(false);
                 this.fetchCleanupStatus(false);
             }
+            if (this.currentTab === 'plus') {
+                this.fetchPlusStatus();
+                this.fetchPlusQueue();
+                this.fetchPlusSmsPool();
+            }
         },
         startStatsPolling() {
             if(this.statsTimer) clearTimeout(this.statsTimer);
@@ -1314,6 +1324,15 @@ createApp({
 
 
                 if (this.config) {
+                    if (!this.config.plus_activation) {
+                        this.config.plus_activation = {
+                            enable: false, max_concurrent: 1, retry_limit: 3, retry_delay_sec: 30,
+                            headless: true, browser_timeout_sec: 120, checkout_api_url: '',
+                            country: 'US', payment_method: 'paypal', address_api_url: '',
+                            sms_pool_file: 'data/sms_pool.txt', push_targets: [], proxy: '',
+                            shop_merchant_token: '', shop_goods_id: 0,
+                        };
+                    }
                     if (!this.config.smsbower) {
                         this.config.smsbower = {
                             enabled: false, api_key: '', country: 0, service: 'dr',
@@ -4907,6 +4926,74 @@ async exportSub2Api() {
                     this.currentTab = 'email';
                 } else this.showToast(data.message, 'error');
             } catch (e) { this.showToast('请求异常', 'error'); } finally { this.cfTools.isSettingCatchAll = false; }
+        },
+
+        // ===== Plus Activation Methods =====
+        async fetchPlusStatus() {
+            try {
+                const res = await this.authFetch('/api/plus/status');
+                const data = await res.json();
+                this.plusStatus = data;
+            } catch (e) {}
+        },
+        async startPlusWorker() {
+            try {
+                await this.authFetch('/api/plus/start', { method: 'POST' });
+                this.showToast('Plus 激活 Worker 已启动', 'success');
+                this.fetchPlusStatus();
+            } catch (e) { this.showToast('启动失败', 'error'); }
+        },
+        async stopPlusWorker() {
+            try {
+                await this.authFetch('/api/plus/stop', { method: 'POST' });
+                this.showToast('Plus 激活 Worker 已停止', 'info');
+                this.fetchPlusStatus();
+            } catch (e) { this.showToast('停止失败', 'error'); }
+        },
+        async fetchPlusQueue(status) {
+            this.plusQueueLoading = true;
+            try {
+                const url = status ? `/api/plus/queue?status=${status}` : '/api/plus/queue';
+                const res = await this.authFetch(url);
+                const data = await res.json();
+                this.plusQueue = data.items || [];
+            } catch (e) {} finally { this.plusQueueLoading = false; }
+        },
+        async retryPlusFailed() {
+            try {
+                await this.authFetch('/api/plus/queue/retry', { method: 'POST' });
+                this.showToast('已重置失败任务', 'success');
+                this.fetchPlusQueue();
+                this.fetchPlusStatus();
+            } catch (e) { this.showToast('操作失败', 'error'); }
+        },
+        async clearPlusDone() {
+            try {
+                await this.authFetch('/api/plus/queue/clear', { method: 'POST' });
+                this.showToast('已清理完成任务', 'success');
+                this.fetchPlusQueue();
+                this.fetchPlusStatus();
+            } catch (e) { this.showToast('操作失败', 'error'); }
+        },
+        async fetchPlusSmsPool() {
+            try {
+                const res = await this.authFetch('/api/plus/sms_pool');
+                const data = await res.json();
+                if (this.plusStatus) this.plusStatus.sms_pool = data;
+            } catch (e) {}
+        },
+        async reloadPlusSmsPool() {
+            try {
+                await this.authFetch('/api/plus/sms_pool/reload', { method: 'POST' });
+                this.showToast('SMS 接码池已重新加载', 'success');
+                this.fetchPlusSmsPool();
+            } catch (e) { this.showToast('加载失败', 'error'); }
+        },
+        togglePlusPushTarget(target) {
+            if (!this.config.plus_activation.push_targets) this.config.plus_activation.push_targets = [];
+            const idx = this.config.plus_activation.push_targets.indexOf(target);
+            if (idx >= 0) this.config.plus_activation.push_targets.splice(idx, 1);
+            else this.config.plus_activation.push_targets.push(target);
         },
     }
 }).mount('#app');
