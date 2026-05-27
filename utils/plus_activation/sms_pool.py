@@ -55,9 +55,9 @@ def _parse_pool_file(path: str) -> list:
 
 def reload_pool():
     global _entries, _loaded_at
-    pool_file = getattr(cfg, "PLUS_ACT_SMS_POOL_FILE", "")
+    pool_file = getattr(cfg, "PLUS_ACT_SMS_POOL_FILE", "data/sms_pool.txt")
     if not pool_file:
-        return
+        pool_file = "data/sms_pool.txt"
     if not os.path.isabs(pool_file):
         pool_file = os.path.join(cfg.BASE_DIR, pool_file)
     new_entries = _parse_pool_file(pool_file)
@@ -189,6 +189,7 @@ def import_entries(text: str) -> int:
                 existing_keys.add(key)
                 added += 1
         _save_pool_file()
+    print(f"[Plus激活] SMS 池导入完成: 新增 {added} 条, 总计 {len(_entries)} 条")
     return added
 
 
@@ -225,15 +226,17 @@ def clear_all() -> int:
 
 def _save_pool_file():
     """Write current entries to pool file."""
-    pool_file = getattr(cfg, "PLUS_ACT_SMS_POOL_FILE", "")
+    pool_file = getattr(cfg, "PLUS_ACT_SMS_POOL_FILE", "data/sms_pool.txt")
     if not pool_file:
-        return
+        pool_file = "data/sms_pool.txt"
     if not os.path.isabs(pool_file):
         pool_file = os.path.join(cfg.BASE_DIR, pool_file)
     try:
-        os.makedirs(os.path.dirname(pool_file), exist_ok=True)
+        dir_path = os.path.dirname(pool_file)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
         with open(pool_file, "w", encoding="utf-8") as f:
             for e in _entries:
                 f.write(f"{e.phone}----{e.verify_url}\n")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[Plus激活] SMS 池文件保存失败 ({pool_file}): {exc}")

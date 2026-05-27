@@ -1217,9 +1217,8 @@ createApp({
                 this.fetchCleanupStatus(false);
             }
             if (this.currentTab === 'plus') {
-                this.fetchPlusStatus();
+                await this.fetchPlusStatus();
                 this.fetchPlusQueue();
-                this.fetchPlusSmsPool();
             }
         },
         startStatsPolling() {
@@ -4946,8 +4945,11 @@ async exportSub2Api() {
             try {
                 const res = await this.authFetch('/api/plus/status');
                 const data = await res.json();
+                if (!data.sms_pool) data.sms_pool = {};
                 this.plusStatus = data;
-            } catch (e) {}
+            } catch (e) {
+                console.error('fetchPlusStatus failed', e);
+            }
         },
         async startPlusWorker() {
             try {
@@ -5006,7 +5008,7 @@ async exportSub2Api() {
                 const data = await res.json();
                 this.showToast(data.message || '导入成功', 'success');
                 this.plusSmsImportText = '';
-                this.fetchPlusSmsPool();
+                await this.fetchPlusStatus();
             } catch (e) { this.showToast('导入失败', 'error'); }
         },
         async deletePlusSmsEntry(index) {
@@ -5019,7 +5021,7 @@ async exportSub2Api() {
                 const data = await res.json();
                 this.showToast(data.message, 'success');
                 this.plusSmsSelectedEntries = [];
-                this.fetchPlusSmsPool();
+                await this.fetchPlusStatus();
             } catch (e) { this.showToast('删除失败', 'error'); }
         },
         async deleteSelectedPlusSmsEntries() {
@@ -5033,7 +5035,7 @@ async exportSub2Api() {
                 const data = await res.json();
                 this.showToast(data.message, 'success');
                 this.plusSmsSelectedEntries = [];
-                this.fetchPlusSmsPool();
+                await this.fetchPlusStatus();
             } catch (e) { this.showToast('删除失败', 'error'); }
         },
         async clearAllPlusSmsEntries() {
@@ -5043,7 +5045,7 @@ async exportSub2Api() {
                 const data = await res.json();
                 this.showToast(data.message, 'success');
                 this.plusSmsSelectedEntries = [];
-                this.fetchPlusSmsPool();
+                await this.fetchPlusStatus();
             } catch (e) { this.showToast('清空失败', 'error'); }
         },
         toggleAllSmsEntries(event) {
