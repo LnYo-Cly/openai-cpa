@@ -1975,6 +1975,10 @@ createApp({
             if (tabId === 'team_accounts') {
                 this.fetchTeamAccounts();
             }
+            if (tabId === 'plus') {
+                this.fetchPlusStatus();
+                this.fetchPlusQueue();
+            }
         },
         async exportSelectedAccounts() {
             if (this.selectedAccounts.length === 0) {
