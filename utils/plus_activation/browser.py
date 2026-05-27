@@ -23,6 +23,11 @@ async def launch_browser(playwright_instance):
         "--disable-dev-shm-usage",
     ]
 
+    launch_opts = {
+        "headless": headless,
+        "args": launch_args,
+    }
+
     context_opts = {
         "viewport": {"width": 1280, "height": 800},
         "user_agent": (
@@ -31,24 +36,35 @@ async def launch_browser(playwright_instance):
             "Chrome/125.0.0.0 Safari/537.36"
         ),
     }
-    if proxy:
-        if "://" in proxy:
-            parsed = proxy.split("://", 1)
-            context_opts["proxy"] = {"server": f"{parsed[0]}://{parsed[1]}"}
-            if "@" in parsed[1]:
-                auth_part, server_part = parsed[1].rsplit("@", 1)
-                if ":" in auth_part:
-                    u, p = auth_part.split(":", 1)
-                    context_opts["proxy"]["username"] = u
-                    context_opts["proxy"]["password"] = p
-        else:
-            context_opts["proxy"] = {"server": f"http://{proxy}"}
 
-    browser_instance = await playwright_instance.chromium.launch(
-        headless=headless,
-        args=launch_args,
-    )
+    if proxy:
+        scheme, server, username, password = _parse_proxy(proxy)
+        # Browser launch proxy enables context-level proxy override
+        launch_opts["proxy"] = {"server": f"{scheme}://{server}"}
+        # Context-level proxy with optional auth
+        ctx_proxy = {"server": f"{scheme}://{server}"}
+        if username:
+            ctx_proxy["username"] = username
+            ctx_proxy["password"] = password
+        context_opts["proxy"] = ctx_proxy
+
+    browser_instance = await playwright_instance.chromium.launch(**launch_opts)
     return browser_instance, context_opts, timeout
+
+
+def _parse_proxy(proxy: str):
+    """Parse proxy string into (scheme, server, username, password)."""
+    scheme = "http"
+    rest = proxy
+    if "://" in proxy:
+        scheme, rest = proxy.split("://", 1)
+    username, password = "", ""
+    if "@" in rest:
+        auth_part, server = rest.rsplit("@", 1)
+        if ":" in auth_part:
+            username, password = auth_part.split(":", 1)
+        rest = server
+    return scheme, rest, username, password
 
 
 async def activate_plus(browser_instance, context_opts: dict, page_timeout: int,
@@ -117,7 +133,7 @@ async def _run_checkout_flow(page, timeout: int, access_token: str) -> bool:
 
 
 async def _resolve_checkout_root(page):
-    """Return the root locator for checkout form — page itself or a Stripe iframe."""
+    """Return the root frame for checkout form — page itself or a Stripe iframe frame."""
     if "checkout.stripe.com" in page.url:
         return page
 
@@ -130,9 +146,14 @@ async def _resolve_checkout_root(page):
         'iframe[src*="stripe.com"]',
     ]:
         try:
-            frame_loc = page.locator(sel).first
-            if await frame_loc.count() > 0:
-                return frame_loc.content_frame
+            frame_el = page.locator(sel).first
+            if await frame_el.count() > 0:
+                # Get the Frame object (not FrameLocator) — supports evaluate/wait_for_timeout
+                src = await frame_el.get_attribute("src")
+                if src:
+                    frame = page.frame(url=src)
+                    if frame:
+                        return frame
         except Exception:
             continue
 
@@ -341,7 +362,8 @@ async def _paypal_guest_checkout(page, timeout: int):
     card_number = generate_visa_card()
     expiry = generate_card_expiry()
     cvv = generate_card_cvv()
-    address = fetch_us_address()
+    loop = asyncio.get_event_loop()
+    address = await loop.run_in_executor(None, fetch_us_address)
     sms_entry = sms_pool.choose_entry()
     phone = sms_entry.phone if sms_entry else "1234567890"
 

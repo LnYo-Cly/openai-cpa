@@ -27,7 +27,7 @@ def enqueue(email: str, password: str, token_data: str) -> int:
 
 
 def dequeue() -> Optional[dict]:
-    with get_db_conn(is_write=True) as conn:
+    with get_db_conn(is_write=True, as_dict=True) as conn:
         c = get_cursor(conn, as_dict=True)
         execute_sql(c, (
             "SELECT * FROM plus_queue WHERE status = 'pending' "
@@ -52,7 +52,7 @@ def mark_done(item_id: int):
 
 
 def mark_failed(item_id: int, error_msg: str, max_retries: int = 3):
-    with get_db_conn(is_write=True) as conn:
+    with get_db_conn(is_write=True, as_dict=True) as conn:
         c = get_cursor(conn, as_dict=True)
         execute_sql(c, "SELECT retry_count FROM plus_queue WHERE id = ?", (item_id,))
         row = c.fetchone()
@@ -81,7 +81,7 @@ def get_queue_stats() -> dict:
 
 
 def get_queue_items(status: str = None, limit: int = 50, offset: int = 0) -> list:
-    with get_db_conn() as conn:
+    with get_db_conn(as_dict=True) as conn:
         c = get_cursor(conn, as_dict=True)
         if status:
             execute_sql(c, (

@@ -5,6 +5,7 @@ from curl_cffi import requests
 
 from utils import config as cfg
 from utils import db_manager
+from utils.db_manager import get_db_conn, get_cursor, execute_sql
 
 
 def push_activated_account(token_data: dict, targets: list) -> dict:
@@ -16,7 +17,11 @@ def push_activated_account(token_data: dict, targets: list) -> dict:
     email = token_data.get("email", "")
     if email:
         try:
-            db_manager.save_account_to_db(email, "", json.dumps(token_data, ensure_ascii=False))
+            content = json.dumps(token_data, ensure_ascii=False)
+            # UPDATE only — preserve existing password from registration
+            with get_db_conn(is_write=True) as conn:
+                c = get_cursor(conn)
+                execute_sql(c, "UPDATE accounts SET token_data = ? WHERE email = ?", (content, email))
         except Exception:
             pass
 
