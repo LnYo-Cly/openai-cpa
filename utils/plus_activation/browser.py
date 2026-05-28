@@ -41,12 +41,19 @@ async def launch_browser(playwright_instance):
         scheme, server, username, password = _parse_proxy(proxy)
         # Browser launch proxy enables context-level proxy override
         launch_opts["proxy"] = {"server": f"{scheme}://{server}"}
-        # Context-level proxy with optional auth
-        ctx_proxy = {"server": f"{scheme}://{server}"}
-        if username:
-            ctx_proxy["username"] = username
-            ctx_proxy["password"] = password
-        context_opts["proxy"] = ctx_proxy
+        # Context-level proxy with optional auth (SOCKS5 does not support auth)
+        if scheme.lower() in ("socks5", "socks4", "socks5h"):
+            if username:
+                print("[Plus激活][WARN] Chromium 不支持 SOCKS 代理认证，代理将以无认证模式运行")
+            context_opts["proxy"] = {"server": f"{scheme}://{server}"}
+        elif username:
+            context_opts["proxy"] = {
+                "server": f"{scheme}://{server}",
+                "username": username,
+                "password": password,
+            }
+        else:
+            context_opts["proxy"] = {"server": f"{scheme}://{server}"}
 
     browser_instance = await playwright_instance.chromium.launch(**launch_opts)
     return browser_instance, context_opts, timeout
