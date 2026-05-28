@@ -58,17 +58,76 @@ SEED_ADDRESSES = {
 
 
 def create_checkout(accessToken: str) -> dict:
-    api_url = getattr(cfg, "PLUS_ACT_CHECKOUT_API_URL", "")
-    if not api_url:
-        raise ValueError("未配置 Checkout API URL")
+    """Create checkout session via ChatGPT backend API (same as extension)."""
+    # If external Checkout API is configured, use it (with optional API key)
+    ext_api_url = getattr(cfg, "PLUS_ACT_CHECKOUT_API_URL", "")
+    if ext_api_url:
+        return _create_checkout_external(accessToken, ext_api_url)
+
+    # Default: call ChatGPT backend API directly (no extra key needed)
+    return _create_checkout_chatgpt(accessToken)
+
+
+def _create_checkout_chatgpt(accessToken: str) -> dict:
+    """Call ChatGPT's own /backend-api/payments/checkout — matches extension flow."""
+    country = getattr(cfg, "PLUS_ACT_COUNTRY", "US")
+    method = getattr(cfg, "PLUS_ACT_PAYMENT_METHOD", "paypal")
+    proxy = getattr(cfg, "PLUS_ACT_PROXY", "")
+
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+
+    currency_map = {
+        "US": "USD", "AU": "AUD", "DE": "EUR", "FR": "EUR",
+        "ID": "IDR", "JP": "JPY", "KR": "KRW", "GB": "GBP",
+    }
+    currency = currency_map.get(country, "USD")
+
+    payload = {
+        "entry_point": "all_plans_pricing_modal",
+        "plan_name": "chatgptplusplan",
+        "checkout_ui_mode": "hosted" if method == "paypal" else "custom",
+        "billing_details": {
+            "country": country,
+            "currency": currency,
+        },
+        "promo_campaign": {
+            "promo_campaign_id": "plus-1-month-free",
+            "is_coupon_from_query_param": False,
+        },
+    }
+
+    resp = requests.post(
+        "https://chatgpt.com/backend-api/payments/checkout",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {accessToken}",
+            "Content-Type": "application/json",
+        },
+        timeout=30,
+        proxies=proxies,
+        impersonate="chrome110",
+    )
+
+    if resp.status_code != 200:
+        raise ValueError(f"ChatGPT Checkout API 返回 HTTP {resp.status_code}: {resp.text[:300]}")
+
+    data = resp.json()
+    session_id = data.get("checkout_session_id")
+    if not session_id:
+        raise ValueError(f"ChatGPT Checkout API 未返回 session ID: {data}")
+
+    checkout_url = f"https://chatgpt.com/checkout/openai_llc/{session_id}"
+    return {"checkout_url": checkout_url, "raw": data}
+
+
+def _create_checkout_external(accessToken: str, api_url: str) -> dict:
+    """Call external Checkout API (fallback, requires API key)."""
     api_key = getattr(cfg, "PLUS_ACT_CHECKOUT_API_KEY", "")
     country = getattr(cfg, "PLUS_ACT_COUNTRY", "US")
     method = getattr(cfg, "PLUS_ACT_PAYMENT_METHOD", "paypal")
     proxy = getattr(cfg, "PLUS_ACT_PROXY", "")
 
-    proxies = None
-    if proxy:
-        proxies = {"http": proxy, "https": proxy}
+    proxies = {"http": proxy, "https": proxy} if proxy else None
 
     headers = {"Content-Type": "application/json"}
     if api_key:
