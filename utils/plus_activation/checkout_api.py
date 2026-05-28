@@ -61,6 +61,7 @@ def create_checkout(accessToken: str) -> dict:
     api_url = getattr(cfg, "PLUS_ACT_CHECKOUT_API_URL", "")
     if not api_url:
         raise ValueError("未配置 Checkout API URL")
+    api_key = getattr(cfg, "PLUS_ACT_CHECKOUT_API_KEY", "")
     country = getattr(cfg, "PLUS_ACT_COUNTRY", "US")
     method = getattr(cfg, "PLUS_ACT_PAYMENT_METHOD", "paypal")
     proxy = getattr(cfg, "PLUS_ACT_PROXY", "")
@@ -69,11 +70,15 @@ def create_checkout(accessToken: str) -> dict:
     if proxy:
         proxies = {"http": proxy, "https": proxy}
 
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
     resp = requests.post(api_url, json={
         "accessToken": accessToken,
         "paymentMethod": method,
         "country": country,
-    }, headers={"Content-Type": "application/json"}, timeout=30, proxies=proxies,
+    }, headers=headers, timeout=30, proxies=proxies,
         impersonate="chrome110")
 
     if resp.status_code != 200:
