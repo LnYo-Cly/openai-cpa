@@ -379,7 +379,7 @@
                             </div>
                         </div>
 
-                        <div v-if="currentTab === 'console'" class="h-full flex flex-col">
+                        <div v-show="currentTab === 'console'" class="h-full flex flex-col">
                             <div class="flex justify-between items-end mb-3 md:mb-4">
                                 <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">实时运行日志</h2>
                                 <button @click="clearLogs" class="text-xs md:text-sm bg-white/80 backdrop-blur-md text-slate-600 px-4 py-2 rounded-xl hover:bg-white active:scale-95 transition-all font-bold shadow-sm border border-slate-200 flex items-center gap-2">
@@ -442,7 +442,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-if="currentTab === 'cluster'" class="h-full flex flex-col space-y-6">
+                        <div v-show="currentTab === 'cluster'" class="h-full flex flex-col space-y-6">
                             <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60 mb-4" v-if="config">
                                 <h3 class="text-lg font-black text-indigo-700 mb-4 flex items-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.256-3.905 14.16 0M1 9.828c5.857-5.858 15.355-5.858 21.213 0"></path></svg> 分布式节点通信配置</h3>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -666,7 +666,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-if="currentTab === 'accounts'" class="inventory-shell inventory-panel mobile-table-priority rounded-2xl overflow-hidden transition-shadow duration-300 hover:shadow-md">
+                        <div v-show="currentTab === 'accounts'" class="inventory-shell inventory-panel mobile-table-priority rounded-2xl overflow-hidden transition-shadow duration-300 hover:shadow-md">
                             <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4">
                                 <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
                                     <div class="flex items-center gap-3">
@@ -920,7 +920,282 @@
                             </div>
                         </div>
 
-                        <div v-if="currentTab === 'mailboxes'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative transition-shadow duration-300 hover:shadow-md">
+                        <!-- Plus 激活面板 -->
+                        <div v-show="currentTab === 'plus'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
+                            <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4">
+                                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
+                                    <div class="flex items-center gap-3">
+                                        <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Plus 激活</h2>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="fetchPlusStatus()" class="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 active:scale-95 transition-all">刷新</button>
+                                        <button v-if="!plusStatus.is_running" @click="startPlusWorker()" class="px-3 py-1.5 text-xs font-semibold bg-green-500 text-white rounded-lg hover:bg-green-600 active:scale-95 transition-all">启动 Worker</button>
+                                        <button v-else @click="stopPlusWorker()" class="px-3 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 active:scale-95 transition-all">停止 Worker</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="px-5 md:px-8 py-6 space-y-6">
+                                <!-- 状态概览 -->
+                                <div class="grid grid-cols-4 gap-4">
+                                    <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+                                        <div class="text-xs text-slate-500 mb-1">Worker 状态</div>
+                                        <div class="text-lg font-bold" :class="plusStatus.is_running ? 'text-green-600' : 'text-slate-400'">{{ plusStatus.is_running ? '运行中' : '已停止' }}</div>
+                                    </div>
+                                    <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+                                        <div class="text-xs text-slate-500 mb-1">待处理</div>
+                                        <div class="text-lg font-black text-amber-600">{{ plusStatus.queue_stats?.pending || 0 }}</div>
+                                    </div>
+                                    <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+                                        <div class="text-xs text-slate-500 mb-1">已完成</div>
+                                        <div class="text-lg font-black text-green-600">{{ plusStatus.queue_stats?.done || 0 }}</div>
+                                    </div>
+                                    <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+                                        <div class="text-xs text-slate-500 mb-1">失败</div>
+                                        <div class="text-lg font-black text-red-500">{{ plusStatus.queue_stats?.failed || 0 }}</div>
+                                    </div>
+                                </div>
+                                <div v-if="plusStatus.current_account" class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700">
+                                    正在处理: <span class="font-mono font-semibold">{{ plusStatus.current_account }}</span>
+                                </div>
+                                <!-- Plus 配置卡片 -->
+                                <div v-if="config.plus_activation" class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div class="px-5 py-3 bg-slate-50 border-b border-slate-100">
+                                        <h3 class="text-sm font-bold text-slate-700">Plus 配置</h3>
+                                    </div>
+                                    <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">启用 Plus 激活</label>
+                                            <input type="checkbox" v-model="config.plus_activation.enable" @change="togglePlusEnable()" class="rounded">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">国家</label>
+                                            <input type="text" v-model="config.plus_activation.country" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">浏览器超时 (秒)</label>
+                                            <input type="number" v-model="config.plus_activation.browser_timeout_sec" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">最大重试次数</label>
+                                            <input type="number" v-model="config.plus_activation.retry_limit" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">重试间隔 (秒)</label>
+                                            <input type="number" v-model="config.plus_activation.retry_delay_sec" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">代理</label>
+                                            <input type="text" v-model="config.plus_activation.proxy" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="socks5://host:port">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">云端支付 API</label>
+                                            <input type="text" v-model="config.plus_activation.checkout_api_url" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="留空则直连 ChatGPT API">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">云端支付 API Key</label>
+                                            <input type="text" v-model="config.plus_activation.checkout_api_key" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="使用外部 API 时填写">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">推送目标</label>
+                                            <input type="text" :value="(config.plus_activation.push_targets || []).join(', ')" @input="config.plus_activation.push_targets = $event.target.value.split(',').map(s => s.trim()).filter(Boolean)" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="shop, sub2api, cpa">
+                                        </div>
+                                    </div>
+                                    <div class="px-5 py-3 border-t border-slate-100 flex justify-end">
+                                        <button @click="saveConfig()" class="px-4 py-2 text-xs font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 active:scale-95 transition-all">保存配置</button>
+                                    </div>
+                                </div>
+                                <!-- SMS 接码池卡片 -->
+                                <div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div class="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                        <h3 class="text-sm font-bold text-slate-700">SMS 接码池</h3>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="deleteSelectedPlusSmsEntries()" v-if="plusSmsSelectedEntries.length > 0" class="px-3 py-1 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600">删除选中 ({{ plusSmsSelectedEntries.length }})</button>
+                                            <button @click="clearAllPlusSmsEntries()" class="px-3 py-1 text-xs font-semibold bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300">清空</button>
+                                        </div>
+                                    </div>
+                                    <div class="p-5 space-y-4">
+                                        <div v-if="plusStatus.sms_pool" class="grid grid-cols-3 gap-4 mb-4">
+                                            <div class="text-center">
+                                                <div class="text-2xl font-black text-slate-800">{{ plusStatus.sms_pool.total || 0 }}</div>
+                                                <div class="text-xs text-slate-500">总数</div>
+                                            </div>
+                                            <div class="text-center">
+                                                <div class="text-2xl font-black text-green-600">{{ plusStatus.sms_pool.available || 0 }}</div>
+                                                <div class="text-xs text-slate-500">可用</div>
+                                            </div>
+                                            <div class="text-center">
+                                                <div class="text-2xl font-black text-red-500">{{ plusStatus.sms_pool.disabled || 0 }}</div>
+                                                <div class="text-xs text-slate-500">禁用</div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-bold text-blue-600 mb-2 block">导入接码池 (每行一条: 手机号----验证URL)</label>
+                                            <textarea v-model="plusSmsImportText" rows="3" class="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-mono" placeholder="+16099987195----https://api.sms8.net/api/record?token=xxx"></textarea>
+                                            <button @click="importPlusSmsPool()" class="mt-2 px-4 py-2 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:scale-95 transition-all">导入</button>
+                                        </div>
+                                        <div v-if="plusStatus.sms_pool?.entries?.length" class="overflow-x-auto">
+                                            <table class="w-full text-sm">
+                                                <thead class="bg-slate-50">
+                                                    <tr>
+                                                        <th class="px-3 py-2 text-left"><input type="checkbox" @change="toggleAllSmsEntries($event)" :checked="plusSmsSelectedEntries.length === plusStatus.sms_pool.entries.length && plusStatus.sms_pool.entries.length > 0" class="rounded"></th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">手机号</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">验证 URL</th>
+                                                        <th class="px-3 py-2 text-center text-xs font-semibold text-slate-500">使用次数</th>
+                                                        <th class="px-3 py-2 text-center text-xs font-semibold text-slate-500">状态</th>
+                                                        <th class="px-3 py-2 text-center text-xs font-semibold text-slate-500">操作</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="(entry, i) in plusStatus.sms_pool.entries" :key="i" class="border-b border-slate-100 hover:bg-slate-50">
+                                                        <td class="px-3 py-2"><input type="checkbox" :value="i" v-model="plusSmsSelectedEntries" class="rounded"></td>
+                                                        <td class="px-3 py-2 font-mono text-xs">{{ entry.phone }}</td>
+                                                        <td class="px-3 py-2 text-xs text-slate-500 max-w-[200px] truncate">{{ entry.verify_url }}</td>
+                                                        <td class="px-3 py-2 text-center">{{ entry.use_count }}</td>
+                                                        <td class="px-3 py-2 text-center">
+                                                            <span v-if="entry.disabled" class="text-xs font-semibold text-red-500">禁用</span>
+                                                            <span v-else class="text-xs font-semibold text-green-600">可用</span>
+                                                        </td>
+                                                        <td class="px-3 py-2 text-center"><button @click="deletePlusSmsEntry(i)" class="text-xs text-red-500 hover:text-red-700">删除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div v-else class="text-center py-6 text-slate-400 text-sm">暂无接码池数据，请在上方导入</div>
+                                    </div>
+                                </div>
+                                <!-- 队列操作 -->
+                                <div class="flex items-center gap-3">
+                                    <button @click="retryPlusFailed()" class="px-3 py-1.5 text-xs font-semibold bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 active:scale-95 transition-all">重试失败任务</button>
+                                    <button @click="clearPlusDone()" class="px-3 py-1.5 text-xs font-semibold bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 active:scale-95 transition-all">清理完成任务</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-show="currentTab === 'image_accounts'" class="inventory-shell inventory-panel mobile-table-priority rounded-2xl overflow-hidden transition-shadow duration-300 hover:shadow-md">
+                            <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4">
+                                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
+                                    <div class="flex items-center gap-3">
+                                        <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">半成品库存</h2>
+                                        <button @click="fetchImageAccounts(true)" class="p-1.5 bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm" title="刷新列表">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                        </button>
+                                    </div>
+
+                                    <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
+                                        <div class="relative flex items-center">
+                                            <span class="absolute left-3 text-slate-400 text-sm"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                                            <input type="text" v-model="searchImageAccounts" placeholder="搜索半成品账号..." class="pl-8 pr-3 py-1.5 w-32 md:w-48 text-sm bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 transition shadow-sm font-medium">
+                                        </div>
+                                        <button @click="showAccountsPlaintext = !showAccountsPlaintext" class="text-sm bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                            <span v-if="showAccountsPlaintext">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.67-3.835m2.89-2.89A9.97 9.97 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-1.875 3.175m-2.89 2.89l-1.414-1.414M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                            </span>
+                                            <span v-else>
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                            </span>
+                                            {{ showAccountsPlaintext ? '脱敏' : '明文' }}
+                                        </button>
+                                        <div class="flex items-center gap-2 ml-auto xl:ml-2 border-l border-slate-200 pl-3">
+                                            <!-- 新增：一键全部获取 OAuth -->
+                                            <button @click="upgradeAllImageAccounts" :disabled="isUpgradingOAuthAll" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm font-bold rounded-lg hover:bg-indigo-100 transition flex items-center gap-1 shadow-sm disabled:opacity-50">
+                                                <svg v-if="isUpgradingOAuthAll" class="w-4 h-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                                                <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                                {{ isUpgradingOAuthAll ? '全量提取中...' : '一键全部获取 OAuth' }}
+                                            </button>
+                                            <button @click="exportImageAccounts" class="px-3 py-1.5 bg-slate-200/70 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-300 transition flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg> 导出全部</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div v-if="selectedImageAccounts.length > 0" class="flex flex-wrap items-center gap-3 bg-pink-50/80 border border-pink-100 p-2.5 rounded-xl shadow-sm transition-all duration-300 w-full animate-fade-in">
+                                    <span class="text-sm font-black text-pink-700 px-2 border-r border-pink-200">已选 {{ selectedImageAccounts.length }}</span>
+                                    <div class="flex items-center bg-white rounded-lg p-1 shadow-sm border border-slate-100 gap-1">
+                                        <span class="text-xs text-slate-400 font-bold px-2">操作:</span>
+                                        <button @click="upgradeSelectedImageAccounts" :disabled="isUpgradingSelected" class="px-3 py-1 bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-600 transition flex items-center gap-1 disabled:opacity-50">
+                                            <svg v-if="isUpgradingSelected" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                                            <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                            批量提取 OAuth
+                                        </button>
+                                        <button @click="deleteSelectedImageAccounts" class="px-3 py-1 bg-rose-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-rose-600 transition ml-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> 删除选中</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="inventory-table-wrap inventory-scroll-region inventory-table-scroll overflow-x-auto w-full min-h-[400px]">
+                                <table class="min-w-full divide-y divide-slate-100">
+                                    <thead class="bg-slate-50/80">
+                                        <tr>
+                                            <th class="px-3 md:px-4 py-3 text-left w-10"><input type="checkbox" @change="toggleAllImageAccounts" :checked="selectedImageAccounts.length === imageAccounts.length && imageAccounts.length > 0" class="form-checkbox w-4 h-4 text-pink-600 border-slate-300 rounded focus:ring-pink-500 transition-all"></th>
+                                            <th class="px-2 md:px-3 py-3 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest w-12">#</th>
+                                            <th class="px-3 md:px-4 py-3 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[200px]">账号 & 密码</th>
+                                            <th class="px-3 md:px-4 py-3 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">状态</th>
+                                            <th class="px-3 md:px-4 py-3 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[130px]">入库时间</th>
+                                            <th class="px-3 md:px-4 py-3 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-slate-50">
+                                        <tr v-if="imageAccounts.length === 0">
+                                            <td colspan="5" class="px-6 py-16 text-center text-slate-400 font-medium bg-slate-50/30">暂无 IMG 凭证记录</td>
+                                        </tr>
+                                        <tr v-for="(acc, index) in imageAccounts" :key="index" class="hover:bg-pink-50/40 transition duration-200" :class="{'bg-pink-50/60': selectedImageAccounts.includes(acc.email)}">
+                                            <td class="px-3 md:px-4 py-3 whitespace-nowrap"><input type="checkbox" :value="acc.email" v-model="selectedImageAccounts" class="form-checkbox w-4 h-4 text-pink-600 border-slate-300 rounded focus:ring-pink-500 transition-all"></td>
+                                            <td class="px-2 md:px-3 py-3 whitespace-nowrap text-xs text-slate-400 font-mono font-medium">{{ index + 1 + (imagePage-1)*imagePageSize }}</td>
+
+                                            <td class="px-3 md:px-4 py-3 whitespace-nowrap">
+                                                <div class="flex flex-col gap-1.5">
+                                                    <span class="text-sm font-bold text-slate-700">{{ showAccountsPlaintext ? acc.email : maskEmail(acc.email) }}</span>
+                                                    <div class="flex items-center gap-1.5 text-xs text-slate-500 font-mono">
+                                                        <span class="text-[10px] opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg></span>
+                                                        <span class="bg-slate-50 rounded px-1.5 py-0.5 border border-slate-100 shadow-sm">{{ showAccountsPlaintext ? acc.password : '••••••••' }}</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            <td class="px-3 md:px-4 py-3 whitespace-nowrap">
+                                                <span class="px-2 py-1 text-[10px] font-black bg-pink-50 text-pink-600 rounded border border-pink-200 shadow-sm flex items-center gap-1 w-max">
+                                                    <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></span> 半成品就绪
+                                                </span>
+                                            </td>
+
+                                            <td class="px-3 md:px-4 py-3 whitespace-nowrap text-center text-xs text-slate-500 font-mono">
+                                                {{ formatTime(acc.created_at) }}
+                                            </td>
+                                            <td class="px-3 md:px-4 py-3 whitespace-nowrap text-center">
+                                                <button @click="upgradeSingleImageAccount(acc)" :disabled="acc._upgrading" class="text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-lg active:scale-95 transition-all shadow-sm disabled:opacity-50 min-w-[80px] inline-flex items-center justify-center gap-1 text-xs font-bold">
+                                                    <svg v-if="acc._upgrading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                                                    <span>{{ acc._upgrading ? '提取中...' : '提取 OAuth' }}</span>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="inventory-footer px-5 md:px-8 py-4 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div class="text-sm text-slate-500 font-bold flex flex-wrap items-center gap-2">
+                                    <span>共 <span class="text-pink-600 text-base font-black">{{ totalImageAccounts }}</span> 个，</span>
+                                    <span>第 <span class="text-slate-800">{{ imagePage }}</span>/{{ Math.ceil(totalImageAccounts / imagePageSize) || 1 }} 页</span>
+                                    <select v-model.number="imagePageSize" @change="changeImagePageSize" class="bg-white border border-slate-200 text-slate-700 py-1.5 px-3 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition cursor-pointer text-sm ml-2 font-bold appearance-none pr-8 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-[right_10px_center] bg-no-repeat">
+                                        <option :value="10">10 条/页</option>
+                                        <option :value="50">50 条/页</option>
+                                        <option :value="100">100 条/页</option>
+                                    </select>
+                                </div>
+                                <div class="flex gap-2 w-full md:w-auto justify-between md:justify-end">
+                                    <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 shadow-sm mr-1 h-[38px] focus-within:border-pink-500 focus-within:ring-2 focus-within:ring-pink-500/20 transition-all">
+                                        <span class="text-xs text-slate-400 font-bold">前往</span>
+                                        <input type="number"
+                                               :placeholder="imagePage"
+                                               @change="if($event.target.value) changeImagePage(parseInt($event.target.value)); $event.target.value='';"
+                                               class="w-10 text-center text-sm font-bold text-slate-700 placeholder:text-slate-700 border-none focus:ring-0 p-0 m-0 bg-transparent">
+                                        <span class="text-xs text-slate-400 font-bold">页</span>
+                                    </div>
+                                    <button @click="changeImagePage(imagePage - 1)" :disabled="imagePage <= 1" class="px-4 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all active:scale-95">上一页</button>
+                                    <button @click="changeImagePage(imagePage + 1)" :disabled="imagePage >= Math.ceil(totalImageAccounts / imagePageSize)" class="px-4 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all active:scale-95">下一页</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-show="currentTab === 'mailboxes'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative transition-shadow duration-300 hover:shadow-md">
 
                             <div v-if="showImportMailboxModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                                 <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col">
@@ -1052,7 +1327,7 @@
                             </div>
                         </div>
 
-                        <div v-if="currentTab === 'email' && config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+                        <div v-show="currentTab === 'email'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60">
                                 <h3 class="text-lg md:text-xl font-black text-blue-600 mb-5 flex items-center gap-2 tracking-tight"><span><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7l9 6 9-6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"></path></svg></span> 基础发信设置</h3>
                                 <label class="block text-slate-700 text-sm font-extrabold mb-2">API 模式选择 (email_api_mode)</label>
@@ -2481,7 +2756,7 @@
                         </div>
                         </div>
 
-                        <div v-if="currentTab === 'sms' && config" class="space-y-5 md:space-y-8">
+                        <div v-show="currentTab === 'sms'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 lg:col-span-2 border-t-4 border-t-orange-500 bg-gradient-to-b from-orange-50/30 to-white" v-if="config.hero_sms">
                                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-orange-100 pb-5 gap-4">
                                     <h3 class="text-xl md:text-2xl font-black text-orange-600 tracking-tight flex items-center flex-wrap gap-2">
@@ -2966,7 +3241,7 @@
 
 
 
-                        <div v-if="currentTab === 'proxy' && config" class="space-y-5 md:space-y-8">
+                        <div v-show="currentTab === 'proxy'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 lg:max-w-3xl">
                                 <h3 class="text-lg md:text-xl font-black text-emerald-600 mb-5 flex items-center gap-2 tracking-tight"><span><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 md:w-6 md:h-6 inline-block align-text-bottom text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"></circle><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c2.8 2.4 4.5 5.6 4.5 9s-1.7 6.6-4.5 9c-2.8-2.4-4.5-5.6-4.5-9S9.2 5.4 12 3z"></path></svg></span> 基础代理设置</h3>
                                 <label class="block text-slate-700 text-sm font-extrabold mb-1">全局默认代理</label>
@@ -3325,7 +3600,7 @@
 
                         </div>
 
-                        <div v-if="currentTab === 'cloud'" class="inventory-shell inventory-panel mobile-table-priority mobile-cloud-priority rounded-2xl overflow-hidden hover:shadow-md transition-shadow duration-300">
+                        <div v-show="currentTab === 'cloud'" class="inventory-shell inventory-panel mobile-table-priority mobile-cloud-priority rounded-2xl overflow-hidden hover:shadow-md transition-shadow duration-300">
                             <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100">
                                 <div class="cloud-toolbar-shell">
                                     <div class="cloud-toolbar-side">
@@ -3389,6 +3664,10 @@
                                         <div class="cloud-secondary-actions" v-if="selectedCloud.length > 0">
                                             <div class="flex flex-wrap items-center gap-2 bg-indigo-50/80 border border-indigo-100 p-1.5 rounded-xl shadow-sm transition-all duration-300">
                                                 <span class="text-xs font-black text-indigo-700 px-2 border-r border-indigo-200">已选 {{ selectedCloud.length }}</span>
+                                                <button @click="bulkFetchSub2ApiUsage" :disabled="isCloudActionLoading" class="px-3 py-1 bg-purple-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-purple-600 transition flex items-center gap-1 disabled:opacity-50">
+                                                    <span v-if="isCloudActionLoading" class="animate-spin inline-flex"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg></span>
+                                                    <span v-else class="inline-flex"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></span> 批量获取利用率
+                                                </button>
                                                 <button @click="bulkCloudAction('check')" :disabled="isCloudActionLoading" class="px-3 py-1 bg-blue-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-600 transition flex items-center gap-1 disabled:opacity-50">
                                                     <span v-if="isCloudActionLoading" class="animate-spin inline-flex"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg></span>
                                                     <span v-else class="inline-flex"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></span> 批量测活
@@ -3669,7 +3948,7 @@
                             </div>
                         </div>
 
-                        <div v-if="currentTab === 'team_accounts'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
+                        <div v-show="currentTab === 'team_accounts'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
                             <div v-if="showImportTeamModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                                 <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col">
                                     <h3 class="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></span> 批量导入 Team Token</h3>
@@ -3763,7 +4042,7 @@
                             </div>
                         </div>
 
-                        <div v-if="currentTab === 'relay' && config" class="space-y-5 md:space-y-8">
+                        <div v-show="currentTab === 'relay'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-emerald-500 bg-gradient-to-br from-emerald-50/20 to-white" v-if="config.cpa_mode">
                                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
                                     <h3 class="text-xl md:text-2xl font-black text-emerald-700 tracking-tight flex items-center gap-2"><span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg></span> CPA 仓管中心
@@ -3877,6 +4156,11 @@
                                                     <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-blue-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
                                                     <span class="text-[13px] md:text-sm font-black text-blue-900 ml-3 tracking-wide">尝试 Token 复活</span>
                                                 </label>
+                                                <label class="relative inline-flex p-3 bg-fuchsia-50/50 rounded-xl border border-fuchsia-100 items-center cursor-pointer shadow-sm hover:bg-fuchsia-100/50 transition-colors group">
+                                                    <input type="checkbox" v-model="config.cpa_mode.auto_re_oauth" class="sr-only peer">
+                                                    <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-fuchsia-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
+                                                    <span class="text-[13px] md:text-sm font-black text-fuchsia-900 ml-3 tracking-wide">死号自动重走 OAuth</span>
+                                                </label>
                                                 <label class="relative inline-flex p-3 bg-cyan-50/50 rounded-xl border border-cyan-100 items-center cursor-pointer shadow-sm hover:bg-cyan-100/50 transition-colors w-full group">
                                                     <input type="checkbox" v-model="config.cpa_mode.auto_check" class="sr-only peer">
                                                     <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-cyan-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
@@ -3985,9 +4269,8 @@
                                             <label class="block text-[11px] text-slate-500 font-black mb-2 uppercase tracking-wider">Sub2API 测活验证模型</label>
                                             <div class="relative">
                                                 <select v-model="config.sub2api_mode.test_model" class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 font-bold rounded-lg py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm relative cursor-pointer bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px_12px] bg-[right_14px_center] bg-no-repeat pr-10">
-                                                    <option value="gpt-5.4">GPT-5.4</option>
-                                                    <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
-                                                    <option value="gpt-5.2">GPT-5.2</option>
+                                                    <option value="gpt-5.4-mini">GPT-5.4-mini</option>
+                                                    <option value="gpt-5.5">GPT-5.5</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -4081,6 +4364,11 @@
                                                     <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-blue-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
                                                     <span class="text-sm font-black text-blue-900 ml-3 tracking-wide">尝试 Token 复活</span>
                                                 </label>
+                                                <label class="relative inline-flex p-4 bg-fuchsia-50/50 rounded-xl border border-fuchsia-100 items-center cursor-pointer shadow-sm hover:bg-fuchsia-100/50 transition-colors group">
+                                                    <input type="checkbox" v-model="config.sub2api_mode.auto_re_oauth" class="sr-only peer">
+                                                    <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-fuchsia-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
+                                                    <span class="text-sm font-black text-fuchsia-900 ml-3 tracking-wide">死号自动重走 OAuth</span>
+                                                </label>
                                             </div>
                                             <label class="relative inline-flex p-4 bg-cyan-50/50 rounded-xl border border-cyan-100 items-center cursor-pointer shadow-sm hover:bg-cyan-100/50 transition-colors w-full group md:w-1/3">
                                                 <input type="checkbox" v-model="config.sub2api_mode.auto_check" class="sr-only peer">
@@ -4162,252 +4450,7 @@
                                 </div>
                             </div>
                         </div>
-
-                        <!-- Plus 激活面板 -->
-                        <div v-if="currentTab === 'plus' && config" class="space-y-5 md:space-y-8">
-                            <!-- 配置卡片 -->
-                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-amber-500 bg-gradient-to-br from-amber-50/20 to-white">
-                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
-                                    <h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                                        <svg class="w-5 h-5 inline-block align-text-bottom shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                                        Plus 激活配置
-                                    </h3>
-                                    <div class="flex items-center gap-3">
-                                        <label class="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" v-model="config.plus_activation.enable" @change="togglePlusEnable" class="sr-only peer">
-                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                                        </label>
-                                        <button @click="startPlusWorker" v-if="!plusStatus.is_running" class="px-4 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">启动 Worker</button>
-                                        <button @click="stopPlusWorker" v-else class="px-4 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">停止 Worker</button>
-                                    </div>
-                                </div>
-                                <div :class="config.plus_activation.enable ? '' : 'opacity-50 pointer-events-none grayscale-[50%]'">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">云端支付 API</label>
-                                            <input type="text" v-model="config.plus_activation.checkout_api_url" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="https://...">
-                                        </div>
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">云端支付 API Key</label>
-                                            <input type="text" v-model="config.plus_activation.checkout_api_key" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="sk-...">
-                                        </div>
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">浏览器超时 (秒)</label>
-                                            <input type="number" v-model="config.plus_activation.browser_timeout_sec" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
-                                        </div>
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">最大重试次数</label>
-                                            <input type="number" v-model="config.plus_activation.retry_limit" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
-                                        </div>
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">重试间隔 (秒)</label>
-                                            <input type="number" v-model="config.plus_activation.retry_delay_sec" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white">
-                                        </div>
-                                        <div>
-                                            <label class="text-xs font-semibold text-slate-500 mb-1 block">代理</label>
-                                            <input type="text" v-model="config.plus_activation.proxy" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-white" placeholder="http://user:pass@host:port">
-                                        </div>
-                                        <div class="flex items-center gap-4">
-                                            <label class="flex items-center gap-2 text-sm">
-                                                <input type="checkbox" v-model="config.plus_activation.headless" class="rounded text-amber-500 focus:ring-amber-300">
-                                                <span class="text-slate-600 font-medium">无头模式</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <!-- 推送目标 -->
-                                    <div class="bg-slate-50 rounded-xl p-4 mb-4">
-                                        <h4 class="text-sm font-bold text-slate-700 mb-3">推送目标 (激活完成后)</h4>
-                                        <div class="flex flex-wrap gap-3">
-                                            <label class="flex items-center gap-2 text-sm">
-                                                <input type="checkbox" value="sub2api" :checked="config.plus_activation.push_targets?.includes('sub2api')" @change="togglePlusPushTarget('sub2api')" class="rounded text-amber-500 focus:ring-amber-300">
-                                                <span class="text-slate-600">Sub2API</span>
-                                            </label>
-                                            <label class="flex items-center gap-2 text-sm">
-                                                <input type="checkbox" value="cpa" :checked="config.plus_activation.push_targets?.includes('cpa')" @change="togglePlusPushTarget('cpa')" class="rounded text-amber-500 focus:ring-amber-300">
-                                                <span class="text-slate-600">CPA</span>
-                                            </label>
-                                            <label class="flex items-center gap-2 text-sm">
-                                                <input type="checkbox" value="shop" :checked="config.plus_activation.push_targets?.includes('shop')" @change="togglePlusPushTarget('shop')" class="rounded text-amber-500 focus:ring-amber-300">
-                                                <span class="text-slate-600">店铺上架</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <!-- 店铺配置 -->
-                                    <div v-if="config.plus_activation.push_targets?.includes('shop')" class="bg-rose-50 rounded-xl p-4 mb-4 border border-rose-100">
-                                        <h4 class="text-sm font-bold text-rose-700 mb-3">链动小铺配置</h4>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label class="text-xs font-semibold text-slate-500 mb-1 block">Merchant Token</label>
-                                                <input type="text" v-model="config.plus_activation.shop_merchant_token" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-300 focus:border-rose-400 bg-white" placeholder="店铺 API Token">
-                                            </div>
-                                            <div>
-                                                <label class="text-xs font-semibold text-slate-500 mb-1 block">商品 ID</label>
-                                                <input type="number" v-model="config.plus_activation.shop_goods_id" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-300 focus:border-rose-400 bg-white" placeholder="如 295946">
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!-- 保存按钮 -->
-                                    <div class="flex justify-end mt-4 pt-4 border-t border-slate-100">
-                                        <button @click="saveConfig" class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">保存配置</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- SMS 接码池卡片 -->
-                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-blue-500 bg-gradient-to-br from-blue-50/20 to-white">
-                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-5 gap-4">
-                                    <h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                                        <svg class="w-5 h-5 inline-block align-text-bottom shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                                        PayPal SMS 接码池
-                                    </h3>
-                                    <div class="flex items-center gap-2">
-                                        <button @click="fetchPlusSmsPool" class="px-3 py-1.5 bg-slate-500 hover:bg-slate-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">刷新</button>
-                                    </div>
-                                </div>
-                                <!-- SMS 池状态 -->
-                                <div v-if="plusStatus.sms_pool" class="grid grid-cols-3 gap-4 mb-4">
-                                    <div class="bg-slate-50 rounded-xl p-3 text-center">
-                                        <div class="text-2xl font-black text-slate-800">{{ plusStatus.sms_pool.total || 0 }}</div>
-                                        <div class="text-xs text-slate-500 font-semibold">总数</div>
-                                    </div>
-                                    <div class="bg-green-50 rounded-xl p-3 text-center">
-                                        <div class="text-2xl font-black text-green-600">{{ plusStatus.sms_pool.available || 0 }}</div>
-                                        <div class="text-xs text-green-600 font-semibold">可用</div>
-                                    </div>
-                                    <div class="bg-red-50 rounded-xl p-3 text-center">
-                                        <div class="text-2xl font-black text-red-500">{{ plusStatus.sms_pool.disabled || 0 }}</div>
-                                        <div class="text-xs text-red-500 font-semibold">已禁用</div>
-                                    </div>
-                                </div>
-                                <!-- 导入区域 -->
-                                <div class="mb-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                                    <label class="text-xs font-bold text-blue-600 mb-2 block">导入接码池 (每行一条: 手机号----验证URL)</label>
-                                    <textarea v-model="plusSmsImportText" rows="3" class="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-mono" placeholder="+16099987195----https://api.sms8.net/api/record?token=xxx&#10;+16099987196----https://api.sms8.net/api/record?token=yyy"></textarea>
-                                    <div class="flex items-center gap-2 mt-2">
-                                        <button @click="importPlusSmsPool" class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">导入</button>
-                                        <span class="text-xs text-slate-400">支持单条或多条，每行一条</span>
-                                    </div>
-                                </div>
-                                <!-- SMS 池条目列表 -->
-                                <div v-if="plusStatus.sms_pool?.entries?.length" class="overflow-x-auto">
-                                    <table class="w-full text-sm">
-                                        <thead>
-                                            <tr class="border-b border-slate-200">
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500 w-8">
-                                                    <input type="checkbox" @change="toggleAllSmsEntries($event)" :checked="plusSmsSelectedEntries.length === plusStatus.sms_pool.entries.length && plusStatus.sms_pool.entries.length > 0" class="rounded">
-                                                </th>
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">手机号</th>
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">验证 URL</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">使用</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">失败</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">状态</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">操作</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="(entry, i) in plusStatus.sms_pool.entries" :key="i" class="border-b border-slate-100 hover:bg-slate-50">
-                                                <td class="py-2 px-3">
-                                                    <input type="checkbox" :value="i" v-model="plusSmsSelectedEntries" class="rounded">
-                                                </td>
-                                                <td class="py-2 px-3 font-mono text-xs">{{ entry.phone }}</td>
-                                                <td class="py-2 px-3 text-xs text-slate-500 max-w-[200px] truncate" :title="entry.verify_url">{{ entry.verify_url }}</td>
-                                                <td class="py-2 px-3 text-center">{{ entry.use_count }}</td>
-                                                <td class="py-2 px-3 text-center">
-                                                    <span :class="entry.failures > 0 ? 'text-red-500 font-bold' : 'text-slate-400'">{{ entry.failures }}</span>
-                                                </td>
-                                                <td class="py-2 px-3 text-center">
-                                                    <span v-if="entry.disabled" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">已禁用</span>
-                                                    <span v-else class="px-2 py-0.5 bg-green-100 text-green-600 text-xs font-bold rounded-full">正常</span>
-                                                </td>
-                                                <td class="py-2 px-3 text-center">
-                                                    <button @click="deletePlusSmsEntry(i)" class="text-red-400 hover:text-red-600 text-xs font-bold">删除</button>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                    <!-- 批量操作栏 -->
-                                    <div v-if="plusSmsSelectedEntries.length > 0" class="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
-                                        <span class="text-xs text-slate-500">已选 {{ plusSmsSelectedEntries.length }} 项</span>
-                                        <button @click="deleteSelectedPlusSmsEntries" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors">删除选中</button>
-                                    </div>
-                                </div>
-                                <div v-else class="text-center py-6 text-slate-400 text-sm">暂无接码池数据，请在上方导入</div>
-                                <!-- 底部清空按钮 -->
-                                <div v-if="plusStatus.sms_pool?.entries?.length" class="flex justify-end mt-3 pt-3 border-t border-slate-100">
-                                    <button @click="clearAllPlusSmsEntries" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-600 text-xs font-bold rounded-lg transition-colors">清空全部</button>
-                                </div>
-                            </div>
-
-                            <!-- 队列管理卡片 -->
-                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-violet-500 bg-gradient-to-br from-violet-50/20 to-white">
-                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-5 gap-4">
-                                    <h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                                        <svg class="w-5 h-5 inline-block align-text-bottom shrink-0 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                                        激活队列
-                                    </h3>
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <span v-if="plusStatus.is_running" class="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full animate-pulse">运行中</span>
-                                        <span v-else class="px-2 py-0.5 bg-slate-100 text-slate-500 text-xs font-bold rounded-full">已停止</span>
-                                        <span v-if="plusStatus.current_account" class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">{{ plusStatus.current_account }}</span>
-                                        <button @click="fetchPlusQueue()" class="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">刷新</button>
-                                        <button @click="retryPlusFailed" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">重试失败</button>
-                                        <button @click="clearPlusDone" class="px-3 py-1.5 bg-slate-400 hover:bg-slate-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">清理完成</button>
-                                    </div>
-                                </div>
-                                <!-- 队列统计 -->
-                                <div v-if="plusStatus.queue_stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                                    <div class="bg-yellow-50 rounded-xl p-3 text-center cursor-pointer hover:bg-yellow-100 transition-colors" @click="fetchPlusQueue('pending')">
-                                        <div class="text-2xl font-black text-yellow-600">{{ plusStatus.queue_stats.pending || 0 }}</div>
-                                        <div class="text-xs text-yellow-600 font-semibold">待处理</div>
-                                    </div>
-                                    <div class="bg-blue-50 rounded-xl p-3 text-center cursor-pointer hover:bg-blue-100 transition-colors" @click="fetchPlusQueue('processing')">
-                                        <div class="text-2xl font-black text-blue-600">{{ plusStatus.queue_stats.processing || 0 }}</div>
-                                        <div class="text-xs text-blue-600 font-semibold">处理中</div>
-                                    </div>
-                                    <div class="bg-green-50 rounded-xl p-3 text-center cursor-pointer hover:bg-green-100 transition-colors" @click="fetchPlusQueue('done')">
-                                        <div class="text-2xl font-black text-green-600">{{ plusStatus.queue_stats.done || 0 }}</div>
-                                        <div class="text-xs text-green-600 font-semibold">已完成</div>
-                                    </div>
-                                    <div class="bg-red-50 rounded-xl p-3 text-center cursor-pointer hover:bg-red-100 transition-colors" @click="fetchPlusQueue('failed')">
-                                        <div class="text-2xl font-black text-red-500">{{ plusStatus.queue_stats.failed || 0 }}</div>
-                                        <div class="text-xs text-red-500 font-semibold">已失败</div>
-                                    </div>
-                                </div>
-                                <!-- 队列列表 -->
-                                <div v-if="plusQueue.length" class="overflow-x-auto">
-                                    <table class="w-full text-sm">
-                                        <thead>
-                                            <tr class="border-b border-slate-200">
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">ID</th>
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">邮箱</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">状态</th>
-                                                <th class="text-center py-2 px-3 text-xs font-bold text-slate-500">重试</th>
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">错误</th>
-                                                <th class="text-left py-2 px-3 text-xs font-bold text-slate-500">时间</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="item in plusQueue" :key="item.id" class="border-b border-slate-100 hover:bg-slate-50">
-                                                <td class="py-2 px-3 text-slate-400 font-mono text-xs">{{ item.id }}</td>
-                                                <td class="py-2 px-3 font-medium text-xs">{{ item.email }}</td>
-                                                <td class="py-2 px-3 text-center">
-                                                    <span v-if="item.status === 'pending'" class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">待处理</span>
-                                                    <span v-else-if="item.status === 'processing'" class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full animate-pulse">处理中</span>
-                                                    <span v-else-if="item.status === 'done'" class="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">完成</span>
-                                                    <span v-else-if="item.status === 'failed'" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">失败</span>
-                                                </td>
-                                                <td class="py-2 px-3 text-center text-xs">{{ item.retry_count }}</td>
-                                                <td class="py-2 px-3 text-xs text-red-500 max-w-[200px] truncate" :title="item.error_msg">{{ item.error_msg || '-' }}</td>
-                                                <td class="py-2 px-3 text-xs text-slate-400">{{ item.updated_at }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div v-else class="text-center py-6 text-slate-400 text-sm">队列为空，注册机注册的 free 账号会自动入队</div>
-                            </div>
-                        </div>
-
-                        <div v-if="currentTab === 'notify' && config" class="space-y-5 md:space-y-8">
+                        <div v-show="currentTab === 'notify'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-sky-400 lg:max-w-3xl">
                                 <h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight mb-6 flex items-center gap-2"><svg class="w-5 h-5 inline-block align-text-bottom shrink-0" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5ZM12 4.15L6.04 7.5L12 10.85L17.96 7.5L12 4.15Z"></path></svg> Telegram 机器人通知</h3>
                                 <div class="bg-gradient-to-br from-sky-50/80 to-blue-50/30 p-5 md:p-6 rounded-2xl border border-sky-100 shadow-inner">
@@ -4483,7 +4526,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-if="currentTab === 'concurrency' && config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+                        <div v-show="currentTab === 'concurrency'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-cyan-500 bg-gradient-to-br from-cyan-50/30 to-white lg:col-span-2">
                                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
                                     <div>
@@ -4976,6 +5019,6 @@
     </div>
     </div>
     <script src="/static/js/index.js?v=20260520-15"></script>
-    <script src="/static/js/app.js?v=20260527-03"></script>
+    <script src="/static/js/app.js?v=20260520-15"></script>
 </body>
 </html>
