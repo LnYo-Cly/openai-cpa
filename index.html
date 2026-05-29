@@ -921,7 +921,7 @@
                         </div>
 
                         <!-- Plus 激活面板 -->
-                        <div v-show="currentTab === 'plus'" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
+                        <div v-show="currentTab === 'plus'" v-if="config" class="inventory-shell inventory-panel rounded-2xl overflow-hidden relative animate-fade-in transition-shadow duration-300 hover:shadow-md">
                             <div class="inventory-toolbar px-5 md:px-8 py-4 border-b border-slate-100 flex flex-col gap-4">
                                 <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
                                     <div class="flex items-center gap-3">
