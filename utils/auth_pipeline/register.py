@@ -11,6 +11,7 @@ from utils.integrations.hero_sms import _try_verify_phone_via_hero_sms
 from utils.integrations.fivesim_sms import try_verify_phone_via_fivesim
 from utils.integrations.smsbower_sms import handle_smsbower_verification
 from utils.auth_core import generate_payload, init_auth, image2api_data, sys_node_allocate, sys_node_release
+from utils.integrations.team_manager import send_invite, discover_workspaces, _get_or_refresh_token
 from utils.integrations.image2api_client import Image2APIClient
 from utils.auth_core import code_pool
 from .http_utils import _ssl_verify, _skip_net_check, _post_with_retry, _oai_headers, _follow_redirect_chain_local
@@ -578,7 +579,9 @@ def run(
                             print(f"[{cfg.ts()}] [ERROR] 写入本地库失败: {e}")
                 if data:
                     saved_temp_at = data
-                    if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                    if getattr(cfg, 'TEAM_INVITE_ENABLE', False):
+                        print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）TEAM拉人模式：跳过二进制席位分配，注册后将通过 HTTP 邀请")
+                    elif getattr(cfg, 'TEAM_MODE_ENABLE', False):
                         print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）即将进入团队静默流程")
                         time.sleep(random.uniform(0.1, 0.5))
                         is_alloc, sys_handle_a, sys_handle_b, sys_handle_c = sys_node_allocate(s_reg, did, saved_temp_at, proxies)
@@ -608,7 +611,7 @@ def run(
                 if workspaces:
                     print(f"[{cfg.ts()}] [SUCCESS] （{mask_email(email)}）检测到工作区，正在确认并提取最终凭据...")
                     target_workspace_id = ""
-                    if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+                    if getattr(cfg, 'TEAM_MODE_ENABLE', False) or getattr(cfg, 'TEAM_INVITE_ENABLE', False):
                         for ws in workspaces:
                             ws_title = str(ws.get("title", ws.get("name", "Unknown")))
                             if "Personal" in ws_title or "个人" in ws_title or ws.get("is_personal"):
@@ -1037,7 +1040,7 @@ def run(
                 return None, None
         return None, None
     finally:
-        if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+        if getattr(cfg, 'TEAM_MODE_ENABLE', False) and not getattr(cfg, 'TEAM_INVITE_ENABLE', False):
             try:
                 time.sleep(random.uniform(0.1, 0.5))
                 sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, sys_handle_c, proxies)
@@ -1082,7 +1085,9 @@ def run_oauth_only(email: str, password: str, proxy: Optional[str], run_ctx: dic
         if run_ctx is not None:
             run_ctx['device_id'] = did
             run_ctx['user_agent'] = current_ua
-        if getattr(cfg, 'TEAM_MODE_ENABLE', False) and saved_temp_at:
+        if getattr(cfg, 'TEAM_INVITE_ENABLE', False) and saved_temp_at:
+            print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）TEAM拉人模式：跳过二进制席位分配，提权后将通过 HTTP 邀请")
+        elif getattr(cfg, 'TEAM_MODE_ENABLE', False) and saved_temp_at:
             print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）即将进入团队静默流程")
             time.sleep(random.uniform(0.1, 0.5))
             is_alloc, sys_handle_a, sys_handle_b, sys_handle_c = sys_node_allocate(s_init, did, saved_temp_at, proxies)
@@ -1478,7 +1483,7 @@ def run_oauth_only(email: str, password: str, proxy: Optional[str], run_ctx: dic
         print(f"[{cfg.ts()}] [ERROR] 提权异常: {e}")
         return None, None
     finally:
-        if getattr(cfg, 'TEAM_MODE_ENABLE', False):
+        if getattr(cfg, 'TEAM_MODE_ENABLE', False) and not getattr(cfg, 'TEAM_INVITE_ENABLE', False):
             try:
                 time.sleep(random.uniform(0.1, 0.5))
                 sys_node_release(saved_temp_at, sys_handle_a, sys_handle_b, sys_handle_c, proxies)

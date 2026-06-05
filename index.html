@@ -4082,7 +4082,198 @@
                             </div>
                         </div>
 
-                        <div v-show="currentTab === 'relay'" v-if="config" class="space-y-5 md:space-y-8">
+                        <!-- TEAM拉人 Tab -->
+                        <div v-if="currentTab === 'team_invite'" class="space-y-5 md:space-y-8">
+                            <!-- 配置区 -->
+                            <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60">
+                                <h3 class="text-lg font-black text-indigo-700 mb-4 flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                                    TEAM 拉人
+                                </h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <!-- 启用开关 -->
+                                    <div class="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-200">
+                                        <span class="font-bold text-slate-700 text-sm">启用 TEAM拉人</span>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" :checked="teamInviteEnabled" @change="toggleTeamInvite($event)" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
+                                    <!-- 自动踢人开关 -->
+                                    <div class="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-200">
+                                        <span class="font-bold text-slate-700 text-sm">自动踢人</span>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" :checked="teamInviteAutoKick" @change="toggleTeamInviteAutoKick($event)" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
+                                        </label>
+                                    </div>
+                                    <!-- 席位类型 -->
+                                    <div class="flex items-center gap-4 bg-slate-50 rounded-xl px-4 py-3 border border-slate-200">
+                                        <span class="font-bold text-slate-700 text-sm">席位类型</span>
+                                        <label class="flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" value="chatgpt" v-model="teamInviteSeatType" @change="changeTeamInviteSeatType($event)" class="w-4 h-4 text-indigo-600">
+                                            <span class="text-sm font-bold text-slate-600">ChatGPT</span>
+                                        </label>
+                                        <label class="flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" value="codex" v-model="teamInviteSeatType" @change="changeTeamInviteSeatType($event)" class="w-4 h-4 text-indigo-600">
+                                            <span class="text-sm font-bold text-slate-600">Codex</span>
+                                        </label>
+                                    </div>
+                                    <!-- 踢人延迟 -->
+                                    <div class="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-200">
+                                        <span class="font-bold text-slate-700 text-sm">踢人延迟</span>
+                                        <input type="number" min="0" :value="teamInviteKickDelay" @change="changeTeamInviteKickDelay($event)" class="w-20 appearance-none bg-white border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                                        <span class="text-xs text-slate-500">秒</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 管理员 & 工作区选择 -->
+                            <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-black text-slate-600 uppercase tracking-wider">管理员 & 工作区</h3>
+                                    <button @click="showTeamInviteImportModal = true" class="text-sm bg-indigo-50 text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100 active:scale-95 transition shadow-sm font-bold flex items-center gap-1">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                                        导入Token
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-500 mb-1">管理员账号</label>
+                                        <select v-model="selectedManagerEmail" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                                            <option value="">-- 选择账号 --</option>
+                                            <option v-for="acc in teamManagerAccounts" :key="acc.email" :value="acc.email">{{ acc.email }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-500 mb-1">目标工作区</label>
+                                        <select v-model="selectedWorkspaceId" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                                            <option value="">-- 选择工作区 --</option>
+                                            <option v-for="ws in teamWorkspaces" :key="ws.workspace_id" :value="ws.workspace_id">{{ ws.name || ws.workspace_id }} ({{ ws.plan_type }})</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <button @click="discoverTeamWorkspaces" :disabled="!selectedManagerEmail" class="w-full px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-bold hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition">发现工作区</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 邀请目标 -->
+                            <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-black text-slate-600 uppercase tracking-wider">邀请目标</h3>
+                                    <div class="flex items-center gap-3">
+                                        <label class="flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" value="all" v-model="inviteTargetMode" class="w-3.5 h-3.5 text-indigo-600">
+                                            <span class="text-xs font-bold text-slate-600">全部</span>
+                                        </label>
+                                        <label class="flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" value="select" v-model="inviteTargetMode" @click="fetchAvailableInviteAccounts" class="w-3.5 h-3.5 text-indigo-600">
+                                            <span class="text-xs font-bold text-slate-600">手动选择</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- 手动选择表格 -->
+                                <div v-if="inviteTargetMode === 'select'" class="overflow-x-auto rounded-xl border border-slate-200 max-h-64 overflow-y-auto">
+                                    <table class="min-w-full divide-y divide-slate-200 bg-white text-sm">
+                                        <thead class="bg-slate-50 text-[11px] uppercase tracking-wider">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left"><input type="checkbox" @change="toggleAllInviteEmails" :checked="selectedInviteEmails.length === availableInviteAccounts.length && availableInviteAccounts.length > 0" class="w-3.5 h-3.5 rounded"></th>
+                                                <th class="px-3 py-2 text-left font-black">邮箱</th>
+                                                <th class="px-3 py-2 text-left font-black">Plan</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <tr v-for="acc in availableInviteAccounts" :key="acc.email" class="hover:bg-slate-50">
+                                                <td class="px-3 py-1.5"><input type="checkbox" :checked="selectedInviteEmails.includes(acc.email)" @change="toggleInviteEmail(acc.email)" class="w-3.5 h-3.5 rounded"></td>
+                                                <td class="px-3 py-1.5 font-mono text-xs text-slate-700">{{ acc.email }}</td>
+                                                <td class="px-3 py-1.5 text-xs">{{ acc.plan_type || '-' }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div v-else class="text-sm text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-xl px-4 py-3 text-center font-medium">
+                                    将邀请本地所有有 token 的账号
+                                </div>
+
+                                <!-- 操作按钮 & 进度 -->
+                                <div class="flex items-center gap-4 mt-4">
+                                    <button @click="startBatchInvite" :disabled="inviteInProgress || !teamInviteEnabled" class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2">
+                                        <svg v-if="inviteInProgress" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                        {{ inviteInProgress ? '邀请中...' : '开始拉人' }}
+                                    </button>
+                                    <div v-if="inviteProgress.total > 0" class="flex items-center gap-3 text-sm">
+                                        <span class="font-bold text-slate-600">进度: {{ inviteProgress.done }}/{{ inviteProgress.total }}</span>
+                                        <span class="font-bold text-emerald-600">成功: {{ inviteProgress.success }}</span>
+                                        <span class="font-bold text-rose-600">失败: {{ inviteProgress.fail }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 邀请记录 -->
+                            <div class="bg-white/80 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-slate-200/60">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-black text-slate-600 uppercase tracking-wider">邀请记录</h3>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="fetchInviteRecords" class="p-2 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 shadow-sm" title="刷新">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                        </button>
+                                        <button @click="clearInviteRecords" class="p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-100 shadow-sm" title="清空记录">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div v-if="inviteRecords.length === 0" class="text-sm text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-xl px-4 py-4 text-center font-medium">暂无邀请记录</div>
+                                <div v-else class="overflow-x-auto rounded-xl border border-slate-200 max-h-60 overflow-y-auto">
+                                    <table class="min-w-full divide-y divide-slate-200 bg-white text-xs">
+                                        <thead class="bg-slate-50 uppercase text-[10px] tracking-wider">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left font-black">目标邮箱</th>
+                                                <th class="px-3 py-2 text-left font-black">管理员</th>
+                                                <th class="px-3 py-2 text-left font-black">状态</th>
+                                                <th class="px-3 py-2 text-left font-black">错误信息</th>
+                                                <th class="px-3 py-2 text-left font-black">时间</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <tr v-for="r in inviteRecords" :key="r.id" class="hover:bg-slate-50">
+                                                <td class="px-3 py-2 font-mono text-slate-700">{{ r.target_email }}</td>
+                                                <td class="px-3 py-2 text-slate-600">{{ r.manager_email }}</td>
+                                                <td class="px-3 py-2">
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black" :class="{
+                                                        'bg-emerald-50 text-emerald-600 border border-emerald-200': r.state === 'invited',
+                                                        'bg-amber-50 text-amber-600 border border-amber-200': r.state === 'pending',
+                                                        'bg-rose-50 text-rose-600 border border-rose-200': r.state === 'failed',
+                                                        'bg-slate-50 text-slate-500 border border-slate-200': !['invited','pending','failed'].includes(r.state)
+                                                    }">{{ r.state }}</span>
+                                                </td>
+                                                <td class="px-3 py-2 text-slate-500 max-w-[200px] truncate">{{ r.error_msg || '-' }}</td>
+                                                <td class="px-3 py-2 text-slate-400 whitespace-nowrap">{{ r.updated_at }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 导入弹窗 (fixed 全屏覆盖) -->
+                            <div v-if="showTeamInviteImportModal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+                                    <h3 class="text-lg font-black text-slate-800 mb-2">导入管理员 Token</h3>
+                                    <p class="text-xs text-slate-500 mb-3">格式: <code class="bg-slate-100 px-1 rounded">access_token</code> 或 <code class="bg-slate-100 px-1 rounded">access_token----cookies</code>，每行一条</p>
+                                    <textarea v-model="teamInviteImportText" class="w-full h-48 appearance-none bg-slate-50 border border-slate-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-xs leading-relaxed placeholder:text-slate-300 mb-4" placeholder="粘贴 access_token 数据..."></textarea>
+                                    <div class="flex justify-end gap-3">
+                                        <button @click="showTeamInviteImportModal = false" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">取消</button>
+                                        <button @click="submitTeamInviteImport" :disabled="isImportingTeamInvite" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md flex items-center gap-2 transition-all disabled:opacity-50">
+                                            <svg v-if="isImportingTeamInvite" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                            确认导入
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="currentTab === 'relay' && config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-emerald-500 bg-gradient-to-br from-emerald-50/20 to-white" v-if="config.cpa_mode">
                                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
                                     <h3 class="text-xl md:text-2xl font-black text-emerald-700 tracking-tight flex items-center gap-2"><span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg></span> CPA 仓管中心

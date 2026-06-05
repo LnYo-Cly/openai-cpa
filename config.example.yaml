@@ -390,6 +390,14 @@ team_mode:
   enable: false
   overspeed: false
 
+team_invite:
+  enable: false          # TEAM拉人开关（与 team_mode.enable 互斥）
+  auto_kick: false       # 流程完毕后自动踢人
+  seat_type: chatgpt     # chatgpt | codex
+  kick_delay: 0          # 自动踢人延迟秒数（0=立即）
+  manager_email: ""      # Team 管理员邮箱（有 admin 权限的账号）
+  workspace_id: ""       # 目标工作区 ID
+
 # WEB端密码
 web_password: admin
 #CF账号

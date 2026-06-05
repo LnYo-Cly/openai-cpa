@@ -326,6 +326,7 @@ createApp({
                     { id: 'email', name: '邮箱配置', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
                     { id: 'mailboxes', name: '微软邮箱库', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>' },
                     { id: 'team_accounts', name: 'Team 账号库', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>' },
+                    { id: 'team_invite', name: 'TEAM拉人', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>' },
                     { id: 'accounts', name: '账号库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>' },
                     { id: 'image_accounts', name: '半成品库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>' },
                     { id: 'cloud', name: '云端库存', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h11a5 5 0 00-.1-9.995A5.002 5.002 0 1010.5 6H9.75a4 4 0 00-6.75 9z"></path></svg>' },
@@ -567,6 +568,25 @@ createApp({
             teamPage: 1,
             teamPageSize: 50,
             totalTeamAccounts: 0,
+            // TEAM拉人
+            teamInviteEnabled: false,
+            teamInviteAutoKick: false,
+            teamInviteSeatType: 'chatgpt',
+            teamInviteKickDelay: 0,
+            teamManagerAccounts: [],
+            selectedManagerEmail: '',
+            teamWorkspaces: [],
+            selectedWorkspaceId: '',
+            inviteTargetMode: 'all',
+            availableInviteAccounts: [],
+            selectedInviteEmails: [],
+            inviteInProgress: false,
+            inviteProgress: { done: 0, total: 0, success: 0, fail: 0 },
+            inviteResults: [],
+            inviteRecords: [],
+            showTeamInviteImportModal: false,
+            teamInviteImportText: '',
+            isImportingTeamInvite: false,
             authResetModal: {
                 show: false,
                 clearLicense: true,
@@ -1213,6 +1233,9 @@ createApp({
 			}
             if (this.currentTab === 'team_accounts') {
                 this.fetchTeamAccounts();
+            }
+            if (this.currentTab === 'team_invite') {
+                this.initTeamInviteTab();
             }
             this.startStatsPolling();
             this.checkUpdate();
@@ -4677,6 +4700,209 @@ async exportSub2Api() {
             await this.saveConfig();
             this.showToast(`🏎️ 超速妙模式已${isTurningOn ? '开启' : '关闭'}`, 'success');
             this.showToast(`超速妙模式最大4线程，线程请不要设置过高，正常账号请不要开启该功能`, 'success');
+        },
+
+        // ═══════════════════════════════════════════
+        //  TEAM拉人
+        // ═══════════════════════════════════════════
+        async initTeamInviteTab() {
+            await this.fetchTeamInviteConfig();
+            await this.fetchManagerAccounts();
+            await this.fetchInviteRecords();
+        },
+        async fetchTeamInviteConfig() {
+            try {
+                const res = await this.authFetch('/api/team/config');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamInviteEnabled = data.data.team_invite_enable;
+                    this.teamInviteAutoKick = data.data.team_invite_auto_kick;
+                    this.teamInviteSeatType = data.data.team_invite_seat_type || 'chatgpt';
+                    this.teamInviteKickDelay = data.data.team_invite_kick_delay || 0;
+                    if (data.data.manager_email) this.selectedManagerEmail = data.data.manager_email;
+                    if (data.data.workspace_id) this.selectedWorkspaceId = data.data.workspace_id;
+                }
+            } catch (e) { console.error('fetchTeamInviteConfig error:', e); }
+        },
+        async toggleTeamInvite(event) {
+            const enabled = event.target.checked;
+            if (enabled && this.config.team_mode && this.config.team_mode.enable) {
+                this.showToast('请先关闭原版 TEAM 团队配合注册', 'error');
+                event.target.checked = false;
+                return;
+            }
+            await this.authFetch('/api/system/save_config', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+                body: JSON.stringify({ team_invite: { enable: enabled, auto_kick: this.teamInviteAutoKick, seat_type: this.teamInviteSeatType, kick_delay: this.teamInviteKickDelay } })
+            });
+            this.teamInviteEnabled = enabled;
+            this.showToast(`TEAM拉人已${enabled ? '开启' : '关闭'}`, 'success');
+        },
+        async toggleTeamInviteAutoKick(event) {
+            this.teamInviteAutoKick = event.target.checked;
+            await this._saveTeamInviteConfig();
+            this.showToast(`自动踢人已${this.teamInviteAutoKick ? '开启' : '关闭'}`, 'success');
+        },
+        async changeTeamInviteSeatType(event) {
+            this.teamInviteSeatType = event.target.value;
+            await this._saveTeamInviteConfig();
+        },
+        async changeTeamInviteKickDelay(event) {
+            this.teamInviteKickDelay = parseInt(event.target.value) || 0;
+            await this._saveTeamInviteConfig();
+        },
+        async _saveTeamInviteConfig() {
+            await this.authFetch('/api/system/save_config', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+                body: JSON.stringify({ team_invite: { enable: this.teamInviteEnabled, auto_kick: this.teamInviteAutoKick, seat_type: this.teamInviteSeatType, kick_delay: this.teamInviteKickDelay, manager_email: this.selectedManagerEmail || "", workspace_id: this.selectedWorkspaceId || "" } })
+            });
+        },
+        async fetchManagerAccounts() {
+            try {
+                const res = await this.authFetch('/api/team/accounts');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamManagerAccounts = data.data || [];
+                    if (!this.selectedManagerEmail && this.teamManagerAccounts.length > 0) {
+                        this.selectedManagerEmail = this.teamManagerAccounts[0].email;
+                    }
+                }
+            } catch (e) { console.error('fetchManagerAccounts error:', e); }
+        },
+        async discoverTeamWorkspaces() {
+            if (!this.selectedManagerEmail) {
+                this.showToast('请先选择管理员账号', 'warning');
+                return;
+            }
+            try {
+                const res = await this.authFetch('/api/team/discover', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+                    body: JSON.stringify({ email: this.selectedManagerEmail })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.teamWorkspaces = data.data || [];
+                    if (this.teamWorkspaces.length === 0) {
+                        this.showToast('未发现 Team 工作区', 'warning');
+                    } else {
+                        this.selectedWorkspaceId = this.teamWorkspaces[0].workspace_id;
+                        this.showToast(`发现 ${this.teamWorkspaces.length} 个 Team 工作区`, 'success');
+                    }
+                } else {
+                    this.showToast(data.message || '发现工作区失败', 'error');
+                }
+            } catch (e) { this.showToast('发现工作区异常: ' + e.message, 'error'); }
+        },
+        async fetchAvailableInviteAccounts() {
+            try {
+                const res = await this.authFetch('/api/accounts?page=1&page_size=99999');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.availableInviteAccounts = (data.data || []).filter(a => a.token_data);
+                }
+            } catch (e) { console.error('fetchAvailableInviteAccounts error:', e); }
+        },
+        toggleInviteEmail(email) {
+            const idx = this.selectedInviteEmails.indexOf(email);
+            if (idx >= 0) this.selectedInviteEmails.splice(idx, 1);
+            else this.selectedInviteEmails.push(email);
+        },
+        toggleAllInviteEmails() {
+            if (this.selectedInviteEmails.length === this.availableInviteAccounts.length) {
+                this.selectedInviteEmails = [];
+            } else {
+                this.selectedInviteEmails = this.availableInviteAccounts.map(a => a.email);
+            }
+        },
+        async startBatchInvite() {
+            if (!this.selectedManagerEmail) { this.showToast('请选择管理员账号', 'warning'); return; }
+            if (!this.selectedWorkspaceId) { this.showToast('请选择目标工作区', 'warning'); return; }
+
+            let targets = [];
+            if (this.inviteTargetMode === 'all') {
+                if (!this.availableInviteAccounts.length) await this.fetchAvailableInviteAccounts();
+                targets = this.availableInviteAccounts.map(a => a.email);
+            } else {
+                targets = [...this.selectedInviteEmails];
+            }
+            if (!targets.length) { this.showToast('没有可邀请的账号', 'warning'); return; }
+
+            this.inviteInProgress = true;
+            this.inviteProgress = { done: 0, total: targets.length, success: 0, fail: 0 };
+            this.inviteResults = [];
+
+            try {
+                const res = await this.authFetch('/api/team/batch_invite', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+                    body: JSON.stringify({
+                        manager_email: this.selectedManagerEmail,
+                        workspace_id: this.selectedWorkspaceId,
+                        target_emails: targets,
+                        seat_type: this.teamInviteSeatType,
+                        auto_kick: this.teamInviteAutoKick,
+                        kick_delay: this.teamInviteKickDelay,
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.inviteProgress = { done: data.data.total, total: data.data.total, success: data.data.success_count, fail: data.data.fail_count };
+                    this.inviteResults = data.data.results || [];
+                    this.showToast(data.message, 'success');
+                } else {
+                    this.showToast(data.message || '邀请失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('批量邀请异常: ' + e.message, 'error');
+            } finally {
+                this.inviteInProgress = false;
+                await this.fetchInviteRecords();
+            }
+        },
+        async fetchInviteRecords() {
+            try {
+                const params = new URLSearchParams();
+                if (this.selectedManagerEmail) params.set('manager_email', this.selectedManagerEmail);
+                if (this.selectedWorkspaceId) params.set('workspace_id', this.selectedWorkspaceId);
+                const res = await this.authFetch(`/api/team/invite-records?${params.toString()}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.inviteRecords = data.data || [];
+                }
+            } catch (e) { console.error('fetchInviteRecords error:', e); }
+        },
+        async clearInviteRecords() {
+            try {
+                const res = await this.authFetch('/api/team/invite-records/clear', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.inviteRecords = [];
+                    this.showToast('邀请记录已清空', 'success');
+                }
+            } catch (e) { this.showToast('清空失败', 'error'); }
+        },
+        async submitTeamInviteImport() {
+            if (!this.teamInviteImportText.trim()) return this.showToast('请输入内容', 'warning');
+            this.isImportingTeamInvite = true;
+            try {
+                const res = await this.authFetch('/api/team_accounts/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': "Bearer " + this.token },
+                    body: JSON.stringify({ raw_text: this.teamInviteImportText })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.showToast('成功导入 ' + data.count + ' 个管理员 Token', 'success');
+                    this.showTeamInviteImportModal = false;
+                    this.teamInviteImportText = '';
+                    await this.fetchManagerAccounts();
+                } else {
+                    this.showToast(data.message || '导入失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('导入异常: ' + e.message, 'error');
+            } finally {
+                this.isImportingTeamInvite = false;
+            }
         },
         async uploadLicenseFile() {
             const fileInput = document.getElementById('licenseFileInput');

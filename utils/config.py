@@ -396,6 +396,12 @@ CF_API_EMAIL: str = ""
 CF_API_KEY: str = ""
 TEAM_MODE_ENABLE: bool = False
 TEAM_MODE_OVERSPEED: bool = False
+TEAM_INVITE_ENABLE: bool = False
+TEAM_INVITE_AUTO_KICK: bool = False
+TEAM_INVITE_SEAT_TYPE: str = "chatgpt"
+TEAM_INVITE_KICK_DELAY: int = 0
+TEAM_INVITE_MANAGER_EMAIL: str = ""
+TEAM_INVITE_WORKSPACE_ID: str = ""
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
     with _sub2api_proxy_rotation_lock:
@@ -499,6 +505,8 @@ def reload_all_configs(new_config_dict=None):
     global FIVESIM_REUSE_PHONE, FIVESIM_REUSE_MAX
     global OPENAI_CPA_WEBHOOK_SECRET, USE_ORIGINAL_PASSWORD_FLOW
     global TEAM_MODE_ENABLE, TEAM_MODE_OVERSPEED
+    global TEAM_INVITE_ENABLE, TEAM_INVITE_AUTO_KICK, TEAM_INVITE_SEAT_TYPE, TEAM_INVITE_KICK_DELAY
+    global TEAM_INVITE_MANAGER_EMAIL, TEAM_INVITE_WORKSPACE_ID
     base_yaml_config = init_config()
 
     _db_conf = base_yaml_config.get("database", {})
@@ -967,6 +975,21 @@ def reload_all_configs(new_config_dict=None):
     _team = _c.get("team_mode", {})
     TEAM_MODE_ENABLE = safe_bool(_team.get("enable", False))
     TEAM_MODE_OVERSPEED = safe_bool(_team.get("overspeed", False))
+
+    global TEAM_INVITE_ENABLE, TEAM_INVITE_AUTO_KICK, TEAM_INVITE_SEAT_TYPE, TEAM_INVITE_KICK_DELAY
+    global TEAM_INVITE_MANAGER_EMAIL, TEAM_INVITE_WORKSPACE_ID
+    global TEAM_INVITE_MANAGER_EMAIL, TEAM_INVITE_WORKSPACE_ID
+    _ti = _c.get("team_invite", {})
+    TEAM_INVITE_ENABLE = safe_bool(_ti.get("enable", False))
+    TEAM_INVITE_AUTO_KICK = safe_bool(_ti.get("auto_kick", False))
+    TEAM_INVITE_SEAT_TYPE = str(_ti.get("seat_type", "chatgpt")).strip().lower()
+    TEAM_INVITE_KICK_DELAY = max(0, int(_ti.get("kick_delay", 0)))
+    TEAM_INVITE_MANAGER_EMAIL = str(_ti.get("manager_email", "")).strip()
+    TEAM_INVITE_WORKSPACE_ID = str(_ti.get("workspace_id", "")).strip()
+    # 互斥：TEAM_INVITE_ENABLE 和 TEAM_MODE_ENABLE 不可同时为 True
+    if TEAM_INVITE_ENABLE and TEAM_MODE_ENABLE:
+        print(f"[{ts()}] [WARNING] TEAM拉人 与 原版 TEAM 模式不可同时开启，自动关闭原版 TEAM")
+        TEAM_MODE_ENABLE = False
 
     global PLUS_ACT_ENABLE, PLUS_ACT_MAX_CONCURRENT, PLUS_ACT_RETRY_LIMIT, PLUS_ACT_RETRY_DELAY
     global PLUS_ACT_HEADLESS, PLUS_ACT_BROWSER_TIMEOUT, PLUS_ACT_CHECKOUT_API_URL, PLUS_ACT_CHECKOUT_API_KEY

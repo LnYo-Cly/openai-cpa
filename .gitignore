@@ -35,3 +35,5 @@ register.py.bak
 AGENTS.md
 stop_openai_cpa.ps1
 code.py
+.venv-qwen-vl/
+.venv-qwen-vl/

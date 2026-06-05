@@ -124,6 +124,23 @@ def init_db():
                 last_heartbeat TIMESTAMP DEFAULT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS team_invite_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                manager_email TEXT NOT NULL,
+                target_email TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'pending',
+                error_msg TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        try:
+            execute_sql(c, 'CREATE UNIQUE INDEX IF NOT EXISTS idx_team_invite_unique ON team_invite_records(target_email, workspace_id);')
+        except Exception:
+            pass
+
         try:
             execute_sql(c, 'ALTER TABLE cluster_sync_tasks ADD COLUMN file_sha256 VARCHAR(255) DEFAULT \'\';')
         except Exception:
@@ -1145,6 +1162,74 @@ def get_all_team_accounts() -> list:
     except Exception as e:
         print(f"[{cfg.ts()}] [ERROR] 获取所有 Team 账号失败: {e}")
         return []
+
+
+def get_accounts_with_token() -> list:
+    """返回所有有 token_data 的账号（供 Team 管理员选择）"""
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, "SELECT email, plan_type FROM accounts WHERE token_data IS NOT NULL AND token_data != ''")
+            rows = c.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取有 token 的账号失败: {e}")
+        return []
+
+
+def save_team_invite_record(manager_email: str, target_email: str, workspace_id: str,
+                            state: str, error_msg: str = "") -> bool:
+    """保存或更新 Team 邀请记录（UPSERT by target_email + workspace_id）"""
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, """
+                INSERT INTO team_invite_records (manager_email, target_email, workspace_id, state, error_msg, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(target_email, workspace_id) DO UPDATE SET
+                    state = excluded.state,
+                    error_msg = excluded.error_msg,
+                    manager_email = excluded.manager_email,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (manager_email, target_email, workspace_id, state, error_msg))
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 保存邀请记录失败: {e}")
+        return False
+
+
+def get_team_invite_records(manager_email: str = None, workspace_id: str = None) -> list:
+    """获取邀请记录，支持按管理员和工作区过滤"""
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            sql = "SELECT * FROM team_invite_records WHERE 1=1"
+            params = []
+            if manager_email:
+                sql += " AND manager_email = ?"
+                params.append(manager_email)
+            if workspace_id:
+                sql += " AND workspace_id = ?"
+                params.append(workspace_id)
+            sql += " ORDER BY updated_at DESC LIMIT 500"
+            execute_sql(c, sql, tuple(params))
+            rows = c.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取邀请记录失败: {e}")
+        return []
+
+
+def clear_team_invite_records() -> bool:
+    """清空所有邀请记录"""
+    try:
+        with get_db_conn(is_write=True) as conn:
+            c = get_cursor(conn)
+            execute_sql(c, "DELETE FROM team_invite_records")
+            return True
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 清空邀请记录失败: {e}")
+        return False
 
 
 def delete_sys_kvs(keys: list) -> bool:

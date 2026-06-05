@@ -1884,6 +1884,40 @@ def handle_oauth_upgrade_result(email: str, result: Any, run_ctx: dict = None) -
                 else:
                     print(f"[{ts()}] [ERROR] [提权] Sub2API 补货入库失败: {msg}")
 
+    # TEAM拉人：注册/提权成功后自动邀请进 Team 工作区
+    if getattr(cfg, 'TEAM_INVITE_ENABLE', False):
+        try:
+            from utils.integrations.team_manager import invite_with_refresh, members_with_refresh, remove_member, _get_or_refresh_token as _tm_get_token
+            manager_email = getattr(cfg, 'TEAM_INVITE_MANAGER_EMAIL', '')
+            workspace_id = getattr(cfg, 'TEAM_INVITE_WORKSPACE_ID', '')
+            if manager_email and workspace_id:
+                print(f"[{ts()}] [TEAM拉人] 正在邀请 {mask_email(email)} 进工作区...")
+                res = invite_with_refresh(manager_email, workspace_id, email)
+                if res.get("success"):
+                    print(f"[{ts()}] [TEAM拉人] ✅ {mask_email(email)} 邀请成功")
+                else:
+                    print(f"[{ts()}] [TEAM拉人] ⚠️ {mask_email(email)} 邀请失败: {res.get('message', '未知')}")
+                # 自动踢人
+                if getattr(cfg, 'TEAM_INVITE_AUTO_KICK', False) and res.get("success"):
+                    kick_delay = getattr(cfg, 'TEAM_INVITE_KICK_DELAY', 0)
+                    if kick_delay > 0:
+                        import time as _time
+                        _time.sleep(kick_delay)
+                    try:
+                        members_data = members_with_refresh(manager_email, workspace_id)
+                        for member in members_data.get("members", []):
+                            if (member.get("email") or "").lower() == email.lower():
+                                access_token, _, _ = _tm_get_token(manager_email)
+                                remove_member(access_token, workspace_id, member.get("user_id", ""))
+                                print(f"[{ts()}] [TEAM拉人] 🦶 已自动踢出 {mask_email(email)}")
+                                break
+                    except Exception as ke:
+                        print(f"[{ts()}] [TEAM拉人] 自动踢人失败: {ke}")
+            else:
+                print(f"[{ts()}] [TEAM拉人] ⚠️ 未配置管理员账号或工作区ID，跳过邀请")
+        except Exception as te:
+            print(f"[{ts()}] [TEAM拉人] 邀请异常: {te}")
+
     try:
         safe_pwd = str(password) if password else ""
         orig_masked_email = mask_email(email, force_mask=True)
