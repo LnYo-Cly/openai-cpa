@@ -319,15 +319,23 @@ def remove_member(access_token: str, workspace_id: str, user_id: str,
 def _get_account_token(email: str) -> tuple:
     """
     从 DB 获取账号 token_data，返回 (access_token, token_data_dict) 或抛异常。
+    优先查 accounts 表，也查 team_accounts 表。
     """
     from utils import db_manager
+    # 先查 accounts 表（注册产生的账号，有完整 token_data JSON）
     token_data = db_manager.get_token_by_email(email)
-    if not token_data:
-        raise Exception(f"账号 {email} 无 token 数据")
-    access_token = token_data.get("access_token", "")
-    if not access_token:
-        raise Exception(f"账号 {email} access_token 为空")
-    return access_token, token_data
+    if token_data:
+        access_token = token_data.get("access_token", "")
+        if access_token:
+            return access_token, token_data
+    # 再查 team_accounts 表（导入的管理员 token）
+    team_acc = db_manager.get_team_account_by_email(email)
+    if team_acc:
+        at = (team_acc.get("access_token") or "").strip()
+        if at:
+            token_data = {"access_token": at, "refresh_token": "", "email": email}
+            return at, token_data
+    raise Exception(f"账号 {email} 无 token 数据")
 
 
 def _get_or_refresh_token(email: str) -> tuple:

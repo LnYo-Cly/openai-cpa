@@ -1164,6 +1164,19 @@ def get_all_team_accounts() -> list:
         return []
 
 
+def get_team_account_by_email(email: str) -> dict:
+    """根据 email 获取 team_accounts 表中的单条记录"""
+    try:
+        with get_db_conn(as_dict=True) as conn:
+            c = get_cursor(conn, as_dict=True)
+            execute_sql(c, "SELECT id, email, access_token, cookies FROM team_accounts WHERE email = ? AND status = 1 LIMIT 1", (email,))
+            row = c.fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        print(f"[{cfg.ts()}] [ERROR] 获取 Team 账号失败: {e}")
+        return None
+
+
 def get_accounts_with_token() -> list:
     """返回所有有 token_data 的账号（供 Team 管理员选择）"""
     try:

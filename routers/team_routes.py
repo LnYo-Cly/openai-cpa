@@ -43,10 +43,25 @@ class SysAllocateReq(BaseModel):
 
 @router.get("/api/team/accounts")
 def get_team_accounts(token: str = Depends(verify_token)):
-    """列出有 token 的账号，供选择 Team 管理者"""
+    """列出有 token 的账号 + team_accounts 表的账号，供选择 Team 管理者"""
     try:
         accounts = db_manager.get_accounts_with_token()
-        return {"status": "success", "data": accounts}
+        # 也从 team_accounts 表读取已导入的 Team 管理员
+        team_imported = db_manager.get_all_team_accounts()
+        # 用 email 去重，team_accounts 的优先
+        seen = set()
+        merged = []
+        for t in team_imported:
+            email = (t.get('email') or '').strip().lower()
+            if email and email not in seen:
+                merged.append({"email": t.get('email', ''), "plan_type": "team", "source": "team_accounts"})
+                seen.add(email)
+        for a in accounts:
+            email = (a.get('email') or '').strip().lower()
+            if email and email not in seen:
+                merged.append({"email": a.get('email', ''), "plan_type": a.get('plan_type', ''), "source": "accounts"})
+                seen.add(email)
+        return {"status": "success", "data": merged}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
