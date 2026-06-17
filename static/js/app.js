@@ -1245,6 +1245,7 @@ createApp({
                 this.listenToExtension();
             }
 
+
             if (this.currentTab === 'image_accounts') {
                 this.fetchImageAccounts();
             }
@@ -1472,7 +1473,7 @@ createApp({
                     this.config.temporam = { cookie: '' };
                 }
                 if (!this.config.reg_mode) {
-                        this.config.reg_mode = 'protocol';
+                        this.config.reg_mode = 'email';
                     }
                 if (!this.config.tg_bot.template_success) {
                     this.config.tg_bot.template_success = "🎉 <b>注册成功</b>\n⏰ 时间: <code>{time}</code>\n📧 账号: <code>{email}</code>\n🔑 密码: <code>{password}</code>";
@@ -3764,19 +3765,19 @@ async exportSub2Api() {
             this.config.reg_mode = mode;
 
             await this.saveConfig();
-            this.showToast(`模式已切换为: ${mode === 'protocol' ? '纯协议模式' : '插件托管模式'}`, 'info');
+            this.showToast(`模式已切换为: ${mode === 'email' ? '邮箱注册' : '手机号注册'}`, 'info');
 
-            if (mode === 'extension') {
-                this.listenToExtension();
-            } else {
-                if (this._extDetectionTimer) {
-                    clearInterval(this._extDetectionTimer);
-                    this._extDetectionTimer = null;
-                }
-                this.isExtConnected = false;
-                window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
-                console.log("🛑 [总控] 已进入协议模式，切断插件链路。");
-            }
+            // if (mode === 'extension') {
+            //     this.listenToExtension();
+            // } else {
+            //     if (this._extDetectionTimer) {
+            //         clearInterval(this._extDetectionTimer);
+            //         this._extDetectionTimer = null;
+            //     }
+            //     this.isExtConnected = false;
+            //     window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
+            //     console.log("🛑 [总控] 已进入协议模式，切断插件链路。");
+            // }
         },
         async fetchMailboxes(isManual = false) {
             if (isManual) this.mailboxPage = 1;

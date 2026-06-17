@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "mcp__thinking__sequentialthinking"
+      "mcp__thinking__sequentialthinking",
+      "mcp__zai-mcp-server__extract_text_from_screenshot",
+      "mcp__zread__get_repo_structure",
+      "mcp__github__get_file_contents",
+      "mcp__web-reader__webReader",
+      "mcp__github__search_repositories",
+      "mcp__github__search_code",
+      "mcp__zread__search_doc",
+      "mcp__zread__read_file",
+      "mcp__web-search-prime__web_search_prime",
+      "mcp__zai-mcp-server__analyze_image"
     ]
   }
 }
