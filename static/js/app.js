@@ -2399,6 +2399,44 @@ createApp({
                 if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
             }
         },
+        async bulkPushLDXP() {
+            const pa = this.config.plus_activation || {};
+            if (!pa.shop_merchant_token) {
+                this.showToast("🚫 请先在配置中填写联动小铺(LDXP) Merchant Token", "warning"); return;
+            }
+            if (this.selectedAccounts.length === 0) return;
+            const selectedObjs = this.accounts.filter(acc => this.selectedAccounts.includes(acc.email));
+            const targetAccounts = selectedObjs.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('LDXP'));
+
+            if (targetAccounts.length === 0) {
+                this.showToast("⚠️ 选中的账号都已推送过联动小铺(LDXP)，无需重复推送！", "warning");
+                return;
+            }
+
+            const skippedCount = this.selectedAccounts.length - targetAccounts.length;
+            const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
+
+            const confirmed = await this.customConfirm(`确定将 ${targetAccounts.length} 个新账号推送到联动小铺(LDXP)？${extraMsg}`);
+            if (!confirmed) return;
+
+            this.currentTab = 'console';
+            const emailList = targetAccounts.map(acc => acc.email);
+
+            try {
+                const res = await this.authFetch('/api/account/action', {
+                    method: 'POST',
+                    body: JSON.stringify({ emails: emailList, action: 'push_shop' })
+                });
+                const result = await res.json();
+                this.showToast(result.message, result.status);
+            } catch (e) {
+                this.showToast("批量推送请求异常", "error");
+            } finally {
+                this.selectedAccounts = [];
+                if (typeof this.fetchAccounts === 'function') this.fetchAccounts();
+                if (typeof this.fetchInventoryStats === 'function') this.fetchInventoryStats();
+            }
+        },
         async triggerAccountAction(account, action) {
             if (action === 'push') {
                 if (!this.config.cpa_mode.enable) {

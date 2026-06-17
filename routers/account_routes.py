@@ -12,6 +12,7 @@ from utils import core_engine, db_manager
 import utils.config as cfg
 from utils.integrations.sub2api_client import Sub2APIClient, build_sub2api_export_bundle, get_sub2api_push_settings
 from utils.integrations.image2api_client import Image2APIClient
+from utils.plus_activation.push_handler import _push_to_shop as push_to_ldxp
 from utils.auth_core import email_jwt
 
 
@@ -194,6 +195,10 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 return {"status": "error", "message": "🚫 推送失败：未开启 Image2API 模式！"}
             img_client = Image2APIClient()
             print(f"[{cfg.ts()}] [系统] 🖼️ 收到指令，准备将 {len(target_emails)} 个账号推送至 Image2API...")
+        elif action == "push_shop":
+            if not getattr(core_engine.cfg, 'PLUS_ACT_SHOP_MERCHANT_TOKEN', ''):
+                return {"status": "error", "message": "🚫 推送失败：未配置联动小铺(LDXP) Merchant Token！"}
+            print(f"[{cfg.ts()}] [系统] 🏪 收到指令，准备将 {len(target_emails)} 个账号推送至联动小铺(LDXP)...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -228,6 +233,14 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                         last_error = resp
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Image2API！")
+                elif action == "push_shop":
+                    shop_res = push_to_ldxp(token_data)
+                    success = bool(shop_res.get("success", False))
+                    if not success:
+                        last_error = shop_res.get("message", "推送失败")
+                        print(f"[{cfg.ts()}] [错误] ❌ 推送联动小铺失败 ({mask_email(email)}): {last_error}")
+                    else:
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至联动小铺(LDXP)！")
                 if success:
                     success_emails.append(email)
                 else:
@@ -243,7 +256,8 @@ def account_action(data: dict, token: str = Depends(verify_token)):
             platform_map = {
                 "push": "CPA",
                 "push_sub2api": "SUB2API",
-                "push_image2api": "IMAGE2API"
+                "push_image2api": "IMAGE2API",
+                "push_shop": "LDXP"
             }
             platform_marker = platform_map.get(action, "UNKNOWN")
             db_manager.update_account_push_info(success_emails, platform_marker)
