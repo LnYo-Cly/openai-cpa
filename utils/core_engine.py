@@ -714,6 +714,22 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             if db_manager.save_account_to_db(account_email, password, token_json_str):
                 print(f"[{ts()}] [SUCCESS] [{mode_label}] 账号密码与 Token 已安全存入: {mask_email(account_email)}")
 
+        # 联动小铺 (LDXP) 自动推送 — 与 CPA/Sub2API 模式无关，开启即推
+        if getattr(cfg, 'PLUS_ACT_SHOP_ENABLE', False) and token_data.get("status") not in ["image2api", "仅注册成功"]:
+            try:
+                from utils.plus_activation.push_handler import _push_to_shop
+                shop_res = _push_to_shop(token_data)
+                if shop_res.get("success"):
+                    print(f"[{ts()}] [SUCCESS] 🏪 联动小铺推送成功: {mask_email(account_email)} ({getattr(cfg, 'PLUS_ACT_SHOP_FORMAT', 'cpa')} 格式)")
+                    try:
+                        db_manager.update_account_push_info([account_email], "LDXP", mode="sync")
+                    except Exception:
+                        pass
+                else:
+                    print(f"[{ts()}] [ERROR] 🏪 联动小铺推送失败 ({mask_email(account_email)}): {shop_res.get('message')}")
+            except Exception as e:
+                print(f"[{ts()}] [ERROR] 🏪 联动小铺推送异常 ({mask_email(account_email)}): {e}")
+
         # CPA 云端上传
         if cpa_upload:
             current_status = token_data.get("status", "")

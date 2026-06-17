@@ -446,7 +446,8 @@ createApp({
                 db_pass: false,
                 master_rt: false,
                 image2api_url: true,
-                image2api_key: false
+                image2api_key: false,
+                ldxp_token: false
             },
 
             toasts: [],

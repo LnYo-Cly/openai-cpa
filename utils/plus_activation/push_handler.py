@@ -65,7 +65,18 @@ def _push_to_shop(token_data: dict) -> dict:
     if goods_id is None:
         return {"success": False, "message": "未配置 Shop 商品 ID"}
 
-    content = json.dumps(token_data, ensure_ascii=False)
+    fmt = getattr(cfg, "PLUS_ACT_SHOP_FORMAT", "cpa")
+    if fmt == "sub2api":
+        try:
+            from utils.integrations.sub2api_client import (
+                build_sub2api_export_bundle, get_sub2api_push_settings,
+            )
+            bundle = build_sub2api_export_bundle([token_data], get_sub2api_push_settings())
+            content = json.dumps(bundle, ensure_ascii=False)
+        except Exception as e:
+            return {"success": False, "message": f"构建 sub2api 格式失败: {e}"}
+    else:
+        content = json.dumps(token_data, ensure_ascii=False)
     resp = requests.post(
         "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add",
         headers={

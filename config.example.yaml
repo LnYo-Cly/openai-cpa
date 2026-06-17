@@ -431,3 +431,7 @@ plus_activation:
   proxy: ""
   shop_merchant_token: ""
   shop_goods_id: 0
+  # 【开关】开启后，账号注册成功自动推送卡密到联动小铺(pay.ldxp.cn)，与 CPA/Sub2API 模式并行
+  shop_enable: false
+  # 推送到店铺的卡密格式: cpa(原始 Token) / sub2api(面板导入包)
+  shop_format: "cpa"

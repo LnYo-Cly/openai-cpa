@@ -4681,6 +4681,75 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 联动小铺 (LDXP) 仓管 -->
+                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-amber-500 bg-gradient-to-br from-amber-50/20 to-white" v-if="config.plus_activation">
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 border-b border-slate-100 pb-5 gap-4">
+                                    <div>
+                                        <h3 class="text-xl md:text-2xl font-black text-amber-700 tracking-tight flex items-center gap-2"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg> 联动小铺 (LDXP) 仓管
+                                            <a href="https://pay.ldxp.cn" target="_blank" rel="noopener noreferrer" class="text-[10px] md:text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold px-2 py-1 rounded-md sm:ml-2 transition-colors inline-flex items-center gap-1 border border-amber-200/60 shadow-sm">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                                前往商户后台
+                                            </a>
+                                        </h3>
+                                    </div>
+                                    <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                                        <label class="relative inline-flex bg-white px-4 py-2.5 md:px-5 md:py-3 rounded-xl cursor-pointer hover:bg-amber-50 transition-colors shadow-sm border border-amber-200 w-full sm:w-auto items-center justify-center group">
+                                            <input type="checkbox" v-model="config.plus_activation.shop_enable" @change="saveConfig" class="sr-only peer">
+                                            <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-amber-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
+                                            <span class="font-black text-amber-900 text-sm md:text-base ml-3 tracking-wide">主开关：开启联动小铺</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+                                    <div class="col-span-1 lg:col-span-2 space-y-5 bg-slate-50/80 p-5 md:p-6 rounded-2xl border border-slate-200 shadow-inner" :class="{'opacity-50 pointer-events-none grayscale-[50%] transition-opacity duration-300': !config.plus_activation.shop_enable}">
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">Merchant Token (商户令牌)</label>
+                                            <div class="relative">
+                                                <input :type="showPwd.ldxp_token ? 'text' : 'password'" v-model="config.plus_activation.shop_merchant_token" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm font-mono text-sm" placeholder="联动小铺商户 Token">
+                                                <button @click="showPwd.ldxp_token = !showPwd.ldxp_token" class="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-slate-400 hover:text-amber-600 focus:outline-none transition-transform hover:scale-110">
+                                                    <svg v-if="showPwd.ldxp_token" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg><svg v-else xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.67-3.835m2.89-2.89A9.97 9.97 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-1.875 3.175m-2.89 2.89l-1.414-1.414M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">商品 ID (Goods ID)</label>
+                                            <input type="number" v-model.number="config.plus_activation.shop_goods_id" class="w-full appearance-none bg-white border border-amber-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors shadow-sm text-sm font-mono text-center" placeholder="0">
+                                        </div>
+                                        <div class="pt-4 border-t border-slate-200/60 mt-2">
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">推送内容格式</label>
+                                            <div class="flex gap-3">
+                                                <label class="flex-1 flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-colors" :class="config.plus_activation.shop_format === 'cpa' ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'">
+                                                    <input type="radio" value="cpa" v-model="config.plus_activation.shop_format" @change="saveConfig" class="text-amber-600 focus:ring-amber-500">
+                                                    <div>
+                                                        <div class="text-sm font-bold text-slate-700">CPA 格式</div>
+                                                        <div class="text-[11px] text-slate-400">原始 Token · CLIProxyAPI</div>
+                                                    </div>
+                                                </label>
+                                                <label class="flex-1 flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-colors" :class="config.plus_activation.shop_format === 'sub2api' ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'">
+                                                    <input type="radio" value="sub2api" v-model="config.plus_activation.shop_format" @change="saveConfig" class="text-amber-600 focus:ring-amber-500">
+                                                    <div>
+                                                        <div class="text-sm font-bold text-slate-700">Sub2API 格式</div>
+                                                        <div class="text-[11px] text-slate-400">导入包 · 面板/中转</div>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-span-1 bg-amber-50/40 p-5 md:p-6 rounded-2xl border border-amber-100 flex flex-col gap-3 justify-center">
+                                        <p class="text-sm text-slate-600 leading-relaxed">
+                                            <b class="text-amber-700">开启主开关</b>后，每个账号注册成功即<b>自动推送</b>到联动小铺（与 CPA / Sub2API 模式并行，互不影响）。
+                                        </p>
+                                        <p class="text-sm text-slate-600 leading-relaxed">
+                                            也可在「<b class="text-amber-700">账号管理</b>」选中账号点「<b class="text-amber-700">联动小铺</b>」按钮手动补推。
+                                        </p>
+                                        <p class="text-xs text-slate-400 leading-relaxed">
+                                            卡密内容按所选「推送内容格式」打包后上传至 pay.ldxp.cn 对应商品。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div v-show="currentTab === 'notify'" v-if="config" class="space-y-5 md:space-y-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-sky-400 lg:max-w-3xl">
