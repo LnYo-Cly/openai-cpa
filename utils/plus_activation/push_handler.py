@@ -113,15 +113,8 @@ def push_activated_account(token_data: dict, targets: list) -> dict:
     return results
 
 
-def _push_to_shop(token_data: dict) -> dict:
-    merchant_token = getattr(cfg, "PLUS_ACT_SHOP_MERCHANT_TOKEN", "")
-    goods_id = getattr(cfg, "PLUS_ACT_SHOP_GOODS_ID", 0)
-
-    if not merchant_token:
-        return {"success": False, "message": "未配置 Shop Merchant Token"}
-    if goods_id is None:
-        return {"success": False, "message": "未配置 Shop 商品 ID"}
-
+def _build_shop_content(token_data: dict):
+    """按 shop_format 构建卡密内容，返回 (ok, content_or_error_msg)。"""
     fmt = getattr(cfg, "PLUS_ACT_SHOP_FORMAT", "cpa")
     if fmt == "sub2api":
         try:
@@ -130,17 +123,24 @@ def _push_to_shop(token_data: dict) -> dict:
             )
             bundle = build_sub2api_export_bundle([token_data], get_sub2api_push_settings())
             _clean_bundle_for_sale(bundle)
-            content = json.dumps(bundle, ensure_ascii=False)
+            return True, json.dumps(bundle, ensure_ascii=False)
         except Exception as e:
-            return {"success": False, "message": f"构建 sub2api 格式失败: {e}"}
-    else:
-        content = json.dumps(token_data, ensure_ascii=False)
+            return False, f"构建 sub2api 格式失败: {e}"
+    return True, json.dumps(token_data, ensure_ascii=False)
+
+
+def _deliver_ldxp(content: str) -> dict:
+    """投递到联动小铺 pay.ldxp.cn (含阿里云 WAF acw_sc__v2 反爬自动解题)。"""
+    merchant_token = getattr(cfg, "PLUS_ACT_SHOP_MERCHANT_TOKEN", "")
+    goods_id = getattr(cfg, "PLUS_ACT_SHOP_GOODS_ID", 0)
+    if not merchant_token:
+        return {"success": False, "message": "未配置联动小铺 Merchant Token"}
+    if not goods_id:
+        return {"success": False, "message": "未配置联动小铺 商品 ID"}
+
     shop_proxy = getattr(cfg, "PLUS_ACT_SHOP_PROXY", "")
     url = "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add"
-    base_headers = {
-        "content-type": "application/json",
-        "merchant-token": merchant_token,
-    }
+    base_headers = {"content-type": "application/json", "merchant-token": merchant_token}
     req_kwargs = {
         "headers": base_headers,
         "json": {"goods_id": goods_id, "content": content, "first": 0, "remove_repeat": 0},
@@ -170,8 +170,6 @@ def _push_to_shop(token_data: dict) -> dict:
 
     if not resp.ok:
         return {"success": False, "message": f"HTTP {resp.status_code}: {raw[:200]}"}
-
-    # 仍被挑战 → 解题未通过
     if "<script>var arg1" in raw or "acw_sc__v2" in raw:
         return {"success": False, "message": "反爬挑战未通过，可尝试配置 shop_proxy 走干净代理"}
 
@@ -183,9 +181,54 @@ def _push_to_shop(token_data: dict) -> dict:
             return {"success": False, "message": f"响应非JSON(HTTP {resp.status_code}): {raw[:200]}"}
     if not isinstance(data, dict):
         return {"success": False, "message": f"响应格式异常(HTTP {resp.status_code}): {str(data)[:200]}"}
-
     code = data.get("code", 0)
     if isinstance(code, int) and (code < 0 or code >= 300):
         return {"success": False, "message": data.get("message") or data.get("msg") or "推送失败"}
+    return {"success": True, "message": "联动小铺推送成功"}
 
-    return {"success": True, "message": "推送成功"}
+
+def _deliver_dujiao(content: str) -> dict:
+    """投递到独角兽发卡网 (admin JWT, /admin/card-secrets/batch)。"""
+    base = getattr(cfg, "PLUS_ACT_SHOP_DUJIAO_URL", "").rstrip("/")
+    token = getattr(cfg, "PLUS_ACT_SHOP_DUJIAO_TOKEN", "")
+    pid = getattr(cfg, "PLUS_ACT_SHOP_DUJIAO_PRODUCT_ID", 0)
+    sid = getattr(cfg, "PLUS_ACT_SHOP_DUJIAO_SKU_ID", 0)
+    if not token:
+        return {"success": False, "message": "未配置独角兽 Token"}
+    if not base:
+        return {"success": False, "message": "未配置独角兽 Base URL"}
+    if not pid:
+        return {"success": False, "message": "未配置独角兽 product_id"}
+
+    try:
+        resp = requests.post(
+            f"{base}/admin/card-secrets/batch",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"product_id": pid, "sku_id": sid, "secrets": [content], "deduplicate": True},
+            timeout=15,
+            impersonate="chrome110",
+        )
+    except Exception as e:
+        return {"success": False, "message": f"独角兽请求异常: {e}"}
+
+    if not resp.ok:
+        return {"success": False, "message": f"HTTP {resp.status_code}: {(resp.text or '')[:200]}"}
+    raw = resp.text or ""
+    try:
+        data = resp.json()
+    except Exception:
+        return {"success": False, "message": f"响应非JSON: {raw[:200]}"}
+    sc = data.get("status_code")
+    if sc != 0:
+        return {"success": False, "message": data.get("msg") or f"独角兽返回 status_code={sc}"}
+    created = (data.get("data") or {}).get("created", 0)
+    return {"success": True, "message": f"独角兽导入成功({created}张)"}
+
+
+def _push_to_shop(token_data: dict) -> dict:
+    ok, content = _build_shop_content(token_data)
+    if not ok:
+        return {"success": False, "message": content}
+    if getattr(cfg, "PLUS_ACT_SHOP_PLATFORM", "ldxp") == "dujiao":
+        return _deliver_dujiao(content)
+    return _deliver_ldxp(content)

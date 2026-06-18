@@ -995,7 +995,7 @@ def reload_all_configs(new_config_dict=None):
     global PLUS_ACT_HEADLESS, PLUS_ACT_BROWSER_TIMEOUT, PLUS_ACT_CHECKOUT_API_URL, PLUS_ACT_CHECKOUT_API_KEY
     global PLUS_ACT_COUNTRY, PLUS_ACT_PAYMENT_METHOD, PLUS_ACT_ADDRESS_API_URL
     global PLUS_ACT_SMS_POOL_FILE, PLUS_ACT_PUSH_TARGETS, PLUS_ACT_PROXY
-    global PLUS_ACT_SHOP_MERCHANT_TOKEN, PLUS_ACT_SHOP_GOODS_ID, PLUS_ACT_SHOP_ENABLE, PLUS_ACT_SHOP_FORMAT, PLUS_ACT_SHOP_PROXY
+    global PLUS_ACT_SHOP_MERCHANT_TOKEN, PLUS_ACT_SHOP_GOODS_ID, PLUS_ACT_SHOP_ENABLE, PLUS_ACT_SHOP_FORMAT, PLUS_ACT_SHOP_PROXY, PLUS_ACT_SHOP_PLATFORM, PLUS_ACT_SHOP_DUJIAO_URL, PLUS_ACT_SHOP_DUJIAO_TOKEN, PLUS_ACT_SHOP_DUJIAO_PRODUCT_ID, PLUS_ACT_SHOP_DUJIAO_SKU_ID
 
     _plus = _c.get("plus_activation", {})
     PLUS_ACT_ENABLE = safe_bool(_plus.get("enable", False))
@@ -1018,6 +1018,12 @@ def reload_all_configs(new_config_dict=None):
     _shop_fmt = str(_plus.get("shop_format", "cpa")).strip().lower()
     PLUS_ACT_SHOP_FORMAT = _shop_fmt if _shop_fmt in ("cpa", "sub2api") else "cpa"
     PLUS_ACT_SHOP_PROXY = str(_plus.get("shop_proxy", "")).strip()
+    _shop_platform = str(_plus.get("shop_platform", "ldxp")).strip().lower()
+    PLUS_ACT_SHOP_PLATFORM = _shop_platform if _shop_platform in ("ldxp", "dujiao") else "ldxp"
+    PLUS_ACT_SHOP_DUJIAO_URL = str(_plus.get("shop_dujiao_url", "")).strip().rstrip("/")
+    PLUS_ACT_SHOP_DUJIAO_TOKEN = str(_plus.get("shop_dujiao_token", "")).strip()
+    PLUS_ACT_SHOP_DUJIAO_PRODUCT_ID = safe_int(_plus.get("shop_dujiao_product_id", 0), 0)
+    PLUS_ACT_SHOP_DUJIAO_SKU_ID = safe_int(_plus.get("shop_dujiao_sku_id", 0), 0)
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

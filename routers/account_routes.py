@@ -196,9 +196,15 @@ def account_action(data: dict, token: str = Depends(verify_token)):
             img_client = Image2APIClient()
             print(f"[{cfg.ts()}] [系统] 🖼️ 收到指令，准备将 {len(target_emails)} 个账号推送至 Image2API...")
         elif action == "push_shop":
-            if not getattr(core_engine.cfg, 'PLUS_ACT_SHOP_MERCHANT_TOKEN', ''):
-                return {"status": "error", "message": "🚫 推送失败：未配置联动小铺(LDXP) Merchant Token！"}
-            print(f"[{cfg.ts()}] [系统] 🏪 收到指令，准备将 {len(target_emails)} 个账号推送至联动小铺(LDXP)...")
+            _shop_plat = getattr(core_engine.cfg, 'PLUS_ACT_SHOP_PLATFORM', 'ldxp')
+            if _shop_plat == 'dujiao':
+                if not getattr(core_engine.cfg, 'PLUS_ACT_SHOP_DUJIAO_TOKEN', ''):
+                    return {"status": "error", "message": "🚫 推送失败：未配置独角兽 Token！"}
+                print(f"[{cfg.ts()}] [系统] 🦄 收到指令，准备将 {len(target_emails)} 个账号推送至独角兽发卡网...")
+            else:
+                if not getattr(core_engine.cfg, 'PLUS_ACT_SHOP_MERCHANT_TOKEN', ''):
+                    return {"status": "error", "message": "🚫 推送失败：未配置联动小铺(LDXP) Merchant Token！"}
+                print(f"[{cfg.ts()}] [系统] 🏪 收到指令，准备将 {len(target_emails)} 个账号推送至联动小铺(LDXP)...")
 
         total_accounts = len(target_emails)
         for idx, email in enumerate(target_emails):
@@ -257,9 +263,11 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                 "push": "CPA",
                 "push_sub2api": "SUB2API",
                 "push_image2api": "IMAGE2API",
-                "push_shop": "LDXP"
             }
-            platform_marker = platform_map.get(action, "UNKNOWN")
+            if action == "push_shop":
+                platform_marker = "DUJIAO" if getattr(core_engine.cfg, 'PLUS_ACT_SHOP_PLATFORM', 'ldxp') == 'dujiao' else "LDXP"
+            else:
+                platform_marker = platform_map.get(action, "UNKNOWN")
             db_manager.update_account_push_info(success_emails, platform_marker)
 
         print(f"[{cfg.ts()}] [系统] 🏁 推送任务执行完毕。成功: {len(success_emails)} 个，失败: {fail_count} 个。")

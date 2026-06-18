@@ -431,9 +431,16 @@ plus_activation:
   proxy: ""
   shop_merchant_token: ""
   shop_goods_id: 0
-  # 【开关】开启后，账号注册成功自动推送卡密到联动小铺(pay.ldxp.cn)，与 CPA/Sub2API 模式并行
+  # 【开关】开启后，账号注册成功自动推送卡密到发卡平台，与 CPA/Sub2API 模式并行
   shop_enable: false
+  # 发卡平台: ldxp(联动小铺 pay.ldxp.cn) / dujiao(独角兽自建发卡网)
+  shop_platform: "ldxp"
   # 推送到店铺的卡密格式: cpa(原始 Token) / sub2api(面板导入包)
   shop_format: "cpa"
   # 推送专用代理(留空则直连)。生产机房IP易被pay.ldxp.cn阿里云WAF反爬拦截，建议填住宅/干净代理
   shop_proxy: ""
+  # ===== 独角兽(dujiao)专用 =====
+  shop_dujiao_url: "https://fkw.example.com/api/v1"   # 发卡网 API base url
+  shop_dujiao_token: ""                                 # admin JWT (POST /admin/login 获取)
+  shop_dujiao_product_id: 1                             # 商品 ID
+  shop_dujiao_sku_id: 1                                 # SKU ID

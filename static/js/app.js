@@ -447,7 +447,8 @@ createApp({
                 master_rt: false,
                 image2api_url: true,
                 image2api_key: false,
-                ldxp_token: false
+                ldxp_token: false,
+                dujiao_token: false
             },
 
             toasts: [],
@@ -2402,22 +2403,27 @@ createApp({
         },
         async bulkPushLDXP() {
             const pa = this.config.plus_activation || {};
-            if (!pa.shop_merchant_token) {
-                this.showToast("🚫 请先在配置中填写联动小铺(LDXP) Merchant Token", "warning"); return;
+            const isDujiao = pa.shop_platform === 'dujiao';
+            const platName = isDujiao ? '独角兽发卡' : '联动小铺(LDXP)';
+            if (isDujiao) {
+                if (!pa.shop_dujiao_token) { this.showToast(`🚫 请先在配置中填写${platName} Token`, "warning"); return; }
+            } else if (!pa.shop_merchant_token) {
+                this.showToast(`🚫 请先在配置中填写${platName} Merchant Token`, "warning"); return;
             }
             if (this.selectedAccounts.length === 0) return;
             const selectedObjs = this.accounts.filter(acc => this.selectedAccounts.includes(acc.email));
-            const targetAccounts = selectedObjs.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('LDXP'));
+            const marker = isDujiao ? 'DUJIAO' : 'LDXP';
+            const targetAccounts = selectedObjs.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes(marker));
 
             if (targetAccounts.length === 0) {
-                this.showToast("⚠️ 选中的账号都已推送过联动小铺(LDXP)，无需重复推送！", "warning");
+                this.showToast(`⚠️ 选中的账号都已推送过${platName}，无需重复推送！`, "warning");
                 return;
             }
 
             const skippedCount = this.selectedAccounts.length - targetAccounts.length;
             const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
 
-            const confirmed = await this.customConfirm(`确定将 ${targetAccounts.length} 个新账号推送到联动小铺(LDXP)？${extraMsg}`);
+            const confirmed = await this.customConfirm(`确定将 ${targetAccounts.length} 个新账号推送到${platName}？${extraMsg}`);
             if (!confirmed) return;
 
             this.currentTab = 'console';
