@@ -91,7 +91,16 @@ def _push_to_shop(token_data: dict) -> dict:
     if not resp.ok:
         return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
 
-    data = resp.json() if resp.text else {}
+    raw = resp.text or ""
+    data = {}
+    if raw:
+        try:
+            data = resp.json()
+        except Exception:
+            return {"success": False, "message": f"响应非JSON(HTTP {resp.status_code}): {raw[:200]}"}
+    if not isinstance(data, dict):
+        return {"success": False, "message": f"响应格式异常(HTTP {resp.status_code}): {str(data)[:200]}"}
+
     code = data.get("code", 0)
     if isinstance(code, int) and (code < 0 or code >= 300):
         return {"success": False, "message": data.get("message") or data.get("msg") or "推送失败"}
