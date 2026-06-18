@@ -1,11 +1,30 @@
 """推送逻辑 — 复用现有 upload_to_cpa / Sub2APIClient / shop"""
 
 import json
+import re
 from curl_cffi import requests
 
 from utils import config as cfg
 from utils import db_manager
 from utils.db_manager import get_db_conn, get_cursor, execute_sql
+
+
+def _acw_sc_v2(arg1: str) -> str:
+    """计算阿里云 WAF acw_sc__v2 挑战 cookie (unsbox + hexXor，算法固定)。"""
+    box = [15, 35, 29, 24, 33, 16, 1, 38, 10, 9, 19, 31, 40, 27, 22,
+           23, 25, 13, 6, 11, 39, 18, 20, 8, 14, 21, 32, 26, 2, 30,
+           7, 4, 17, 5, 3, 28, 34, 37, 12, 36]
+    unsboxed = [""] * 40
+    for i in range(len(arg1)):
+        for k in range(40):
+            if box[k] == i + 1:
+                unsboxed[k] = arg1[i]
+    s = "".join(unsboxed)
+    mask = "3000176000856006061501533003690027800375"
+    out = ""
+    for i in range(0, 40, 2):
+        out += format(int(s[i:i + 2], 16) ^ int(mask[i:i + 2], 16), "02x")
+    return out
 
 
 def push_activated_account(token_data: dict, targets: list) -> dict:
@@ -78,11 +97,13 @@ def _push_to_shop(token_data: dict) -> dict:
     else:
         content = json.dumps(token_data, ensure_ascii=False)
     shop_proxy = getattr(cfg, "PLUS_ACT_SHOP_PROXY", "")
+    url = "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add"
+    base_headers = {
+        "content-type": "application/json",
+        "merchant-token": merchant_token,
+    }
     req_kwargs = {
-        "headers": {
-            "content-type": "application/json",
-            "merchant-token": merchant_token,
-        },
+        "headers": base_headers,
         "json": {"goods_id": goods_id, "content": content, "first": 0, "remove_repeat": 0},
         "timeout": 15,
         "impersonate": "chrome110",
@@ -90,19 +111,30 @@ def _push_to_shop(token_data: dict) -> dict:
     if shop_proxy:
         req_kwargs["proxies"] = {"http": shop_proxy, "https": shop_proxy}
 
-    resp = requests.post(
-        "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add",
-        **req_kwargs,
-    )
+    resp = requests.post(url, **req_kwargs)
+
+    # 阿里云 WAF acw_sc__v2 反爬挑战页：返回 <html><script>var arg1=... → 解出 cookie 重试一次
+    raw = resp.text or ""
+    if resp.ok and ("<script>var arg1" in raw or "acw_sc__v2" in raw):
+        m = re.search(r"var arg1='([0-9A-Fa-f]+)'", raw)
+        if m:
+            acw_tc = ""
+            try:
+                acw_tc = resp.cookies.get("acw_tc", "") or ""
+            except Exception:
+                pass
+            retry_kwargs = dict(req_kwargs)
+            retry_kwargs["headers"] = dict(base_headers)
+            retry_kwargs["headers"]["cookie"] = f"acw_tc={acw_tc}; acw_sc__v2={_acw_sc_v2(m.group(1))}"
+            resp = requests.post(url, **retry_kwargs)
+            raw = resp.text or ""
 
     if not resp.ok:
-        return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+        return {"success": False, "message": f"HTTP {resp.status_code}: {raw[:200]}"}
 
-    raw = resp.text or ""
-    # 阿里云 WAF acw_sc__v2 反爬挑战页：返回 <html><script>var arg1=...
+    # 仍被挑战 → 解题未通过
     if "<script>var arg1" in raw or "acw_sc__v2" in raw:
-        tip = "当前出口IP被 pay.ldxp.cn 反爬拦截，请在配置中填写 shop_proxy(住宅/干净代理)"
-        return {"success": False, "message": f"被反爬挑战拦截({tip})"}
+        return {"success": False, "message": "反爬挑战未通过，可尝试配置 shop_proxy 走干净代理"}
 
     data = {}
     if raw:
