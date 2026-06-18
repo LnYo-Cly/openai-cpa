@@ -77,21 +77,33 @@ def _push_to_shop(token_data: dict) -> dict:
             return {"success": False, "message": f"构建 sub2api 格式失败: {e}"}
     else:
         content = json.dumps(token_data, ensure_ascii=False)
-    resp = requests.post(
-        "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add",
-        headers={
+    shop_proxy = getattr(cfg, "PLUS_ACT_SHOP_PROXY", "")
+    req_kwargs = {
+        "headers": {
             "content-type": "application/json",
             "merchant-token": merchant_token,
         },
-        json={"goods_id": goods_id, "content": content, "first": 0, "remove_repeat": 0},
-        timeout=15,
-        impersonate="chrome110",
+        "json": {"goods_id": goods_id, "content": content, "first": 0, "remove_repeat": 0},
+        "timeout": 15,
+        "impersonate": "chrome110",
+    }
+    if shop_proxy:
+        req_kwargs["proxies"] = {"http": shop_proxy, "https": shop_proxy}
+
+    resp = requests.post(
+        "https://pay.ldxp.cn/merchantApi/GoodsCardStorage/add",
+        **req_kwargs,
     )
 
     if not resp.ok:
         return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
 
     raw = resp.text or ""
+    # 阿里云 WAF acw_sc__v2 反爬挑战页：返回 <html><script>var arg1=...
+    if "<script>var arg1" in raw or "acw_sc__v2" in raw:
+        tip = "当前出口IP被 pay.ldxp.cn 反爬拦截，请在配置中填写 shop_proxy(住宅/干净代理)"
+        return {"success": False, "message": f"被反爬挑战拦截({tip})"}
+
     data = {}
     if raw:
         try:

@@ -995,7 +995,7 @@ def reload_all_configs(new_config_dict=None):
     global PLUS_ACT_HEADLESS, PLUS_ACT_BROWSER_TIMEOUT, PLUS_ACT_CHECKOUT_API_URL, PLUS_ACT_CHECKOUT_API_KEY
     global PLUS_ACT_COUNTRY, PLUS_ACT_PAYMENT_METHOD, PLUS_ACT_ADDRESS_API_URL
     global PLUS_ACT_SMS_POOL_FILE, PLUS_ACT_PUSH_TARGETS, PLUS_ACT_PROXY
-    global PLUS_ACT_SHOP_MERCHANT_TOKEN, PLUS_ACT_SHOP_GOODS_ID, PLUS_ACT_SHOP_ENABLE, PLUS_ACT_SHOP_FORMAT
+    global PLUS_ACT_SHOP_MERCHANT_TOKEN, PLUS_ACT_SHOP_GOODS_ID, PLUS_ACT_SHOP_ENABLE, PLUS_ACT_SHOP_FORMAT, PLUS_ACT_SHOP_PROXY
 
     _plus = _c.get("plus_activation", {})
     PLUS_ACT_ENABLE = safe_bool(_plus.get("enable", False))
@@ -1017,6 +1017,7 @@ def reload_all_configs(new_config_dict=None):
     PLUS_ACT_SHOP_ENABLE = safe_bool(_plus.get("shop_enable", False))
     _shop_fmt = str(_plus.get("shop_format", "cpa")).strip().lower()
     PLUS_ACT_SHOP_FORMAT = _shop_fmt if _shop_fmt in ("cpa", "sub2api") else "cpa"
+    PLUS_ACT_SHOP_PROXY = str(_plus.get("shop_proxy", "")).strip()
 
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")

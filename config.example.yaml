@@ -435,3 +435,5 @@ plus_activation:
   shop_enable: false
   # 推送到店铺的卡密格式: cpa(原始 Token) / sub2api(面板导入包)
   shop_format: "cpa"
+  # 推送专用代理(留空则直连)。生产机房IP易被pay.ldxp.cn阿里云WAF反爬拦截，建议填住宅/干净代理
+  shop_proxy: ""
