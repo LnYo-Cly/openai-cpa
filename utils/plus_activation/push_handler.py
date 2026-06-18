@@ -2,6 +2,8 @@
 
 import json
 import re
+import time
+import base64
 from curl_cffi import requests
 
 from utils import config as cfg
@@ -25,6 +27,42 @@ def _acw_sc_v2(arg1: str) -> str:
     for i in range(0, 40, 2):
         out += format(int(s[i:i + 2], 16) ^ int(mask[i:i + 2], 16), "02x")
     return out
+
+
+def _jwt_payload(access_token: str) -> dict:
+    """无验签解析 access_token(JWT) payload，仅取 org/exp/iat 等明文字段。"""
+    try:
+        parts = access_token.split(".")
+        if len(parts) < 2:
+            return {}
+        seg = parts[1] + "=" * (-len(parts[1]) % 4)
+        return json.loads(base64.urlsafe_b64decode(seg))
+    except Exception:
+        return {}
+
+
+def _clean_bundle_for_sale(bundle: dict) -> dict:
+    """售卖用 bundle 清洗：去卖家私有 group_ids；从 JWT 补真实 organization_id 与过期时间。"""
+    now = int(time.time())
+    for acc in bundle.get("accounts", []):
+        acc.pop("group_ids", None)  # 卖家面板组号，买家面板无关
+        creds = acc.get("credentials") or {}
+        pl = _jwt_payload(creds.get("access_token") or "")
+        if not pl:
+            continue
+        auth = pl.get("https://api.openai.com/auth") or {}
+        org = auth.get("pid") or auth.get("organization_id") or ""
+        if org:
+            creds["organization_id"] = org
+        exp = pl.get("exp")
+        iat = pl.get("iat")
+        if isinstance(exp, (int, float)):
+            creds["expires_at"] = int(exp)
+            if isinstance(iat, (int, float)):
+                creds["expires_in"] = max(0, int(exp) - int(iat))
+            else:
+                creds["expires_in"] = max(0, int(exp) - now)
+    return bundle
 
 
 def push_activated_account(token_data: dict, targets: list) -> dict:
@@ -91,6 +129,7 @@ def _push_to_shop(token_data: dict) -> dict:
                 build_sub2api_export_bundle, get_sub2api_push_settings,
             )
             bundle = build_sub2api_export_bundle([token_data], get_sub2api_push_settings())
+            _clean_bundle_for_sale(bundle)
             content = json.dumps(bundle, ensure_ascii=False)
         except Exception as e:
             return {"success": False, "message": f"构建 sub2api 格式失败: {e}"}
