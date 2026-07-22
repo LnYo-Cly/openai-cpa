@@ -23,6 +23,11 @@ from utils.integrations.agent_identity import (
     build_agent_identity_session_payload,
     should_use_agent_identity_reg_path,
 )
+from .session_bootstrap import (
+    describe_token_source,
+    extract_reg_session_access_token,
+    pick_session_access_token,
+)
 from .user_utils import _generate_password
 
 
@@ -731,7 +736,16 @@ def run(
                         print(f"[{cfg.ts()}] [INFO] [{mode_label}] （{masked_login}）账号已注册成功，根据配置提前作为半成品写入本地库。")
                     except Exception as e:
                         pass
-                data = image2api_data(s_reg, target_continue_url, proxies)
+                # Agent Identity (Sub2API push_format) does not use image2api_data at all.
+                # Session bearer is extracted later from the live registration session.
+                _ai_reg_path = should_use_agent_identity_reg_path(
+                    getattr(cfg, "ENABLE_SUB2API_MODE", False),
+                    getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth"),
+                )
+                if _ai_reg_path:
+                    data = None
+                else:
+                    data = image2api_data(s_reg, target_continue_url, proxies)
 
 
                 if mode_label == "常规模式":
@@ -805,18 +819,40 @@ def run(
                 time.sleep(wait_time)
 
                 # Agent Identity path: skip workspace OAuth / silent OAuth entirely.
-                # Session bearer from image2api_data is enough to register agent identity
-                # and push auth.json via Sub2API /import/codex-session.
+                # Path B only needs a registration-session ChatGPT bearer (session JWT),
+                # obtained from the live reg session — NOT image2api / NOT OAuth refresh.
+                # image2api_data may coincidentally return the same bearer for IMAGE2API
+                # mode, but Agent Identity must not depend on that opaque helper.
                 if should_use_agent_identity_reg_path(
                     getattr(cfg, "ENABLE_SUB2API_MODE", False),
                     getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth"),
                 ):
-                    session_token = str(data or saved_temp_at or "").strip()
+                    account_email = str(login_username or email or "").strip()
+                    print(
+                        f"[{cfg.ts()}] [INFO] （{masked_login}）Sub2API Agent Identity 模式："
+                        f"从注册会话直接提取 access_token（不走 image2api / OAuth）"
+                    )
+                    try:
+                        session_token = extract_reg_session_access_token(
+                            s_reg,
+                            continue_url=target_continue_url,
+                            proxies=proxies,
+                            device_id=did,
+                            user_agent=current_ua,
+                            email=account_email,
+                        )
+                    except Exception as e:
+                        print(
+                            f"[{cfg.ts()}] [WARNING] （{masked_login}）注册会话 access_token 提取异常: {e}"
+                        )
+                        session_token = ""
+                    # Last resort only: any earlier in-process JWT (should be rare on AI path).
+                    if not session_token:
+                        session_token = pick_session_access_token(data, saved_temp_at)
                     if session_token:
-                        account_email = str(login_username or email or "").strip()
                         print(
                             f"[{cfg.ts()}] [INFO] （{masked_login}）Sub2API Agent Identity 模式："
-                            f"跳过 OAuth/静默 Token，使用注册会话 access_token 直接推送"
+                            f"跳过 OAuth/静默 Token，使用注册会话 token（{describe_token_source(session_token)}）直接推送"
                         )
                         return (
                             build_agent_identity_session_payload(
@@ -829,13 +865,13 @@ def run(
                         )
                     if getattr(cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", False):
                         print(
-                            f"[{cfg.ts()}] [WARNING] （{masked_login}）Agent Identity 模式未拿到会话 token，"
+                            f"[{cfg.ts()}] [WARNING] （{masked_login}）Agent Identity 模式未拿到注册会话 token，"
                             f"已开启 fallback，继续走 OAuth/静默 Token"
                         )
                     else:
                         print(
                             f"[{cfg.ts()}] [ERROR] （{masked_login}）Agent Identity 模式需要注册会话 access_token，"
-                            f"但未获取到；已跳过 OAuth（可开启 agent_identity_fallback_oauth 回退）"
+                            f"但未从注册会话提取到；已跳过 OAuth（可开启 agent_identity_fallback_oauth 回退）"
                         )
                         return None, None
 
