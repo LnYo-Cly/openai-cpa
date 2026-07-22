@@ -309,6 +309,82 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         self.assertFalse(payload["extra"].get("openai_oauth_responses_websockets_v2_enabled"))
 
 
+
+    def test_agent_identity_session_payload_forces_path_b_even_if_push_format_oauth(self):
+        """Reg Path B payload must never be imported as type=oauth via /accounts/data."""
+        captured = []
+
+        def fake_post(url, json=None, headers=None, **kwargs):
+            captured.append(url)
+            if url.endswith("/import/codex-session"):
+                return _FakeResponse(200, {"data": {"created": 1, "updated": 0, "failed": 0, "skipped": 0}})
+            raise AssertionError(f"unexpected url: {url}")
+
+        auth_json = {
+            "auth_mode": "agentIdentity",
+            "agent_identity": {
+                "account_id": "acct-1",
+                "agent_private_key": "MC4CAQAwBQYDK2VwBCIEAAAA",
+                "agent_runtime_id": "agent-1",
+                "chatgpt_user_id": "user-1",
+                "task_id": "task-1",
+            },
+        }
+
+        with patch.object(self.cfg, "SUB2API_PUSH_FORMAT", "oauth"), patch.object(
+            self.client_module.cffi_requests, "post", side_effect=fake_post
+        ), patch.object(
+            self.identity_module, "create_agent_identity_auth_json", return_value=auth_json
+        ), patch.object(
+            self.identity_module,
+            "resolve_identity_bootstrap_tokens",
+            return_value={"access_token": "at-demo", "id_token": "at-demo"},
+        ), patch.object(self.Sub2APIClient, "_force_bind_groups"), patch.dict(
+            sys.modules, {"utils.integrations.agent_identity": self.identity_module}
+        ):
+            client = self.Sub2APIClient(api_url="https://sub2api.example", api_key="demo-key")
+            ok, msg = client.add_account(
+                {
+                    "email": "agent@example.com",
+                    "access_token": "at-demo",
+                    "auth_source": "agent_identity_session",
+                    "status": "agent_identity_pending",
+                }
+            )
+        self.assertTrue(ok, msg)
+        self.assertTrue(any(u.endswith("/import/codex-session") for u in captured), captured)
+        self.assertFalse(any(u.endswith("/api/v1/admin/accounts/data") for u in captured), captured)
+        self.assertIn("agent-identity", msg.lower())
+
+    def test_agent_identity_fallback_oauth_refused_without_refresh_token(self):
+        def fake_post(url, json=None, headers=None, **kwargs):
+            if url.endswith("/import/codex-session"):
+                return _FakeResponse(500, {"error": "boom"}, text="boom")
+            raise AssertionError(f"oauth path must not be hit: {url}")
+
+        with patch.object(self.cfg, "SUB2API_PUSH_FORMAT", "agent_identity"), patch.object(
+            self.cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", True
+        ), patch.object(self.client_module.cffi_requests, "post", side_effect=fake_post), patch.object(
+            self.identity_module,
+            "create_agent_identity_auth_json",
+            side_effect=self.identity_module.AgentIdentityError("register failed"),
+        ), patch.object(
+            self.identity_module,
+            "resolve_identity_bootstrap_tokens",
+            return_value={"access_token": "at-demo", "id_token": "at-demo"},
+        ), patch.dict(sys.modules, {"utils.integrations.agent_identity": self.identity_module}):
+            client = self.Sub2APIClient(api_url="https://sub2api.example", api_key="demo-key")
+            ok, msg = client.add_account(
+                {
+                    "email": "agent@example.com",
+                    "access_token": "at-demo",
+                    "auth_source": "agent_identity_session",
+                    "status": "agent_identity_pending",
+                }
+            )
+        self.assertFalse(ok)
+        self.assertIn("拒绝 OAuth 回退", msg)
+
 class AgentIdentityRegSkipTests(unittest.TestCase):
     """Registration path must skip OAuth when push_format=agent_identity."""
 

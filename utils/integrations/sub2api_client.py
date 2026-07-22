@@ -703,8 +703,32 @@ class Sub2APIClient:
             group_ids = settings.get("group_ids") or []
             push_format = settings.get("push_format") or "oauth"
 
+            # Token payload already declares Agent Identity bootstrap (reg Path B).
+            # Force Path B even if UI/config push_format was left on oauth by mistake.
+            auth_source = str(working_token_data.get("auth_source") or "").strip()
+            status = str(working_token_data.get("status") or "").strip()
+            is_ai_session_payload = (
+                auth_source == "agent_identity_session"
+                or status in {"agent_identity_pending", "agent_identity"}
+                or str(working_token_data.get("auth_mode") or "") == "agentIdentity"
+                or isinstance(working_token_data.get("agent_identity"), dict)
+            )
+            if is_ai_session_payload and push_format != "agent_identity":
+                logger.warning(
+                    "token is Agent Identity session payload but push_format=%s; forcing agent_identity",
+                    push_format,
+                )
+                push_format = "agent_identity"
+                settings = dict(settings)
+                settings["push_format"] = "agent_identity"
+
             # Path B: Agent Identity (access_token bootstrap only, no refresh_token required)
             if push_format == "agent_identity":
+                _ai_user_log(
+                    account_name,
+                    "push",
+                    f"Path B 开始 groups={group_ids or []} fallback_oauth={bool(settings.get('agent_identity_fallback_oauth'))}",
+                )
                 ok, msg = self._add_account_agent_identity(working_token_data, settings)
                 if ok:
                     # Promote enriched credential fields back to caller token_data.
@@ -722,18 +746,45 @@ class Sub2APIClient:
                             token_data[key] = working_token_data[key]
                         elif key in ("access_token", "id_token", "accessToken", "idToken"):
                             token_data.pop(key, None)
+                    # Make success text unmistakable vs OAuth data-import path.
+                    if "agent-identity" not in str(msg).lower() and "agent identity" not in str(msg).lower():
+                        msg = f"Sub2API agent-identity import ok: {msg}; groups={group_ids or []}"
+                    else:
+                        msg = f"{msg}; groups={group_ids or []}"
                     return ok, msg
-                if settings.get("agent_identity_fallback_oauth"):
+
+                # CRITICAL: never fall back to OAuth using a session JWT without refresh_token.
+                # That creates type=oauth accounts with empty refresh_token (unusable) and looks
+                # like "import succeeded" while Sub2API UI shows broken OAuth rows.
+                has_refresh = bool(str(working_token_data.get("refresh_token") or "").strip())
+                if settings.get("agent_identity_fallback_oauth") and has_refresh:
+                    _ai_user_log(
+                        account_name,
+                        "fallback",
+                        f"Agent Identity 失败，因有 refresh_token 回退 OAuth: {msg}",
+                    )
                     logger.warning(
                         "Agent Identity push failed for %s, fallback to OAuth path: %s",
                         account_name,
                         msg,
                     )
                 else:
-                    return ok, msg
+                    if settings.get("agent_identity_fallback_oauth") and not has_refresh:
+                        msg = (
+                            f"Agent Identity 失败且无 refresh_token，拒绝 OAuth 回退"
+                            f"（否则会导入不可用 OAuth 账号）: {msg}"
+                        )
+                        _ai_user_log(account_name, "error", msg)
+                    return False, msg
 
             # Path A: classic OAuth (access_token + refresh_token / data import)
             refresh_token = working_token_data.get("refresh_token", "")
+            # Final hard guard: never treat AI session bearer as OAuth credentials.
+            if is_ai_session_payload and not str(refresh_token or "").strip():
+                return False, (
+                    "拒绝把 Agent Identity 会话 access_token 当 OAuth 导入；"
+                    "请保持 push_format=agent_identity 并检查 Agent Identity 注册/import 错误"
+                )
             proxy_obj = working_token_data.get("sub2api_proxy")
             if proxy_obj is None:
                 proxy_obj = parse_sub2api_proxy(cfg.get_next_sub2api_proxy_url())
@@ -797,22 +848,49 @@ class Sub2APIClient:
                 return import_ok, import_msg
 
     def _force_bind_groups(self, account_name: str, group_ids: List[int]) -> None:
+        """Best-effort group bind after create/import. Scans a few pages by name."""
+        if not group_ids and not account_name:
+            return
         try:
-            fetch_ok, accounts_resp = self.get_accounts(page=1, page_size=50)
-            if not fetch_ok: return
-
-            items = accounts_resp.get("data", {}).get("items", []) if isinstance(accounts_resp, dict) else []
-            for item in items:
-                if item.get("name") == account_name:
-                    target_id = str(item.get("id"))
-
-                    if group_ids:
-                        self.update_account(target_id, {"group_ids": group_ids})
-                        logger.info(f"账号 {account_name} 分组强制绑定成功: {group_ids}")
-                    self._refresh_created_account(target_id)
+            matched = None
+            for page in range(1, 6):
+                fetch_ok, accounts_resp = self.get_accounts(page=page, page_size=100)
+                if not fetch_ok:
                     break
+                items = []
+                if isinstance(accounts_resp, dict):
+                    data = accounts_resp.get("data", accounts_resp)
+                    if isinstance(data, dict):
+                        items = data.get("items") or data.get("accounts") or []
+                    elif isinstance(data, list):
+                        items = data
+                for item in items if isinstance(items, list) else []:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("name") or "") == account_name:
+                        matched = item
+                        break
+                if matched is not None:
+                    break
+
+            if matched is None:
+                logger.warning("force bind groups: account not found name=%s groups=%s", account_name, group_ids)
+                return
+
+            target_id = str(matched.get("id") or "")
+            if not target_id:
+                return
+            if group_ids:
+                ok, result = self.update_account(target_id, {"group_ids": list(group_ids)})
+                if ok:
+                    logger.info("账号 %s 分组强制绑定成功: %s", account_name, group_ids)
+                    _ai_user_log(account_name, "groups", f"bound {group_ids}")
+                else:
+                    logger.warning("账号 %s 分组绑定失败: %s", account_name, result)
+                    _ai_user_log(account_name, "groups", f"bind fail: {result}")
+            self._refresh_created_account(target_id)
         except Exception as exc:
-            logger.error(f"推送后执行强制补丁(绑组+刷新)异常: {exc}")
+            logger.error("推送后执行强制补丁(绑组+刷新)异常: %s", exc)
 
     def update_account(self, account_id: str, update_data: Dict[str, Any]) -> Tuple[bool, Any]:
         url = f"{self.api_url}/api/v1/admin/accounts/{account_id}"
