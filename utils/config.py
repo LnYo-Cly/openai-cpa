@@ -274,7 +274,7 @@ SUB2API_DEFAULT_PROXY: str = ""
 SUB2API_DEFAULT_PROXY_POOL: list = []
 SUB2API_RETAIN_REG_ONLY: bool = False
 SUB2API_AUTO_RE_OAUTH: bool = False
-SUB2API_PUSH_FORMAT: str = "oauth"
+SUB2API_PUSH_FORMAT: str = "agent_identity"
 SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH: bool = False
 SUB2API_AGENT_IDENTITY_USE_REG_PROXY: bool = True
 SUB2API_UPDATE_EXISTING: bool = True
@@ -772,7 +772,7 @@ def reload_all_configs(new_config_dict=None):
     SUB2API_ENABLE_WS_MODE = safe_bool(_sub2api.get("enable_ws_mode", True), default=True)
     SUB2API_RETAIN_REG_ONLY = safe_bool(_sub2api.get("retain_reg_only", False))
     SUB2API_AUTO_RE_OAUTH = safe_bool(_sub2api.get("auto_re_oauth", False))
-    raw_push_format = str(_sub2api.get("push_format", "oauth") or "oauth").strip().lower()
+    raw_push_format = str(_sub2api.get("push_format", "agent_identity") or "agent_identity").strip().lower()
     if raw_push_format in {"agentidentity", "agent-identity", "identity", "auth_json", "auth-json", "agent_identity"}:
         SUB2API_PUSH_FORMAT = "agent_identity"
     else:

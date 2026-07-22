@@ -1929,7 +1929,8 @@ createApp({
                 'disabled': '已禁用',
                 'with_token': '完整凭证',
                 'reg_only': '半成品号',
-                'imgsub2api': 'ImgSub2API'
+                'imgsub2api': 'ImgSub2API',
+                'agent_identity': 'Agent Identity'
             };
             this.showToast(`已筛选: ${statusMap[status]}的本地账号`, 'info');
         },

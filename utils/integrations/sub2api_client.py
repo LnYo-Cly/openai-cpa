@@ -94,7 +94,7 @@ def get_sub2api_push_settings() -> Dict[str, Any]:
     else:
         group_ids = [int(item.strip()) for item in str(raw_group_ids or "").split(",") if item.strip().isdigit()]
 
-    push_format = str(getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth") or "oauth").strip().lower()
+    push_format = str(getattr(cfg, "SUB2API_PUSH_FORMAT", "agent_identity") or "agent_identity").strip().lower()
     if push_format in {"agentidentity", "agent-identity", "identity", "auth_json", "auth-json"}:
         push_format = "agent_identity"
     elif push_format not in {"oauth", "agent_identity"}:
