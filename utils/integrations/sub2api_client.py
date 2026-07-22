@@ -77,6 +77,12 @@ def get_sub2api_push_settings() -> Dict[str, Any]:
     else:
         group_ids = [int(item.strip()) for item in str(raw_group_ids or "").split(",") if item.strip().isdigit()]
 
+    push_format = str(getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth") or "oauth").strip().lower()
+    if push_format in {"agentidentity", "agent-identity", "identity", "auth_json", "auth-json"}:
+        push_format = "agent_identity"
+    elif push_format not in {"oauth", "agent_identity"}:
+        push_format = "oauth"
+
     return {
         "concurrency": as_int(getattr(cfg, "SUB2API_ACCOUNT_CONCURRENCY", 10), 10, 1),
         "load_factor": as_int(getattr(cfg, "SUB2API_ACCOUNT_LOAD_FACTOR", 10), 10, 1),
@@ -84,7 +90,21 @@ def get_sub2api_push_settings() -> Dict[str, Any]:
         "rate_multiplier": as_float(getattr(cfg, "SUB2API_ACCOUNT_RATE_MULTIPLIER", 1.0), 1.0, 0.0),
         "group_ids": group_ids,
         "enable_ws": bool(getattr(cfg, "SUB2API_ENABLE_WS_MODE", True)),
+        "push_format": push_format,
+        "agent_identity_fallback_oauth": _safe_bool(
+            getattr(cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", False),
+            default=False,
+        ),
+        "agent_identity_use_reg_proxy": _safe_bool(
+            getattr(cfg, "SUB2API_AGENT_IDENTITY_USE_REG_PROXY", True),
+            default=True,
+        ),
+        "update_existing": _safe_bool(
+            getattr(cfg, "SUB2API_UPDATE_EXISTING", True),
+            default=True,
+        ),
     }
+
 
 
 def _build_account_extra(settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -405,20 +425,164 @@ class Sub2APIClient:
             logger.error("Get Sub2API account usage %s failed: %s", account_id, exc)
             return False, str(exc)
 
+
+    def _resolve_identity_reg_proxies(self, token_data: Dict[str, Any], settings: Dict[str, Any]) -> Any:
+        """Proxy used when calling OpenAI auth.openai.com to register agent identity."""
+        if not settings.get("agent_identity_use_reg_proxy", True):
+            return None
+        raw = (
+            token_data.get("proxy")
+            or token_data.get("reg_proxy")
+            or getattr(cfg, "DEFAULT_PROXY", "")
+            or ""
+        )
+        proxy = str(raw or "").strip()
+        if not proxy:
+            return None
+        formatter = getattr(cfg, "format_docker_url", None)
+        if callable(formatter):
+            proxy = formatter(proxy)
+        if proxy.startswith("socks5://"):
+            proxy = proxy.replace("socks5://", "socks5h://", 1)
+        return {"http": proxy, "https": proxy}
+
+    def _import_codex_session(
+        self,
+        auth_json: Dict[str, Any],
+        settings: Dict[str, Any],
+        *,
+        account_name: str,
+    ) -> Tuple[bool, str]:
+        """Push agent-identity auth.json via Sub2API codex-session import endpoint."""
+        url = f"{self.api_url}/api/v1/admin/accounts/import/codex-session"
+        payload: Dict[str, Any] = {
+            "content": json.dumps(auth_json, ensure_ascii=False, separators=(",", ":")),
+            "name": account_name,
+            "concurrency": settings["concurrency"],
+            "priority": settings["priority"],
+            "rate_multiplier": settings["rate_multiplier"],
+            "load_factor": settings["load_factor"],
+            "extra": self._build_account_extra(settings),
+            "update_existing": bool(settings.get("update_existing", True)),
+            "skip_default_group_bind": not bool(settings.get("group_ids")),
+        }
+        if settings.get("group_ids"):
+            payload["group_ids"] = settings["group_ids"]
+
+        try:
+            headers = self.headers.copy()
+            headers["Idempotency-Key"] = f"codex-import-{int(time.time() * 1000)}"
+            response = cffi_requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                **self._request_kwargs(timeout=90),
+            )
+            if response.status_code in (404, 405):
+                return False, (
+                    "Sub2API 不支持 /import/codex-session（HTTP "
+                    f"{response.status_code}）。请升级到含 Agent Identity 导入的版本后重试。"
+                )
+            ok, result = self._handle_response(response, success_codes=(200, 201))
+            if not ok:
+                return False, str(result)
+
+            data = result
+            if isinstance(result, dict) and isinstance(result.get("data"), dict):
+                data = result["data"]
+            if not isinstance(data, dict):
+                return True, "Sub2API agent-identity import succeeded"
+
+            created = int(data.get("created") or 0)
+            updated = int(data.get("updated") or 0)
+            failed = int(data.get("failed") or 0)
+            skipped = int(data.get("skipped") or 0)
+            errors = data.get("errors") or []
+            if failed > 0 and created == 0 and updated == 0:
+                if errors and isinstance(errors, list):
+                    first = errors[0]
+                    if isinstance(first, dict):
+                        return False, str(first.get("message") or first)
+                    return False, str(first)
+                return False, "Sub2API agent-identity import failed"
+            if created == 0 and updated == 0 and skipped > 0:
+                return True, "Sub2API agent-identity import skipped (already exists)"
+            return True, f"Sub2API agent-identity import ok (created={created}, updated={updated})"
+        except Exception as exc:
+            return False, f"Network request failed: {exc}"
+
+    def _add_account_agent_identity(
+        self,
+        token_data: Dict[str, Any],
+        settings: Dict[str, Any],
+    ) -> Tuple[bool, str]:
+        """
+        Path B: access_token only -> register Agent Identity -> push auth.json.
+
+        Unlike classic OAuth push, this path does not require refresh_token /
+        workspace OAuth credentials for Sub2API storage.
+        """
+        from utils.integrations.agent_identity import (
+            AgentIdentityError,
+            create_agent_identity_auth_json,
+            resolve_identity_bootstrap_tokens,
+        )
+
+        account_name = str(token_data.get("email") or "unknown")[:64]
+        group_ids = settings.get("group_ids") or []
+        try:
+            tokens = resolve_identity_bootstrap_tokens(token_data)
+            proxies = self._resolve_identity_reg_proxies(token_data, settings)
+            auth_json = create_agent_identity_auth_json(
+                tokens["access_token"],
+                id_token=tokens.get("id_token"),
+                email=token_data.get("email"),
+                proxies=proxies,
+            )
+            # Prefer local account email as display name
+            if account_name and account_name != "unknown":
+                identity = auth_json.get("agent_identity")
+                if isinstance(identity, dict) and not identity.get("email"):
+                    identity["email"] = account_name
+            ok, msg = self._import_codex_session(auth_json, settings, account_name=account_name)
+            if ok:
+                self._force_bind_groups(account_name, group_ids)
+            return ok, msg
+        except AgentIdentityError as exc:
+            return False, f"Agent Identity 注册失败: {exc}"
+        except Exception as exc:
+            logger.exception("Agent Identity push failed for %s", account_name)
+            return False, f"Agent Identity 推送异常: {exc}"
+
     def add_account(self, token_data: Dict[str, Any]) -> Tuple[bool, str]:
         with _SUB2API_PUSH_SEM:
             settings = self._get_push_settings()
             working_token_data = dict(token_data)
+            account_name = str(working_token_data.get("email") or "unknown")[:64]
+            group_ids = settings.get("group_ids") or []
+            push_format = settings.get("push_format") or "oauth"
+
+            # Path B: Agent Identity (access_token bootstrap only, no refresh_token required)
+            if push_format == "agent_identity":
+                ok, msg = self._add_account_agent_identity(working_token_data, settings)
+                if ok:
+                    return ok, msg
+                if settings.get("agent_identity_fallback_oauth"):
+                    logger.warning(
+                        "Agent Identity push failed for %s, fallback to OAuth path: %s",
+                        account_name,
+                        msg,
+                    )
+                else:
+                    return ok, msg
+
+            # Path A: classic OAuth (access_token + refresh_token / data import)
             refresh_token = working_token_data.get("refresh_token", "")
             proxy_obj = working_token_data.get("sub2api_proxy")
             if proxy_obj is None:
                 proxy_obj = parse_sub2api_proxy(cfg.get_next_sub2api_proxy_url())
                 if proxy_obj:
                     working_token_data["sub2api_proxy"] = proxy_obj
-
-            account_name = working_token_data.get("email", "unknown")[:64]
-            group_ids = settings.get("group_ids") or []
-
 
             if not refresh_token or proxy_obj:
                 ok, msg = self._import_account(working_token_data, settings)
@@ -434,19 +598,12 @@ class Sub2APIClient:
                 "credentials": {
                     "refresh_token": refresh_token,
                     "model_mapping": {
-
                         "gpt-5.4": "gpt-5.4",
-
                         "gpt-5.4-mini": "gpt-5.4-mini",
-
                         "gpt-5.5": "gpt-5.5",
-
                         "gpt-5.6-sol": "gpt-5.6-sol",
-
                         "gpt-5.6-terra": "gpt-5.6-terra",
-
                         "gpt-5.6-luna": "gpt-5.6-luna",
-
                     }
                 },
                 "concurrency": settings["concurrency"],

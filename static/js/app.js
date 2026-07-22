@@ -1516,6 +1516,18 @@ createApp({
                 if (this.config.sub2api_mode.enable_ws_mode === undefined) {
                     this.config.sub2api_mode.enable_ws_mode = true;
                 }
+                if (this.config.sub2api_mode.push_format === undefined || !this.config.sub2api_mode.push_format) {
+                    this.config.sub2api_mode.push_format = 'oauth';
+                }
+                if (this.config.sub2api_mode.agent_identity_fallback_oauth === undefined) {
+                    this.config.sub2api_mode.agent_identity_fallback_oauth = false;
+                }
+                if (this.config.sub2api_mode.agent_identity_use_reg_proxy === undefined) {
+                    this.config.sub2api_mode.agent_identity_use_reg_proxy = true;
+                }
+                if (this.config.sub2api_mode.update_existing === undefined) {
+                    this.config.sub2api_mode.update_existing = true;
+                }
                 if(this.config.clash_proxy_pool && Array.isArray(this.config.clash_proxy_pool.blacklist)) {
                     this.blacklistStr = this.config.clash_proxy_pool.blacklist.join('\n');
                 } else {

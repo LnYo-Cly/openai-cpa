@@ -4550,6 +4550,54 @@
                                                 </select>
                                             </div>
 
+                                            <div class="bg-white p-5 rounded-xl border border-purple-100 shadow-sm space-y-4">
+                                                <div>
+                                                    <label class="block text-purple-800 text-xs font-black mb-1.5 uppercase tracking-wider">推送凭证格式</label>
+                                                    <p class="text-[11px] text-purple-600/80 mb-3 font-medium">两条独立路径，互不影响：</p>
+                                                    <select v-model="config.sub2api_mode.push_format" class="appearance-none bg-white border border-purple-200 text-purple-900 font-bold rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-colors shadow-sm text-sm w-full md:w-full relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%237e22ce%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px_12px] bg-[right_14px_center] bg-no-repeat cursor-pointer pr-10">
+                                                        <option value="oauth">OAuth（access_token + refresh_token）</option>
+                                                        <option value="agent_identity">Agent Identity（auth.json / auth_mode=agentIdentity）</option>
+                                                    </select>
+                                                </div>
+
+                                                <div v-if="config.sub2api_mode.push_format === 'oauth'" class="text-[11px] leading-relaxed text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                                    <p class="font-bold text-slate-800 mb-1">路径 A · 原版 OAuth 推送</p>
+                                                    <p>注册并完成 OAuth 后，需要完整工作区凭证（access_token + refresh_token），走 Sub2API 常规账号创建/data 导入。</p>
+                                                </div>
+
+                                                <div v-else class="space-y-3">
+                                                    <div class="text-[11px] leading-relaxed text-violet-800 bg-violet-50 border border-violet-200 rounded-lg p-3">
+                                                        <p class="font-bold mb-1">路径 B · Agent Identity 推送</p>
+                                                        <p class="mb-1">注册拿到 <code class="bg-white/80 px-1 rounded">access_token</code> 即可（无需 refresh_token）。</p>
+                                                        <p class="mb-1">流程：access_token → 注册 Agent 公钥/task → 生成 <code class="bg-white/80 px-1 rounded">auth_mode=agentIdentity</code> 的 auth.json → 调用 Sub2API <code class="bg-white/80 px-1 rounded">/import/codex-session</code>。</p>
+                                                        <p class="font-semibold text-amber-700">注意：本地 Sub2API 必须升级到支持 agentIdentity 导入的版本，否则会推送失败。</p>
+                                                    </div>
+                                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        <label class="flex items-start gap-3 p-3 rounded-xl border border-purple-100 bg-purple-50/40 cursor-pointer">
+                                                            <input type="checkbox" v-model="config.sub2api_mode.agent_identity_use_reg_proxy" class="mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500">
+                                                            <span>
+                                                                <span class="block text-xs font-black text-purple-900">注册 Identity 时走注册代理</span>
+                                                                <span class="block text-[11px] text-purple-700/80 mt-0.5">调用 auth.openai.com 时使用 default_proxy（与账号注册同网关）</span>
+                                                            </span>
+                                                        </label>
+                                                        <label class="flex items-start gap-3 p-3 rounded-xl border border-purple-100 bg-purple-50/40 cursor-pointer">
+                                                            <input type="checkbox" v-model="config.sub2api_mode.agent_identity_fallback_oauth" class="mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500">
+                                                            <span>
+                                                                <span class="block text-xs font-black text-purple-900">失败时回退 OAuth 推送</span>
+                                                                <span class="block text-[11px] text-purple-700/80 mt-0.5">Identity 注册/导入失败后，改走原版 OAuth 路径（默认关闭）</span>
+                                                            </span>
+                                                        </label>
+                                                        <label class="flex items-start gap-3 p-3 rounded-xl border border-purple-100 bg-purple-50/40 cursor-pointer md:col-span-2">
+                                                            <input type="checkbox" v-model="config.sub2api_mode.update_existing" class="mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500">
+                                                            <span>
+                                                                <span class="block text-xs font-black text-purple-900">同账号已存在时更新</span>
+                                                                <span class="block text-[11px] text-purple-700/80 mt-0.5">对应 Sub2API import 的 update_existing；关闭则跳过已存在账号</span>
+                                                            </span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <div class="bg-white p-5 rounded-xl border border-purple-100 shadow-sm">
                                                 <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4">
                                                     <label class="block text-purple-800 text-xs font-black uppercase tracking-wider mb-0">绑定分组</label>

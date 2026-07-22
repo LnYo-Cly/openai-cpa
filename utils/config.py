@@ -274,6 +274,10 @@ SUB2API_DEFAULT_PROXY: str = ""
 SUB2API_DEFAULT_PROXY_POOL: list = []
 SUB2API_RETAIN_REG_ONLY: bool = False
 SUB2API_AUTO_RE_OAUTH: bool = False
+SUB2API_PUSH_FORMAT: str = "oauth"
+SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH: bool = False
+SUB2API_AGENT_IDENTITY_USE_REG_PROXY: bool = True
+SUB2API_UPDATE_EXISTING: bool = True
 
 ENABLE_IMAGE2API_MODE: bool = False
 IMAGE2API_URL: str = ""
@@ -466,6 +470,7 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_ACCOUNT_CONCURRENCY, SUB2API_ACCOUNT_LOAD_FACTOR, SUB2API_ACCOUNT_PRIORITY, SUB2API_DEFAULT_PROXY
     global SUB2API_DEFAULT_PROXY_POOL
     global SUB2API_ACCOUNT_RATE_MULTIPLIER, SUB2API_ACCOUNT_GROUP_IDS, SUB2API_ENABLE_WS_MODE
+    global SUB2API_PUSH_FORMAT, SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH, SUB2API_AGENT_IDENTITY_USE_REG_PROXY, SUB2API_UPDATE_EXISTING
     global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY, IMAGE2API_IMG_ONLY_MODE
     global CF_API_EMAIL, CF_API_KEY
     global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
@@ -767,6 +772,14 @@ def reload_all_configs(new_config_dict=None):
     SUB2API_ENABLE_WS_MODE = safe_bool(_sub2api.get("enable_ws_mode", True), default=True)
     SUB2API_RETAIN_REG_ONLY = safe_bool(_sub2api.get("retain_reg_only", False))
     SUB2API_AUTO_RE_OAUTH = safe_bool(_sub2api.get("auto_re_oauth", False))
+    raw_push_format = str(_sub2api.get("push_format", "oauth") or "oauth").strip().lower()
+    if raw_push_format in {"agentidentity", "agent-identity", "identity", "auth_json", "auth-json", "agent_identity"}:
+        SUB2API_PUSH_FORMAT = "agent_identity"
+    else:
+        SUB2API_PUSH_FORMAT = "oauth"
+    SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH = safe_bool(_sub2api.get("agent_identity_fallback_oauth", False))
+    SUB2API_AGENT_IDENTITY_USE_REG_PROXY = safe_bool(_sub2api.get("agent_identity_use_reg_proxy", True), default=True)
+    SUB2API_UPDATE_EXISTING = safe_bool(_sub2api.get("update_existing", True), default=True)
 
     raw_sub2api_default_proxy = _sub2api.get("default_proxy", "")
 
