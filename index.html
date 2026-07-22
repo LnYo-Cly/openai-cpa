@@ -770,7 +770,16 @@
                                         <div class="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center shadow-inner border border-cyan-100 z-10"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg></div>
                                     </div>
 
-                                    <div @click="filterLocalAccounts('image2api')" class="inventory-mini-card inventory-mini-card--pink cursor-pointer active:scale-95 bg-white shadow-sm border relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group" :class="accountStatusFilter === 'image2api' ? 'border-pink-300 ring-2 ring-pink-200 shadow-pink-100' : 'border-slate-200'">
+                                                                        <div @click="filterLocalAccounts('agent_identity')" class="inventory-mini-card inventory-mini-card--violet cursor-pointer active:scale-95 bg-white shadow-sm border relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group" :class="accountStatusFilter === 'agent_identity' ? 'border-violet-300 ring-2 ring-violet-200 shadow-violet-100' : 'border-slate-200'">
+                                        <div class="flex flex-col gap-0.5 z-10 relative">
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Agent Identity</div>
+                                            <div class="text-[1.05rem] font-black text-violet-600 leading-none">{{ inventoryStats?.local?.agent_identity || 0 }}</div>
+                                        </div>
+                                        <div class="opacity-10 group-hover:opacity-20 transition-opacity absolute -right-2 -bottom-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                                        </div>
+                                    </div>
+<div @click="filterLocalAccounts('image2api')" class="inventory-mini-card inventory-mini-card--pink cursor-pointer active:scale-95 bg-white shadow-sm border relative overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 flex justify-between items-center group" :class="accountStatusFilter === 'image2api' ? 'border-pink-300 ring-2 ring-pink-200 shadow-pink-100' : 'border-slate-200'">
                                         <div class="z-10">
                                             <div class="text-[10px] font-black text-pink-500 mb-1 uppercase tracking-widest">Img凭证</div>
                                             <div class="text-[1.05rem] font-black text-pink-600 leading-none">{{ inventoryStats?.local?.image2api || 0 }}</div>
@@ -832,6 +841,12 @@
                                                     <span v-if="acc.status === '有凭证'" class="px-2 py-1 text-[10px] font-black bg-emerald-50 text-emerald-600 rounded border border-emerald-200 shadow-sm flex items-center gap-1">
                                                         <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></span> 完整凭证
                                                     </span>
+                                                    <span v-else-if="acc.status === 'Agent Identity'" class="px-2 py-1 text-[10px] font-black bg-violet-50 text-violet-700 rounded border border-violet-200 shadow-sm flex items-center gap-1">
+                                                        <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg></span> Agent Identity
+                                                    </span>
+                                                    <span v-else-if="acc.status === 'Agent Identity待推送'" class="px-2 py-1 text-[10px] font-black bg-fuchsia-50 text-fuchsia-700 rounded border border-fuchsia-200 shadow-sm flex items-center gap-1">
+                                                        <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></span> AI待推送
+                                                    </span>
                                                     <span v-else-if="acc.status === 'image2api'" class="px-2 py-1 text-[10px] font-black bg-emerald-50 text-emerald-600 rounded border border-emerald-200 shadow-sm flex items-center gap-1">
                                                         <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></span> image2api
                                                     </span>
@@ -841,6 +856,13 @@
                                                     <span v-else class="px-2 py-1 text-[10px] font-black bg-slate-50 text-slate-500 rounded border border-slate-200 shadow-sm flex items-center gap-1">
                                                         <span><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093v1.5M12 18h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></span> 未知
                                                     </span>
+
+                                                    <div v-if="acc.auth_json || acc.agent_identity" class="mt-1 max-w-[28rem]">
+                                                        <pre v-if="showAccountsPlaintext" class="text-[10px] leading-snug font-mono whitespace-pre-wrap break-all bg-violet-50/80 text-violet-900 border border-violet-100 rounded-lg px-2 py-1.5 shadow-sm">{{ formatAgentIdentityCredential(acc) }}</pre>
+                                                        <div v-else class="text-[10px] font-mono text-violet-600/80 bg-violet-50/50 border border-violet-100 rounded px-2 py-1">
+                                                            runtime={{ maskSecret(acc.agent_identity?.agent_runtime_id || acc.auth_json?.agent_identity?.agent_runtime_id) }} · task={{ maskSecret(acc.agent_identity?.task_id || acc.auth_json?.agent_identity?.task_id) }}
+                                                        </div>
+                                                    </div>
 
                                                     <div v-if="acc.is_active === 0" class="px-2 py-1 text-[10px] font-black text-rose-600 bg-rose-50 rounded border border-rose-200 shadow-sm flex items-center gap-1">
                                                         <span class="w-1.5 h-1.5 bg-rose-500 rounded-full shadow-[0_0_5px_#f43f5e]"></span> 已禁用

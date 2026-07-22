@@ -2107,6 +2107,29 @@ createApp({
                 this.showToast("导出请求失败，请检查网络或 JSZip 是否加载", "error");
             }
         },
+		formatAgentIdentityCredential(acc) {
+            try {
+                const payload = (acc && acc.auth_json) ? acc.auth_json : (acc && acc.agent_identity ? {
+                    OPENAI_API_KEY: null,
+                    agent_identity: acc.agent_identity,
+                    auth_mode: 'agentIdentity',
+                    bedrock_api_key: null,
+                    last_refresh: null,
+                    personal_access_token: null,
+                    tokens: null,
+                } : null);
+                if (!payload) return '';
+                return JSON.stringify(payload, null, 2);
+            } catch (e) {
+                return String((acc && acc.agent_identity) || '');
+            }
+        },
+        maskSecret(value) {
+            const s = String(value || '');
+            if (!s) return '-';
+            if (s.length <= 10) return s.slice(0, 2) + '****';
+            return s.slice(0, 8) + '…' + s.slice(-4);
+        },
 		maskEmail(email) {
             if (!email) return '';
             const parts = email.split('@');

@@ -1,12 +1,11 @@
-"""Pure-Python registration session bootstrap for Agent Identity path.
-
+"""
 Agent Identity Path B needs a registration-session ChatGPT bearer (session JWT).
 This module extracts it from the live reg session:
 
-  continue_url -> cookie scan -> chatgpt.com /api/auth/session
-  (and if needed) NextAuth csrf/signin/openai bridge
+  continue_url -> chatgpt.com /api/auth/session -> NextAuth bridge -> claims-only cookie scan
 
 It intentionally does NOT call image2api_data / OAuth silent-token.
+Only JWTs with OpenAI auth claims (chatgpt_account_id + chatgpt_user_id) are accepted.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
@@ -28,12 +27,25 @@ CG_SESSION = f"{CG_BASE}/api/auth/session"
 AUTH_ORIGIN = "https://auth.openai.com"
 OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
 
+LogFn = Optional[Callable[[str, str], None]]
+
 
 def _ssl_verify() -> bool:
     import os
 
     flag = os.getenv("OPENAI_SSL_VERIFY", "1").strip().lower()
     return flag not in {"0", "false", "no", "off"}
+
+
+def _emit(log: LogFn, stage: str, detail: str) -> None:
+    text = str(detail or "")
+    if log is not None:
+        try:
+            log(stage, text)
+            return
+        except Exception:
+            pass
+    logger.info("session_bootstrap[%s]: %s", stage, text)
 
 
 def _jwt_claims_no_verify(token: str) -> Dict[str, Any]:
@@ -102,12 +114,18 @@ def jwt_has_openai_auth_claims(token: str) -> bool:
     return bool(isinstance(account_id, str) and account_id and isinstance(user_id, str) and user_id)
 
 
-def pick_session_access_token(*candidates: Any) -> str:
-    """Return the first non-empty candidate that looks like an OpenAI session JWT."""
+def pick_session_access_token(*candidates: Any, require_claims: bool = True) -> str:
+    """Return the first non-empty candidate that looks like a usable session JWT.
+
+    Agent Identity requires OpenAI auth claims. When require_claims=True (default),
+    JWTs without those claims are never accepted.
+    """
     for raw in candidates:
         token = str(raw or "").strip()
         if token and jwt_has_openai_auth_claims(token):
             return token
+    if require_claims:
+        return ""
     for raw in candidates:
         token = str(raw or "").strip()
         if token and _looks_like_jwt(token):
@@ -141,8 +159,8 @@ def _iter_cookie_pairs(session: Any) -> Iterable[tuple[str, str]]:
     return pairs
 
 
-def scan_session_jwt_from_cookies(session: Any) -> str:
-    """Scan cookie jar for a JWT that carries OpenAI auth claims."""
+def scan_session_jwt_from_cookies(session: Any, *, require_claims: bool = True) -> str:
+    """Scan cookie jar for a JWT that carries OpenAI auth claims (default)."""
     preferred_names = {
         "__secure-next-auth.session-token",
         "next-auth.session-token",
@@ -156,7 +174,7 @@ def scan_session_jwt_from_cookies(session: Any) -> str:
             candidates.append(value)
         elif _looks_like_jwt(value):
             candidates.append(value)
-    return pick_session_access_token(*candidates)
+    return pick_session_access_token(*candidates, require_claims=require_claims)
 
 
 def _ensure_oai_did_cookie(session: Any, device_id: str) -> None:
@@ -209,11 +227,13 @@ def follow_reg_continue_url(session: Any, continue_url: str, proxies: Any = None
 def _extract_access_token_from_session_json(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
+    # Prefer accessToken (ChatGPT session). Never accept random id_token without claims first.
     return pick_session_access_token(
         payload.get("accessToken"),
         payload.get("access_token"),
         payload.get("idToken"),
         payload.get("id_token"),
+        require_claims=True,
     )
 
 
@@ -253,6 +273,7 @@ def bridge_chatgpt_nextauth_session(
     user_agent: str = "",
     login_hint: str = "",
     timeout: int = 30,
+    log: LogFn = None,
 ) -> str:
     """
     Establish chatgpt.com NextAuth session from an auth.openai.com-authenticated jar.
@@ -279,16 +300,21 @@ def bridge_chatgpt_nextauth_session(
         csrf_data = csrf_resp.json() if csrf_resp is not None else {}
     except Exception as exc:
         logger.debug("chatgpt csrf failed: %s", exc)
+        _emit(log, "bridge_csrf", f"failed: {exc}")
         csrf_data = {}
     csrf_token = ""
     if isinstance(csrf_data, dict):
         csrf_token = str(csrf_data.get("csrfToken") or csrf_data.get("csrf_token") or "").strip()
     if not csrf_token:
+        _emit(log, "bridge_csrf", "missing csrfToken; try session endpoint")
         token = _extract_access_token_from_session_json(
             fetch_chatgpt_session_json(session, proxies=proxies, user_agent=user_agent, timeout=timeout)
         )
+        if token:
+            _emit(log, "bridge_session", "ok via session after missing csrf")
         return token
 
+    _emit(log, "bridge_csrf", "ok")
     session_logging_id = str(uuid.uuid4())
     form = {
         "prompt": "login",
@@ -334,9 +360,11 @@ def bridge_chatgpt_nextauth_session(
                 auth_url = urljoin(CG_BASE + "/", loc)
     except Exception as exc:
         logger.debug("chatgpt signin failed: %s", exc)
+        _emit(log, "bridge_signin", f"failed: {exc}")
         auth_url = ""
 
     if auth_url:
+        _emit(log, "bridge_signin", "got authorize url; following")
         try:
             _follow_redirect_chain_local(session, auth_url, proxies, max_redirects=16)
         except Exception as exc:
@@ -352,13 +380,21 @@ def bridge_chatgpt_nextauth_session(
                 )
             except Exception:
                 pass
+    else:
+        _emit(log, "bridge_signin", "no authorize url")
 
     token = _extract_access_token_from_session_json(
         fetch_chatgpt_session_json(session, proxies=proxies, user_agent=user_agent, timeout=timeout)
     )
     if token:
+        _emit(log, "bridge_session", "ok")
         return token
-    return scan_session_jwt_from_cookies(session)
+    cookie_token = scan_session_jwt_from_cookies(session, require_claims=True)
+    if cookie_token:
+        _emit(log, "bridge_cookie", "ok with openai claims")
+    else:
+        _emit(log, "bridge_session", "no usable accessToken")
+    return cookie_token
 
 
 def extract_reg_session_access_token(
@@ -370,19 +406,22 @@ def extract_reg_session_access_token(
     user_agent: str = "",
     email: str = "",
     settle_seconds: float = 0.0,
+    log: LogFn = None,
 ) -> str:
     """
     Best-effort pure-Python extractor for registration-session ChatGPT bearer.
 
-    Order:
+    Order (claims-required throughout):
       1) optional settle sleep
       2) follow continue_url (auth.openai.com post-create)
-      3) cookie JWT scan
-      4) ChatGPT /api/auth/session
-      5) NextAuth csrf/signin/session bridge
-      6) cookie JWT scan again
+      3) ChatGPT /api/auth/session  (preferred source of accessToken)
+      4) NextAuth csrf/signin/session bridge
+      5) cookie JWT scan (claims only; never accept oai-client-auth-session-like junk)
+
+    Never returns a JWT without OpenAI auth claims.
     """
     if session is None:
+        _emit(log, "extract", "session is None")
         return ""
 
     if settle_seconds and settle_seconds > 0:
@@ -392,21 +431,31 @@ def extract_reg_session_access_token(
             pass
 
     if continue_url:
-        follow_reg_continue_url(session, continue_url, proxies)
+        final_url = follow_reg_continue_url(session, continue_url, proxies)
+        host = ""
+        try:
+            from urllib.parse import urlparse
 
-    token = scan_session_jwt_from_cookies(session)
-    if token:
-        return token
+            host = urlparse(str(final_url or "")).netloc
+        except Exception:
+            host = ""
+        _emit(log, "continue_url", f"followed -> host={host or 'unknown'}")
+    else:
+        _emit(log, "continue_url", "skipped (empty)")
 
+    # Preferred: ChatGPT session JSON accessToken with auth claims.
     try:
-        token = _extract_access_token_from_session_json(
-            fetch_chatgpt_session_json(session, proxies=proxies, user_agent=user_agent)
-        )
+        payload = fetch_chatgpt_session_json(session, proxies=proxies, user_agent=user_agent)
+        token = _extract_access_token_from_session_json(payload)
         if token:
+            _emit(log, "session_json", f"ok ({describe_token_source(token)})")
             return token
+        keys = list(payload.keys())[:8] if isinstance(payload, dict) else []
+        _emit(log, "session_json", f"no claims-bearing accessToken (keys={keys})")
     except Exception as exc:
-        logger.debug("direct chatgpt session failed: %s", exc)
+        _emit(log, "session_json", f"failed: {exc}")
 
+    # Bridge NextAuth when session jar is auth.openai.com only.
     try:
         token = bridge_chatgpt_nextauth_session(
             session,
@@ -414,13 +463,28 @@ def extract_reg_session_access_token(
             device_id=device_id,
             user_agent=user_agent,
             login_hint=email,
+            log=log,
         )
-        if token:
+        if token and jwt_has_openai_auth_claims(token):
+            _emit(log, "bridge", f"ok ({describe_token_source(token)})")
             return token
+        _emit(log, "bridge", "no claims-bearing token")
     except Exception as exc:
-        logger.debug("nextauth bridge failed: %s", exc)
+        _emit(log, "bridge", f"failed: {exc}")
 
-    return scan_session_jwt_from_cookies(session)
+    token = scan_session_jwt_from_cookies(session, require_claims=True)
+    if token:
+        _emit(log, "cookie_scan", f"ok ({describe_token_source(token)})")
+        return token
+
+    # Diagnostic only: note that non-claim JWTs exist but are rejected.
+    junk = scan_session_jwt_from_cookies(session, require_claims=False)
+    if junk and not jwt_has_openai_auth_claims(junk):
+        _emit(log, "cookie_scan", "found jwt without openai auth claims (rejected)")
+    else:
+        _emit(log, "cookie_scan", "empty")
+    _emit(log, "extract", "failed: no openai-claims session JWT")
+    return ""
 
 
 def describe_token_source(token: str) -> str:

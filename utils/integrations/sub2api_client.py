@@ -10,6 +10,23 @@ from curl_cffi import requests as cffi_requests
 from utils.integrations.sub2api_proxy import parse_sub2api_proxy
 
 logger = logging.getLogger(__name__)
+
+
+def _ai_user_log(account_name: str, stage: str, detail: str = "") -> None:
+    """Emit concise Agent Identity stage lines into the web console log stream."""
+    try:
+        from utils.config import ts as _ts
+        stamp = _ts()
+    except Exception:
+        stamp = "-"
+    msg = f"[{stamp}] [INFO] （{account_name}）Agent Identity [{stage}]"
+    if detail:
+        msg = f"{msg}: {detail}"
+    try:
+        print(msg)
+    except Exception:
+        logger.info("%s", msg)
+
 _SUB2API_PUSH_SEM = threading.BoundedSemaphore(3)
 
 
@@ -112,6 +129,10 @@ def _build_account_extra(settings: Dict[str, Any]) -> Dict[str, Any]:
     if settings["enable_ws"]:
         extra["openai_oauth_responses_websockets_v2_enabled"] = True
         extra["openai_oauth_responses_websockets_v2_mode"] = "passthrough"
+    else:
+        # Align with Sub2API admin UI default when WS mode is off.
+        extra["openai_oauth_responses_websockets_v2_enabled"] = False
+        extra["openai_oauth_responses_websockets_v2_mode"] = "off"
     return extra
 
 
@@ -455,19 +476,38 @@ class Sub2APIClient:
     ) -> Tuple[bool, str]:
         """Push agent-identity auth.json via Sub2API codex-session import endpoint."""
         url = f"{self.api_url}/api/v1/admin/accounts/import/codex-session"
+        # Match admin UI shape: content is a full auth.json string.
         payload: Dict[str, Any] = {
-            "content": json.dumps(auth_json, ensure_ascii=False, separators=(",", ":")),
+            "content": json.dumps(auth_json, ensure_ascii=False, indent=2),
             "name": account_name,
+            "notes": None,
+            "proxy_id": None,
             "concurrency": settings["concurrency"],
             "priority": settings["priority"],
             "rate_multiplier": settings["rate_multiplier"],
             "load_factor": settings["load_factor"],
+            "expires_at": None,
+            "auto_pause_on_expired": True,
             "extra": self._build_account_extra(settings),
             "update_existing": bool(settings.get("update_existing", True)),
             "skip_default_group_bind": not bool(settings.get("group_ids")),
         }
         if settings.get("group_ids"):
             payload["group_ids"] = settings["group_ids"]
+
+        identity = auth_json.get("agent_identity") if isinstance(auth_json, dict) else None
+        runtime_id = ""
+        task_id = ""
+        if isinstance(identity, dict):
+            runtime_id = str(identity.get("agent_runtime_id") or "")[:24]
+            task_id = str(identity.get("task_id") or "")[:24]
+        logger.info(
+            "Sub2API codex-session import start name=%s runtime=%s task=%s groups=%s",
+            account_name,
+            runtime_id or "-",
+            task_id or "-",
+            payload.get("group_ids") or [],
+        )
 
         try:
             headers = self.headers.copy()
@@ -478,36 +518,91 @@ class Sub2APIClient:
                 headers=headers,
                 **self._request_kwargs(timeout=90),
             )
-            if response.status_code in (404, 405):
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            if status_code in (404, 405):
                 return False, (
                     "Sub2API 不支持 /import/codex-session（HTTP "
-                    f"{response.status_code}）。请升级到含 Agent Identity 导入的版本后重试。"
+                    f"{status_code}）。请升级到含 Agent Identity 导入的版本后重试。"
                 )
             ok, result = self._handle_response(response, success_codes=(200, 201))
             if not ok:
+                logger.warning(
+                    "Sub2API codex-session import HTTP fail name=%s status=%s msg=%s",
+                    account_name,
+                    status_code,
+                    result,
+                )
                 return False, str(result)
+
+            # Business-level fail-closed: HTTP 200 alone is not enough.
+            if isinstance(result, dict):
+                code = result.get("code", result.get("status"))
+                if code not in (None, 0, 200, "0", "success", "ok", True):
+                    msg = result.get("message") or result.get("msg") or result
+                    return False, f"Sub2API business error: {msg}"
 
             data = result
             if isinstance(result, dict) and isinstance(result.get("data"), dict):
                 data = result["data"]
             if not isinstance(data, dict):
-                return True, "Sub2API agent-identity import succeeded"
+                # Unexpected body: do not claim inventory success.
+                preview = str(result)[:200]
+                return False, f"Sub2API agent-identity import 响应异常（无统计字段）: {preview}"
 
             created = int(data.get("created") or 0)
             updated = int(data.get("updated") or 0)
             failed = int(data.get("failed") or 0)
             skipped = int(data.get("skipped") or 0)
+            total = int(data.get("total") or 0)
             errors = data.get("errors") or []
-            if failed > 0 and created == 0 and updated == 0:
+            items = data.get("items") or []
+            account_ids = [
+                str(item.get("account_id"))
+                for item in items
+                if isinstance(item, dict) and item.get("account_id")
+            ]
+
+            def _first_error() -> str:
                 if errors and isinstance(errors, list):
                     first = errors[0]
                     if isinstance(first, dict):
-                        return False, str(first.get("message") or first)
-                    return False, str(first)
-                return False, "Sub2API agent-identity import failed"
-            if created == 0 and updated == 0 and skipped > 0:
-                return True, "Sub2API agent-identity import skipped (already exists)"
-            return True, f"Sub2API agent-identity import ok (created={created}, updated={updated})"
+                        return str(first.get("message") or first)
+                    return str(first)
+                if items and isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and str(item.get("action") or "").lower() == "failed":
+                            return str(item.get("message") or item)
+                return ""
+
+            summary = (
+                f"created={created}, updated={updated}, failed={failed}, "
+                f"skipped={skipped}, total={total}"
+            )
+            logger.info(
+                "Sub2API codex-session import result name=%s %s account_ids=%s",
+                account_name,
+                summary,
+                account_ids[:3],
+            )
+
+            if failed > 0 and created == 0 and updated == 0:
+                detail = _first_error() or "Sub2API agent-identity import failed"
+                return False, f"{detail} ({summary})"
+
+            if created == 0 and updated == 0:
+                if skipped > 0:
+                    return True, f"Sub2API agent-identity import skipped (already exists; {summary})"
+                if account_ids:
+                    return True, f"Sub2API agent-identity import ok (account_ids={','.join(account_ids[:3])}; {summary})"
+                detail = _first_error()
+                if detail:
+                    return False, f"{detail} ({summary})"
+                return False, (
+                    "Sub2API agent-identity import 未新增/更新账号 "
+                    f"({summary})；请检查 content 是否为完整 auth_mode=agentIdentity 的 auth.json"
+                )
+
+            return True, f"Sub2API agent-identity import ok ({summary})"
         except Exception as exc:
             return False, f"Network request failed: {exc}"
 
@@ -531,8 +626,22 @@ class Sub2APIClient:
         account_name = str(token_data.get("email") or "unknown")[:64]
         group_ids = settings.get("group_ids") or []
         try:
+            _ai_user_log(account_name, "bootstrap", "校验 session access_token claims")
+            logger.info("Agent Identity bootstrap start name=%s", account_name)
             tokens = resolve_identity_bootstrap_tokens(token_data)
+            _ai_user_log(account_name, "bootstrap", "claims ok")
+            logger.info("Agent Identity bootstrap token claims ok name=%s", account_name)
             proxies = self._resolve_identity_reg_proxies(token_data, settings)
+            _ai_user_log(
+                account_name,
+                "register",
+                f"向 auth.openai.com 注册 agent 公钥/task（proxy={'yes' if proxies else 'no'}）",
+            )
+            logger.info(
+                "Agent Identity register start name=%s proxy=%s",
+                account_name,
+                "yes" if proxies else "no",
+            )
             auth_json = create_agent_identity_auth_json(
                 tokens["access_token"],
                 id_token=tokens.get("id_token"),
@@ -544,13 +653,45 @@ class Sub2APIClient:
                 identity = auth_json.get("agent_identity")
                 if isinstance(identity, dict) and not identity.get("email"):
                     identity["email"] = account_name
+            identity = auth_json.get("agent_identity") if isinstance(auth_json, dict) else None
+            if isinstance(identity, dict):
+                _ai_user_log(
+                    account_name,
+                    "auth.json",
+                    f"runtime={str(identity.get('agent_runtime_id') or '')[:20]} task={str(identity.get('task_id') or '')[:20]} account_id={str(identity.get('account_id') or '')[:12]}",
+                )
+                logger.info(
+                    "Agent Identity register ok name=%s runtime=%s task=%s account_id=%s",
+                    account_name,
+                    str(identity.get("agent_runtime_id") or "")[:24],
+                    str(identity.get("task_id") or "")[:24],
+                    str(identity.get("account_id") or "")[:24],
+                )
+            _ai_user_log(account_name, "import", "POST /import/codex-session")
             ok, msg = self._import_codex_session(auth_json, settings, account_name=account_name)
+            if not ok:
+                _ai_user_log(account_name, "import", f"fail ({msg})")
             if ok:
+                _ai_user_log(account_name, "import", f"ok ({msg})")
+                # Enrich local token_data so inventory can display full Agent Identity credential.
+                token_data["auth_mode"] = "agentIdentity"
+                token_data["status"] = "agent_identity"
+                token_data["credential_type"] = "codex_agent_identity"
+                if isinstance(identity, dict):
+                    token_data["agent_identity"] = identity
+                # Drop bootstrap bearer after successful conversion (matches codex-agent-identity flow).
+                token_data.pop("access_token", None)
+                token_data.pop("id_token", None)
+                token_data.pop("accessToken", None)
+                token_data.pop("idToken", None)
                 self._force_bind_groups(account_name, group_ids)
             return ok, msg
         except AgentIdentityError as exc:
+            _ai_user_log(account_name, "error", str(exc))
+            logger.warning("Agent Identity register/push fail name=%s err=%s", account_name, exc)
             return False, f"Agent Identity 注册失败: {exc}"
         except Exception as exc:
+            _ai_user_log(account_name, "error", str(exc))
             logger.exception("Agent Identity push failed for %s", account_name)
             return False, f"Agent Identity 推送异常: {exc}"
 
@@ -566,6 +707,21 @@ class Sub2APIClient:
             if push_format == "agent_identity":
                 ok, msg = self._add_account_agent_identity(working_token_data, settings)
                 if ok:
+                    # Promote enriched credential fields back to caller token_data.
+                    for key in (
+                        "auth_mode",
+                        "status",
+                        "credential_type",
+                        "agent_identity",
+                        "access_token",
+                        "id_token",
+                        "accessToken",
+                        "idToken",
+                    ):
+                        if key in working_token_data:
+                            token_data[key] = working_token_data[key]
+                        elif key in ("access_token", "id_token", "accessToken", "idToken"):
+                            token_data.pop(key, None)
                     return ok, msg
                 if settings.get("agent_identity_fallback_oauth"):
                     logger.warning(

@@ -302,6 +302,7 @@ def build_agent_identity_session_payload(
     email: str,
     device_id: str = "",
     user_agent: str = "",
+    proxy: str = "",
 ) -> str:
     """JSON token payload for Sub2API Path B registration (no OAuth/refresh_token)."""
     token = str(session_token or "").strip()
@@ -311,10 +312,15 @@ def build_agent_identity_session_payload(
         "id_token": token,
         "email": account_email,
         "type": "codex",
+        "status": "agent_identity_pending",
         "auth_source": "agent_identity_session",
         "device_id": device_id or "",
         "user_agent": user_agent or "",
     }
+    proxy_url = str(proxy or "").strip()
+    if proxy_url:
+        payload["proxy"] = proxy_url
+        payload["reg_proxy"] = proxy_url
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -326,7 +332,11 @@ def should_use_agent_identity_reg_path(enable_sub2api: bool, push_format: str) -
     return fmt == "agent_identity"
 
 def resolve_identity_bootstrap_tokens(token_data: Dict[str, Any]) -> Dict[str, str]:
-    """Extract bootstrap access/id tokens from openai-cpa token_data."""
+    """Extract bootstrap access/id tokens from openai-cpa token_data.
+
+    Fail closed when the JWT lacks OpenAI auth claims — Agent Identity registration
+    cannot succeed without chatgpt_account_id / chatgpt_user_id.
+    """
     access_token = str(
         token_data.get("access_token")
         or token_data.get("accessToken")
@@ -344,4 +354,14 @@ def resolve_identity_bootstrap_tokens(token_data: Dict[str, Any]) -> Dict[str, s
         id_token = access_token
     if not access_token:
         raise AgentIdentityError("token_data 缺少 access_token/id_token")
+
+    claim_token = id_token or access_token
+    try:
+        parse_id_token_identity(claim_token)
+    except AgentIdentityError as exc:
+        raise AgentIdentityError(
+            f"bootstrap token 无法用于 Agent Identity（{exc}）；"
+            "需要 ChatGPT /api/auth/session 的 accessToken（含 openai auth claims），"
+            "不是 oai-client-auth-session 之类的无 claims JWT"
+        ) from exc
     return {"access_token": access_token, "id_token": id_token}

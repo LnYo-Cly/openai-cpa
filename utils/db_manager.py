@@ -269,6 +269,59 @@ def delete_accounts_by_emails(emails: list) -> bool:
         return False
 
 
+def _status_from_token_json(token_json) -> str:
+    """Derive inventory badge status from stored token_data JSON."""
+    text = str(token_json or "")
+    if '"image2api"' in text:
+        return "image2api"
+    # Prefer explicit Agent Identity markers over access_token-only pending payloads.
+    if (
+        '"auth_mode": "agentIdentity"' in text
+        or '"auth_mode":"agentIdentity"' in text
+        or '"agent_identity"' in text
+        or '"status": "agent_identity"' in text
+        or '"status":"agent_identity"' in text
+    ):
+        return "Agent Identity"
+    if '"agent_identity_pending"' in text:
+        return "Agent Identity待推送"
+    if '"refresh_token"' in text:
+        return "有凭证"
+    if '"仅注册成功"' in text:
+        return "仅注册成功"
+    return "未知"
+
+
+def _agent_identity_fields_from_token_json(token_json):
+    """Extract Agent Identity credential payload for inventory display."""
+    try:
+        data = json.loads(token_json) if token_json else {}
+    except Exception:
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    identity = data.get("agent_identity")
+    if not isinstance(identity, dict):
+        if str(data.get("status") or "") == "agent_identity_pending" or str(data.get("auth_source") or "") == "agent_identity_session":
+            return None, {
+                "status": data.get("status"),
+                "auth_source": data.get("auth_source"),
+                "email": data.get("email"),
+                "note": "session bootstrap only; not yet converted to auth.json",
+            }
+        return None, None
+    auth_json = {
+        "OPENAI_API_KEY": data.get("OPENAI_API_KEY"),
+        "agent_identity": identity,
+        "auth_mode": data.get("auth_mode") or "agentIdentity",
+        "bedrock_api_key": data.get("bedrock_api_key"),
+        "last_refresh": data.get("last_refresh"),
+        "personal_access_token": data.get("personal_access_token"),
+        "tokens": data.get("tokens"),
+    }
+    return identity, auth_json
+
+
 def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", search: str = None, status_filter: str = "all") -> dict:
     try:
         with get_db_conn() as conn:
@@ -305,6 +358,9 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
             elif status_filter == "imgsub2api":
                 conditions.append("token_data LIKE ?")
                 params.append('%"image2api"%')
+            elif status_filter == "agent_identity":
+                conditions.append("(token_data LIKE ? OR token_data LIKE ? OR token_data LIKE ?)")
+                params.extend(['%"agentIdentity"%', '%"agent_identity"%', '%"agent_identity_pending"%'])
             where_clause = ""
             if conditions:
                 where_clause = " WHERE " + " AND ".join(conditions)
@@ -323,20 +379,23 @@ def get_accounts_page(page: int = 1, page_size: int = 50, hide_reg: str = "0", s
             execute_sql(c, data_sql, data_params)
             rows = c.fetchall()
 
-            data = [
-                {
+            data = []
+            for r in rows:
+                identity, auth_json = _agent_identity_fields_from_token_json(r[3])
+                row = {
                     "email": r[0],
                     "password": r[1],
                     "created_at": r[2],
-                    "status": "image2api" if '"image2api"' in str(r[3] or "") else (
-                        "有凭证" if '"refresh_token"' in str(r[3] or "") else (
-                            "仅注册成功" if '"仅注册成功"' in str(r[3] or "") else "未知")),
+                    "status": _status_from_token_json(r[3]),
                     "is_active": r[4] if r[4] is not None else 1,
                     "push_platform": r[5],
-                    "push_time": r[6]
+                    "push_time": r[6],
                 }
-                for r in rows
-            ]
+                if identity is not None:
+                    row["agent_identity"] = identity
+                if auth_json is not None:
+                    row["auth_json"] = auth_json
+                data.append(row)
             return {"total": total, "data": data}
 
     except Exception as e:
@@ -948,7 +1007,8 @@ def get_inventory_stats() -> dict:
                                 SUM(CASE WHEN token_data LIKE ? AND token_data NOT LIKE ? THEN 1 ELSE 0 END) as credential_count,
                                 SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as reg_only_count,
                                 SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as imgsub2api_count,
-                                SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as image2api_count
+                                SUM(CASE WHEN token_data LIKE ? THEN 1 ELSE 0 END) as image2api_count,
+                                SUM(CASE WHEN token_data LIKE ? OR token_data LIKE ? THEN 1 ELSE 0 END) as agent_identity_count
                             FROM accounts
                         """
             params = (
@@ -958,12 +1018,13 @@ def get_inventory_stats() -> dict:
                 '%"access_token"%', '%"image2api"%',
                 '%"仅注册成功"%',
                 '%"image2api"%',
-                '%"image2api"%'
+                '%"image2api"%',
+                '%"agentIdentity"%', '%"agent_identity"%',
             )
 
             execute_sql(c, sql, params)
             row = c.fetchone()
-            r = [x or 0 for x in row] if row else [0] * 17
+            r = [x or 0 for x in row] if row else [0] * 18
 
             return {
                 "local": {
@@ -976,7 +1037,8 @@ def get_inventory_stats() -> dict:
                     "credential": r[13],
                     "reg_only": r[14],
                     "imgsub2api": r[15],
-                    "image2api": r[16]
+                    "image2api": r[16],
+                    "agent_identity": r[17],
                 },
                 "cloud": {
                     "total": r[11],

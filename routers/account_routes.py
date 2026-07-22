@@ -231,7 +231,19 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                         last_error = resp
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 Sub2API 失败 ({mask_email(email)}): {resp}")
                     else:
-                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Sub2API！")
+                        print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Sub2API！{(' ' + str(resp)) if resp else ''}")
+                        try:
+                            if (
+                                token_data.get("auth_mode") == "agentIdentity"
+                                or token_data.get("status") == "agent_identity"
+                                or isinstance(token_data.get("agent_identity"), dict)
+                            ):
+                                db_manager.update_account_token_only(
+                                    email,
+                                    json.dumps(token_data, ensure_ascii=False),
+                                )
+                        except Exception as persist_exc:
+                            print(f"[{cfg.ts()}] [警告] Sub2API 入库后本地 Agent Identity 凭证回写失败: {persist_exc}")
                 elif action == "push_image2api":
                     access_token = token_data.get("access_token")
                     success, resp = img_client.add_accounts([access_token])

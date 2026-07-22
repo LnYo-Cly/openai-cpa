@@ -175,6 +175,24 @@ class SessionBootstrapTests(unittest.TestCase):
         self.assertEqual(token, good)
 
 
+    def test_pick_rejects_jwt_without_claims(self):
+        junk = make_jwt({"sub": "no-auth-claims"})
+        self.assertEqual(self.mod.pick_session_access_token(junk), "")
+        self.assertEqual(self.mod.pick_session_access_token(junk, require_claims=False), junk)
+
+    def test_extract_never_returns_non_claim_cookie_jwt(self):
+        junk = make_jwt({"sub": "cookie-only"})
+        session = MagicMock()
+        session.cookies.jar = [
+            types.SimpleNamespace(name="oai-client-auth-session", value=junk),
+        ]
+        with patch.object(self.mod, "follow_reg_continue_url", return_value=""), patch.object(
+            self.mod, "fetch_chatgpt_session_json", return_value={}
+        ), patch.object(self.mod, "bridge_chatgpt_nextauth_session", return_value=""):
+            token = self.mod.extract_reg_session_access_token(session, continue_url="", email="a@b.com")
+        self.assertEqual(token, "")
+
+
 class AgentIdentityNoImage2ApiSemantics(unittest.TestCase):
     def test_should_use_path_independent_of_image2api(self):
         for name in ["utils.integrations.agent_identity"]:

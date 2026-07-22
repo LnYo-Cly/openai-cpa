@@ -26,6 +26,7 @@ from utils.integrations.agent_identity import (
 from .session_bootstrap import (
     describe_token_source,
     extract_reg_session_access_token,
+    jwt_has_openai_auth_claims,
     pick_session_access_token,
 )
 from .user_utils import _generate_password
@@ -832,6 +833,13 @@ def run(
                         f"[{cfg.ts()}] [INFO] （{masked_login}）Sub2API Agent Identity 模式："
                         f"从注册会话直接提取 access_token（不走 image2api / OAuth）"
                     )
+
+                    def _ai_extract_log(stage: str, detail: str) -> None:
+                        print(
+                            f"[{cfg.ts()}] [INFO] （{masked_login}）Agent Identity 提取节点 "
+                            f"[{stage}]: {detail}"
+                        )
+
                     try:
                         session_token = extract_reg_session_access_token(
                             s_reg,
@@ -840,38 +848,63 @@ def run(
                             device_id=did,
                             user_agent=current_ua,
                             email=account_email,
+                            log=_ai_extract_log,
                         )
                     except Exception as e:
                         print(
                             f"[{cfg.ts()}] [WARNING] （{masked_login}）注册会话 access_token 提取异常: {e}"
                         )
                         session_token = ""
-                    # Last resort only: any earlier in-process JWT (should be rare on AI path).
+                    # Last resort only: claims-bearing JWT from earlier in-process helpers.
                     if not session_token:
-                        session_token = pick_session_access_token(data, saved_temp_at)
+                        session_token = pick_session_access_token(
+                            data, saved_temp_at, require_claims=True
+                        )
+                        if session_token:
+                            print(
+                                f"[{cfg.ts()}] [INFO] （{masked_login}）Agent Identity 提取节点 "
+                                f"[fallback_inproc]: ok ({describe_token_source(session_token)})"
+                            )
+                    # Fail closed: never push JWT without OpenAI auth claims.
+                    if session_token and not jwt_has_openai_auth_claims(session_token):
+                        print(
+                            f"[{cfg.ts()}] [ERROR] （{masked_login}）Agent Identity 提取到 JWT "
+                            f"但缺少 openai auth claims（{describe_token_source(session_token)}），拒绝推送"
+                        )
+                        session_token = ""
                     if session_token:
                         print(
                             f"[{cfg.ts()}] [INFO] （{masked_login}）Sub2API Agent Identity 模式："
                             f"跳过 OAuth/静默 Token，使用注册会话 token（{describe_token_source(session_token)}）直接推送"
                         )
+                        proxy_url = ""
+                        try:
+                            if isinstance(proxies, dict):
+                                proxy_url = str(proxies.get("https") or proxies.get("http") or "")
+                            elif proxies:
+                                proxy_url = str(proxies)
+                        except Exception:
+                            proxy_url = ""
                         return (
                             build_agent_identity_session_payload(
                                 session_token,
                                 account_email,
                                 device_id=did,
                                 user_agent=current_ua,
+                                proxy=proxy_url,
                             ),
                             password,
                         )
                     if getattr(cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", False):
                         print(
-                            f"[{cfg.ts()}] [WARNING] （{masked_login}）Agent Identity 模式未拿到注册会话 token，"
-                            f"已开启 fallback，继续走 OAuth/静默 Token"
+                            f"[{cfg.ts()}] [WARNING] （{masked_login}）Agent Identity 模式未拿到 "
+                            f"含 openai auth claims 的注册会话 token，已开启 fallback，继续走 OAuth/静默 Token"
                         )
                     else:
                         print(
-                            f"[{cfg.ts()}] [ERROR] （{masked_login}）Agent Identity 模式需要注册会话 access_token，"
-                            f"但未从注册会话提取到；已跳过 OAuth（可开启 agent_identity_fallback_oauth 回退）"
+                            f"[{cfg.ts()}] [ERROR] （{masked_login}）Agent Identity 模式需要注册会话 access_token "
+                            f"（ChatGPT /api/auth/session 含 openai auth claims），"
+                            f"但未提取到；已跳过 OAuth（可开启 agent_identity_fallback_oauth 回退）"
                         )
                         return None, None
 
