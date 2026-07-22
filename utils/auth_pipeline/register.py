@@ -741,7 +741,7 @@ def run(
                 # Session bearer is extracted later from the live registration session.
                 _ai_reg_path = should_use_agent_identity_reg_path(
                     getattr(cfg, "ENABLE_SUB2API_MODE", False),
-                    getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth"),
+                    getattr(cfg, "SUB2API_PUSH_FORMAT", "agent_identity"),
                 )
                 if _ai_reg_path:
                     data = None
@@ -826,7 +826,7 @@ def run(
                 # mode, but Agent Identity must not depend on that opaque helper.
                 if should_use_agent_identity_reg_path(
                     getattr(cfg, "ENABLE_SUB2API_MODE", False),
-                    getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth"),
+                    getattr(cfg, "SUB2API_PUSH_FORMAT", "agent_identity"),
                 ):
                     account_email = str(login_username or email or "").strip()
                     print(

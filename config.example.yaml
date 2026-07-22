@@ -301,7 +301,7 @@ sub2api_mode:
   # oauth = classic access/refresh token push
   # agent_identity = access_token bootstrap -> Agent Identity auth.json -> /import/codex-session
   # requires Sub2API version that supports agentIdentity import
-  push_format: oauth
+  push_format: agent_identity
   agent_identity_fallback_oauth: false
   agent_identity_use_reg_proxy: true
   update_existing: true
