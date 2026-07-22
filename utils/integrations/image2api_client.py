@@ -1,10 +1,58 @@
 import json
 import logging
+import threading
+import time
 from typing import Dict, Any, List, Tuple
 from utils import config as cfg
 from curl_cffi import requests as cffi_requests
 
 logger = logging.getLogger(__name__)
+_IMAGE2API_PUSH_SEM = threading.BoundedSemaphore(3)
+
+
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "y"}:
+        return True
+    if text in {"0", "false", "no", "off", "n", ""}:
+        return False
+    return default
+
+
+def _config_section(name: str) -> Dict[str, Any]:
+    raw = getattr(cfg, "_c", {})
+    if isinstance(raw, dict) and isinstance(raw.get(name), dict):
+        return raw.get(name) or {}
+    return {}
+
+
+def _normalize_proxy_url(proxy_url: str) -> str:
+    proxy = str(proxy_url or "").strip()
+    if not proxy:
+        return ""
+    formatter = getattr(cfg, "format_docker_url", None)
+    if callable(formatter):
+        proxy = formatter(proxy)
+    if proxy.startswith("socks5://"):
+        proxy = proxy.replace("socks5://", "socks5h://", 1)
+    return proxy
+
+
+def _push_transport_kwargs(section_name: str) -> Dict[str, Any]:
+    section = _config_section(section_name)
+    # 默认直连推送，避免 Image2API 推送占用注册用的全局代理。
+    if not _safe_bool(section.get("push_use_proxy"), default=False):
+        return {"proxies": {}}
+
+    proxy = _normalize_proxy_url(section.get("push_proxy") or getattr(cfg, "DEFAULT_PROXY", ""))
+    if not proxy:
+        return {"proxies": {}}
+    return {"proxies": {"http": proxy, "https": proxy}}
+
 
 
 class Image2APIClient:
@@ -19,10 +67,16 @@ class Image2APIClient:
         }
 
         self.request_kwargs = {
-            "timeout": 30,
+            "timeout": 90,
             "impersonate": "chrome110",
             "verify": False
         }
+
+    def _request_kwargs(self, **overrides: Any) -> Dict[str, Any]:
+        kwargs = dict(self.request_kwargs)
+        kwargs.update(overrides)
+        kwargs.update(_push_transport_kwargs("image2api_mode"))
+        return kwargs
 
     def _handle_response(
             self,
@@ -53,36 +107,39 @@ class Image2APIClient:
             return False, "没有需要上传的 Token"
 
         url = f"{self.api_url}/api/accounts"
-        payload = {
-            "tokens": tokens
-        }
+        payload = {"tokens": tokens}
+        last_error = None
 
-        try:
-            response = cffi_requests.post(
-                url,
-                stream=True,
-                json=payload,
-                headers=self.headers,
-                **self.request_kwargs
-            )
-            status = response.status_code
-            response.close()
-            if status in (200, 201, 204):
-                logger.info(f"Image2API 推送成功: {len(tokens)} 个账号 (HTTP {status})")
-                return True, f"成功推送 {len(tokens)} 个账号"
-            else:
-                logger.warning(f"Image2API 推送失败，返回状态码: HTTP {status}")
-                return False, f"推送失败，远端返回状态码: {status}"
-        except Exception as exc:
-            logger.error("向 Image2API 推送网络请求失败: %s", exc)
-            return False, f"网络请求失败: {exc}"
+        with _IMAGE2API_PUSH_SEM:
+            for attempt in range(1, 4):
+                try:
+                    response = cffi_requests.post(
+                        url,
+                        json=payload,
+                        headers=self.headers,
+                        **self._request_kwargs()
+                    )
+                    status = response.status_code
+                    response.close()
+                    if status in (200, 201, 204):
+                        logger.info(f"Image2API 推送成功: {len(tokens)} 个账号 (HTTP {status})")
+                        return True, f"成功推送 {len(tokens)} 个账号"
+                    last_error = f"推送失败，远端返回状态码: {status}"
+                    logger.warning("Image2API 推送失败，第 %s/3 次，HTTP %s", attempt, status)
+                except Exception as exc:
+                    last_error = f"网络请求失败: {exc}"
+                    logger.error("向 Image2API 推送网络请求失败，第 %s/3 次: %s", attempt, exc)
+                if attempt < 3:
+                    time.sleep(2 * attempt)
+
+        return False, last_error or "推送失败"
 
     def get_accounts(self) -> Tuple[bool, Any]:
         if not self.api_url or not self.api_key:
             return False, "配置未填写"
         url = f"{self.api_url}/api/accounts"
         try:
-            kwargs = self.request_kwargs.copy()
+            kwargs = self._request_kwargs()
             kwargs["timeout"] = 60
             response = cffi_requests.get(url, headers=self.headers, **kwargs)
             return self._handle_response(response)
@@ -99,7 +156,7 @@ class Image2APIClient:
             "quota": quota
         }
         try:
-            response = cffi_requests.post(url, json=payload, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.post(url, json=payload, headers=self.headers, **self._request_kwargs())
             return self._handle_response(response)
         except Exception as exc:
             return False, f"更新远端状态失败: {exc}"
@@ -108,7 +165,7 @@ class Image2APIClient:
         url = f"{self.api_url}/api/accounts/refresh"
         payload = {"access_tokens": access_tokens}
         try:
-            response = cffi_requests.post(url, json=payload, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.post(url, json=payload, headers=self.headers, **self._request_kwargs())
             return self._handle_response(response)
         except Exception as exc:
             return False, f"刷新远端凭证失败: {exc}"

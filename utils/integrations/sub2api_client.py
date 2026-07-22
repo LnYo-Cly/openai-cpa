@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import time
 from urllib.parse import urlparse
 from datetime import datetime, timezone
@@ -9,6 +10,52 @@ from curl_cffi import requests as cffi_requests
 from utils.integrations.sub2api_proxy import parse_sub2api_proxy
 
 logger = logging.getLogger(__name__)
+_SUB2API_PUSH_SEM = threading.BoundedSemaphore(3)
+
+
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "y"}:
+        return True
+    if text in {"0", "false", "no", "off", "n", ""}:
+        return False
+    return default
+
+
+def _config_section(name: str) -> Dict[str, Any]:
+    raw = getattr(cfg, "_c", {})
+    if isinstance(raw, dict) and isinstance(raw.get(name), dict):
+        return raw.get(name) or {}
+    return {}
+
+
+def _normalize_proxy_url(proxy_url: str) -> str:
+    proxy = str(proxy_url or "").strip()
+    if not proxy:
+        return ""
+    formatter = getattr(cfg, "format_docker_url", None)
+    if callable(formatter):
+        proxy = formatter(proxy)
+    if proxy.startswith("socks5://"):
+        proxy = proxy.replace("socks5://", "socks5h://", 1)
+    return proxy
+
+
+def _push_transport_kwargs(section_name: str) -> Dict[str, Any]:
+    section = _config_section(section_name)
+    # 默认直连推送，避免 Sub2API/Image2API 推送占用注册用的全局代理。
+    if not _safe_bool(section.get("push_use_proxy"), default=False):
+        return {"proxies": {}}
+
+    proxy = _normalize_proxy_url(section.get("push_proxy") or getattr(cfg, "DEFAULT_PROXY", ""))
+    if not proxy:
+        return {"proxies": {}}
+    return {"proxies": {"http": proxy, "https": proxy}}
+
 
 
 def get_sub2api_push_settings() -> Dict[str, Any]:
@@ -60,8 +107,19 @@ def _build_account_item(token_data: Dict[str, Any], settings: Dict[str, Any], pr
             "expires_at": int(time.time() + 864000),
             "expires_in": 863999,
             "model_mapping": {
+
+                "gpt-5.4": "gpt-5.4",
+
                 "gpt-5.4-mini": "gpt-5.4-mini",
+
                 "gpt-5.5": "gpt-5.5",
+
+                "gpt-5.6-sol": "gpt-5.6-sol",
+
+                "gpt-5.6-terra": "gpt-5.6-terra",
+
+                "gpt-5.6-luna": "gpt-5.6-luna",
+
             },
             "organization_id": token_data.get("workspace_id", ""),
             "refresh_token": token_data.get("refresh_token", ""),
@@ -112,9 +170,15 @@ class Sub2APIClient:
             "x-api-key": api_key,
         }
         self.request_kwargs = {
-            "timeout": 15,
+            "timeout": 45,
             "impersonate": "chrome110",
         }
+
+    def _request_kwargs(self, **overrides: Any) -> Dict[str, Any]:
+        kwargs = dict(self.request_kwargs)
+        kwargs.update(overrides)
+        kwargs.update(_push_transport_kwargs("sub2api_mode"))
+        return kwargs
 
     def _build_network_error(self, exc: Exception) -> str:
         msg = str(exc)
@@ -172,9 +236,7 @@ class Sub2APIClient:
                     refresh_url,
                     json={},
                     headers=self.headers,
-                    timeout=30,
-                    impersonate="chrome110",
-                    proxies=None,
+                    **self._request_kwargs(timeout=30),
                 )
                 if response.status_code in (200, 201, 204):
                     logger.info("Sub2API account refresh succeeded (ID: %s)", account_id)
@@ -203,9 +265,7 @@ class Sub2APIClient:
                 url,
                 json=payload,
                 headers=headers,
-                timeout=30,
-                impersonate="chrome110",
-                proxies=None,
+                **self._request_kwargs(timeout=60),
             )
             ok, result = self._handle_response(response, success_codes=(200, 201))
             if ok:
@@ -221,7 +281,7 @@ class Sub2APIClient:
             "page_size": page_size,
         }
         try:
-            request_kwargs = dict(self.request_kwargs)
+            request_kwargs = self._request_kwargs()
             # 全量库存接口体积较大，分页读取时放宽超时，降低本地网络抖动造成的误判。
             request_kwargs["timeout"] = max(int(request_kwargs.get("timeout", 15)), 45)
             response = cffi_requests.get(url, headers=self.headers, params=params, **request_kwargs)
@@ -338,7 +398,7 @@ class Sub2APIClient:
                 url,
                 headers=self.headers,
                 params=params,
-                **self.request_kwargs
+                **self._request_kwargs()
             )
             return self._handle_response(response)
         except Exception as exc:
@@ -346,72 +406,82 @@ class Sub2APIClient:
             return False, str(exc)
 
     def add_account(self, token_data: Dict[str, Any]) -> Tuple[bool, str]:
-        settings = self._get_push_settings()
-        working_token_data = dict(token_data)
-        refresh_token = working_token_data.get("refresh_token", "")
-        proxy_obj = working_token_data.get("sub2api_proxy")
-        if proxy_obj is None:
-            proxy_obj = parse_sub2api_proxy(cfg.get_next_sub2api_proxy_url())
-            if proxy_obj:
-                working_token_data["sub2api_proxy"] = proxy_obj
+        with _SUB2API_PUSH_SEM:
+            settings = self._get_push_settings()
+            working_token_data = dict(token_data)
+            refresh_token = working_token_data.get("refresh_token", "")
+            proxy_obj = working_token_data.get("sub2api_proxy")
+            if proxy_obj is None:
+                proxy_obj = parse_sub2api_proxy(cfg.get_next_sub2api_proxy_url())
+                if proxy_obj:
+                    working_token_data["sub2api_proxy"] = proxy_obj
 
-        account_name = working_token_data.get("email", "unknown")[:64]
-        group_ids = settings.get("group_ids") or []
+            account_name = working_token_data.get("email", "unknown")[:64]
+            group_ids = settings.get("group_ids") or []
 
 
-        if not refresh_token or proxy_obj:
-            ok, msg = self._import_account(working_token_data, settings)
-            if ok:
-                self._force_bind_groups(account_name, group_ids)
-            return ok, msg
+            if not refresh_token or proxy_obj:
+                ok, msg = self._import_account(working_token_data, settings)
+                if ok:
+                    self._force_bind_groups(account_name, group_ids)
+                return ok, msg
 
-        url = f"{self.api_url}/api/v1/admin/accounts"
-        payload = {
-            "name": account_name,
-            "platform": "openai",
-            "type": "oauth",
-            "credentials": {
-                "refresh_token": refresh_token,
-                "model_mapping": {
-                    "gpt-5.4-mini": "gpt-5.4-mini",
-                    "gpt-5.5": "gpt-5.5",
-                }
-            },
-            "concurrency": settings["concurrency"],
-            "priority": settings["priority"],
-            "rate_multiplier": settings["rate_multiplier"],
-            "extra": self._build_account_extra(settings),
-        }
-        if proxy_obj and "proxy_key" in proxy_obj:
-            payload["proxy_key"] = proxy_obj["proxy_key"]
+            url = f"{self.api_url}/api/v1/admin/accounts"
+            payload = {
+                "name": account_name,
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {
+                    "refresh_token": refresh_token,
+                    "model_mapping": {
 
-        if settings["group_ids"]:
-            payload["group_ids"] = settings["group_ids"]
+                        "gpt-5.4": "gpt-5.4",
 
-        try:
-            response = cffi_requests.post(
-                url,
-                json=payload,
-                headers=self.headers,
-                timeout=30,
-                impersonate="chrome110",
-                proxies=None,
-            )
-            ok, result = self._handle_response(response, success_codes=(200, 201))
-            if not ok:
+                        "gpt-5.4-mini": "gpt-5.4-mini",
+
+                        "gpt-5.5": "gpt-5.5",
+
+                        "gpt-5.6-sol": "gpt-5.6-sol",
+
+                        "gpt-5.6-terra": "gpt-5.6-terra",
+
+                        "gpt-5.6-luna": "gpt-5.6-luna",
+
+                    }
+                },
+                "concurrency": settings["concurrency"],
+                "priority": settings["priority"],
+                "rate_multiplier": settings["rate_multiplier"],
+                "extra": self._build_account_extra(settings),
+            }
+            if proxy_obj and "proxy_key" in proxy_obj:
+                payload["proxy_key"] = proxy_obj["proxy_key"]
+
+            if settings["group_ids"]:
+                payload["group_ids"] = settings["group_ids"]
+
+            try:
+                response = cffi_requests.post(
+                    url,
+                    json=payload,
+                    headers=self.headers,
+                    **self._request_kwargs(timeout=60),
+                )
+                ok, result = self._handle_response(response, success_codes=(200, 201))
+                if not ok:
+                    import_ok, import_msg = self._import_account(working_token_data, settings)
+                    if import_ok:
+                        self._force_bind_groups(account_name, group_ids)
+                    return import_ok, import_msg
+                account_id = result.get("data", {}).get("id") if isinstance(result, dict) else None
+                if account_id:
+                    self._refresh_created_account(str(account_id))
+                return True, "Sub2API account created successfully"
+            except Exception as exc:
                 import_ok, import_msg = self._import_account(working_token_data, settings)
                 if import_ok:
                     self._force_bind_groups(account_name, group_ids)
                 return import_ok, import_msg
-            account_id = result.get("data", {}).get("id") if isinstance(result, dict) else None
-            if account_id:
-                self._refresh_created_account(str(account_id))
-            return True, "Sub2API account created successfully"
-        except Exception as exc:
-            import_ok, import_msg = self._import_account(working_token_data, settings)
-            if import_ok:
-                self._force_bind_groups(account_name, group_ids)
-            return import_ok, import_msg
 
     def _force_bind_groups(self, account_name: str, group_ids: List[int]) -> None:
         try:
@@ -434,7 +504,7 @@ class Sub2APIClient:
     def update_account(self, account_id: str, update_data: Dict[str, Any]) -> Tuple[bool, Any]:
         url = f"{self.api_url}/api/v1/admin/accounts/{account_id}"
         try:
-            response = cffi_requests.put(url, json=update_data, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.put(url, json=update_data, headers=self.headers, **self._request_kwargs())
             return self._handle_response(response)
         except Exception as exc:
             logger.error("Update Sub2API account %s failed: %s", account_id, exc)
@@ -447,11 +517,11 @@ class Sub2APIClient:
         payload = {"status": status_val}
 
         try:
-            response = cffi_requests.patch(url, json=payload, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.patch(url, json=payload, headers=self.headers, **self._request_kwargs())
             if response.status_code in (200, 201, 204):
                 return True
 
-            response = cffi_requests.put(url, json=payload, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.put(url, json=payload, headers=self.headers, **self._request_kwargs())
             return response.status_code in (200, 201, 204)
         except Exception as exc:
             logger.error("Set Sub2API account %s status failed: %s", account_id, exc)
@@ -460,7 +530,7 @@ class Sub2APIClient:
     def delete_account(self, account_id: str) -> Tuple[bool, Any]:
         url = f"{self.api_url}/api/v1/admin/accounts/{account_id}"
         try:
-            response = cffi_requests.delete(url, headers=self.headers, **self.request_kwargs)
+            response = cffi_requests.delete(url, headers=self.headers, **self._request_kwargs())
             return self._handle_response(response, success_codes=(200, 204))
         except Exception as exc:
             logger.error(f"删除账号 {account_id} 失败: {exc}")
@@ -469,7 +539,7 @@ class Sub2APIClient:
     def refresh_account(self, account_id: str) -> Tuple[bool, Any]:
         url = f"{self.api_url}/api/v1/admin/accounts/{account_id}/refresh"
         try:
-            response = cffi_requests.post(url, headers=self.headers, json={}, **self.request_kwargs)
+            response = cffi_requests.post(url, headers=self.headers, json={}, **self._request_kwargs())
             return self._handle_response(response)
         except Exception as exc:
 
@@ -483,8 +553,7 @@ class Sub2APIClient:
                 url,
                 headers=self.headers,
                 json={"model_id": cfg.SUB2API_TEST_MODEL},
-                timeout=60,
-                impersonate="chrome110",
+                **self._request_kwargs(timeout=60),
             )
             if response.status_code != 200:
                 logger.warning("Sub2API test_account %s returned HTTP %s; keep current state", account_id, response.status_code)
@@ -524,7 +593,7 @@ class Sub2APIClient:
     def test_connection(self) -> Tuple[bool, str]:
         url = f"{self.api_url}/api/v1/admin/accounts/data"
         try:
-            kwargs = self.request_kwargs.copy()
+            kwargs = self._request_kwargs()
             kwargs["timeout"] = 10
             response = cffi_requests.get(url, headers=self.headers, **kwargs)
 

@@ -372,7 +372,8 @@ def _get_docker_controller(target: str) -> Tuple[Optional[str], str]:
     host_port = port_bind[0].get("HostPort")
     if not host_port:
         return None, secret
-    return f"http://127.0.0.1:{host_port}", secret
+    controller_host = "host.docker.internal" if os.path.exists("/.dockerenv") else "127.0.0.1"
+    return f"http://{controller_host}:{host_port}", secret
 
 
 def _get_controller_endpoint(target: str = "all") -> Tuple[Optional[str], str]:
