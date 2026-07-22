@@ -295,6 +295,36 @@ def create_agent_identity_auth_json(
     return auth_json
 
 
+
+
+def build_agent_identity_session_payload(
+    session_token: str,
+    email: str,
+    device_id: str = "",
+    user_agent: str = "",
+) -> str:
+    """JSON token payload for Sub2API Path B registration (no OAuth/refresh_token)."""
+    token = str(session_token or "").strip()
+    account_email = str(email or "").strip()
+    payload = {
+        "access_token": token,
+        "id_token": token,
+        "email": account_email,
+        "type": "codex",
+        "auth_source": "agent_identity_session",
+        "device_id": device_id or "",
+        "user_agent": user_agent or "",
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def should_use_agent_identity_reg_path(enable_sub2api: bool, push_format: str) -> bool:
+    """True when Sub2API Agent Identity mode should skip OAuth at registration."""
+    if not enable_sub2api:
+        return False
+    fmt = str(push_format or "oauth").strip().lower()
+    return fmt == "agent_identity"
+
 def resolve_identity_bootstrap_tokens(token_data: Dict[str, Any]) -> Dict[str, str]:
     """Extract bootstrap access/id tokens from openai-cpa token_data."""
     access_token = str(

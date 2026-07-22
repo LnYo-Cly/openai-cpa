@@ -210,5 +210,48 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         self.assertFalse(any("codex-session" in u for u in captured))
 
 
+
+class AgentIdentityRegSkipTests(unittest.TestCase):
+    """Registration path must skip OAuth when push_format=agent_identity."""
+
+    def setUp(self):
+        # agent_identity only needs PyNaCl for crypto helpers; pure helpers need none.
+        for name in ["utils.integrations.agent_identity"]:
+            sys.modules.pop(name, None)
+        self.mod = importlib.import_module("utils.integrations.agent_identity")
+
+    def test_should_use_agent_identity_reg_path(self):
+        self.assertTrue(self.mod.should_use_agent_identity_reg_path(True, "agent_identity"))
+        self.assertTrue(self.mod.should_use_agent_identity_reg_path(True, "agent_identity "))
+        self.assertFalse(self.mod.should_use_agent_identity_reg_path(False, "agent_identity"))
+        self.assertFalse(self.mod.should_use_agent_identity_reg_path(True, "oauth"))
+        self.assertFalse(self.mod.should_use_agent_identity_reg_path(True, "OAuth"))
+
+    def test_build_agent_identity_session_payload_shape(self):
+        raw = self.mod.build_agent_identity_session_payload(
+            "sess-jwt-token",
+            "user@example.com",
+            device_id="did-1",
+            user_agent="ua-1",
+        )
+        data = json.loads(raw)
+        self.assertEqual(data["access_token"], "sess-jwt-token")
+        self.assertEqual(data["id_token"], "sess-jwt-token")
+        self.assertEqual(data["email"], "user@example.com")
+        self.assertEqual(data["type"], "codex")
+        self.assertEqual(data["auth_source"], "agent_identity_session")
+        self.assertEqual(data["device_id"], "did-1")
+        self.assertEqual(data["user_agent"], "ua-1")
+        # Must not look like half-finished statuses that skip Sub2API push.
+        self.assertNotIn(data.get("status"), ["image2api", "仅注册成功"])
+        self.assertNotIn("refresh_token", data)
+
+    def test_resolve_bootstrap_accepts_session_payload(self):
+        raw = self.mod.build_agent_identity_session_payload("sess-at", "a@b.com")
+        tokens = self.mod.resolve_identity_bootstrap_tokens(json.loads(raw))
+        self.assertEqual(tokens["access_token"], "sess-at")
+        self.assertEqual(tokens["id_token"], "sess-at")
+
+
 if __name__ == "__main__":
     unittest.main()

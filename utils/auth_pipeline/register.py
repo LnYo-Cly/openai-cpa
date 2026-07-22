@@ -19,7 +19,12 @@ from utils.integrations.image2api_client import Image2APIClient
 from .http_utils import _ssl_verify, _skip_net_check, _post_with_retry, _oai_headers, _follow_redirect_chain_local
 from .common import _extract_next_url, _parse_workspace_from_auth_cookie, _otp_verify_loop, _create_account_about_you
 from .oauth import generate_oauth_url, submit_callback_url
+from utils.integrations.agent_identity import (
+    build_agent_identity_session_payload,
+    should_use_agent_identity_reg_path,
+)
 from .user_utils import _generate_password
+
 
 def run(
     proxy: Optional[str],
@@ -798,6 +803,41 @@ def run(
                         time.sleep(random.uniform(0.1, 0.5))
                         is_alloc, sys_handle_a, sys_handle_b, sys_handle_c = sys_node_allocate(s_reg, did, saved_temp_at, proxies)
                 time.sleep(wait_time)
+
+                # Agent Identity path: skip workspace OAuth / silent OAuth entirely.
+                # Session bearer from image2api_data is enough to register agent identity
+                # and push auth.json via Sub2API /import/codex-session.
+                if should_use_agent_identity_reg_path(
+                    getattr(cfg, "ENABLE_SUB2API_MODE", False),
+                    getattr(cfg, "SUB2API_PUSH_FORMAT", "oauth"),
+                ):
+                    session_token = str(data or saved_temp_at or "").strip()
+                    if session_token:
+                        account_email = str(login_username or email or "").strip()
+                        print(
+                            f"[{cfg.ts()}] [INFO] （{masked_login}）Sub2API Agent Identity 模式："
+                            f"跳过 OAuth/静默 Token，使用注册会话 access_token 直接推送"
+                        )
+                        return (
+                            build_agent_identity_session_payload(
+                                session_token,
+                                account_email,
+                                device_id=did,
+                                user_agent=current_ua,
+                            ),
+                            password,
+                        )
+                    if getattr(cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", False):
+                        print(
+                            f"[{cfg.ts()}] [WARNING] （{masked_login}）Agent Identity 模式未拿到会话 token，"
+                            f"已开启 fallback，继续走 OAuth/静默 Token"
+                        )
+                    else:
+                        print(
+                            f"[{cfg.ts()}] [ERROR] （{masked_login}）Agent Identity 模式需要注册会话 access_token，"
+                            f"但未获取到；已跳过 OAuth（可开启 agent_identity_fallback_oauth 回退）"
+                        )
+                        return None, None
 
                 workspace_hint_url = ""
                 if target_continue_url:
