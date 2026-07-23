@@ -418,10 +418,11 @@ def get_raw_pool_status() -> dict:
         blacklist = []
     group_hint = str(raw_conf.get("group_name") or clash_conf.get("group_name") or "GLOBAL").strip()
     default_proxy = str(config_data.get("default_proxy") or "").strip()
-    probe_proxy = raw_list[0] if raw_list else default_proxy
+    raw_enabled = bool(raw_conf.get("enable", False))
+    probe_proxy = raw_list[0] if raw_enabled and raw_list else default_proxy
 
     status = {
-        "enabled": bool(raw_conf.get("enable", False)),
+        "enabled": raw_enabled,
         "default_proxy_masked": _mask_proxy_url(default_proxy),
         "proxy_count": len(raw_list),
         "proxies": [
