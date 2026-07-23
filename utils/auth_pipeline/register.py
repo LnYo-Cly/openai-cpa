@@ -30,6 +30,7 @@ from .session_bootstrap import (
     pick_session_access_token,
 )
 from .user_utils import _generate_password
+from utils.proxy_node_stats import remember_active_proxy_node
 
 
 def _mark_proxy_error(run_ctx: Optional[dict], error_type: str, detail: str = "") -> None:
@@ -40,6 +41,7 @@ def _mark_proxy_error(run_ctx: Optional[dict], error_type: str, detail: str = ""
     run_ctx["proxy_error"] = str(error_type or "").strip()
     if detail:
         run_ctx["proxy_error_detail"] = str(detail)[:240]
+    remember_active_proxy_node(run_ctx.get("proxy"), run_ctx)
 
 
 def _mark_proxy_warning(run_ctx: Optional[dict], warning_type: str, detail: str = "") -> None:
@@ -245,6 +247,7 @@ def run(
                                "screen_hint": screen_hint_val},
                     proxies=proxies,
                 )
+                remember_active_proxy_node(proxy, run_ctx)
 
                 if signup_resp.status_code == 403:
                     print(f"[{cfg.ts()}] [WARNING] （{masked_login}）注册请求触发 403 拦截，稍作等待后重试...")
@@ -269,6 +272,7 @@ def run(
                             headers=pwd_headers, json_body={"password": password, "username": login_username},
                             proxies=proxies,
                         )
+                        remember_active_proxy_node(proxy, run_ctx)
                         if pwd_resp.status_code != 200:
                             try:
                                 err_json = pwd_resp.json()
@@ -529,6 +533,7 @@ def run(
                         json_body={"password": password, "username": email},
                         proxies=proxies,
                     )
+                    remember_active_proxy_node(proxy, run_ctx)
 
                     if pwd_resp.status_code != 200:
                         err_json = pwd_resp.json()
@@ -649,6 +654,7 @@ def run(
                                 headers=val_headers,
                                 json_body={"code": code}, proxies=proxies,
                             )
+                            remember_active_proxy_node(proxy, run_ctx)
 
                             if code_resp.status_code != 200:
                                 print(f"[{cfg.ts()}] [WARNING] （{masked_login}）验证码校验未通过: {code_resp.status_code}，准备重新请求...")

@@ -20,6 +20,7 @@ CONFIG_PATH = os.path.join(DATA_DIR, "config.yaml")
 
 _lock = threading.Lock()
 _selected_nodes: dict[str, dict[str, Any]] = {}
+_GROUP_MARKERS = {"DIRECT", "REJECT", "GLOBAL"}
 
 
 def _now() -> float:
@@ -204,6 +205,59 @@ def _resolve_leaf_node(proxy_map: dict, group_name: str) -> tuple[str, str, Opti
     return current_group, node, delay
 
 
+def _node_from_chains(chains: Any, group_hint: str = "") -> str:
+    groups = {str(group_hint or "").strip(), *_GROUP_MARKERS}
+    for item in chains or []:
+        name = str(item or "").strip()
+        if name and name not in groups and not name.upper().startswith(("LB-", "AUTO", "URL-TEST")):
+            return name
+    return ""
+
+
+def _active_connection_snapshot(proxy_url: str = "", host_hint: str = "") -> dict:
+    config_data = _read_yaml_config()
+    _, port, _ = _parse_host_port(proxy_url or str(config_data.get("default_proxy") or ""))
+    raw_conf = config_data.get("raw_proxy_pool", {}) if isinstance(config_data.get("raw_proxy_pool"), dict) else {}
+    clash_conf = config_data.get("clash_proxy_pool", {}) if isinstance(config_data.get("clash_proxy_pool"), dict) else {}
+    group_hint = str(raw_conf.get("group_name") or clash_conf.get("group_name") or "LB-GLOBAL-REFINED").strip()
+    host_hint = str(host_hint or "").strip().lower()
+    for base_url, source in _controller_candidates(config_data, proxy_url):
+        try:
+            resp = requests.get(f"{base_url.rstrip('/')}/connections", headers=_controller_headers(config_data), timeout=1.5)
+            if resp.status_code != 200:
+                continue
+            for conn in resp.json().get("connections") or []:
+                meta = conn.get("metadata") or {}
+                if port and str(meta.get("inboundPort") or "") != str(port):
+                    continue
+                if host_hint and host_hint not in str(meta.get("host") or "").lower():
+                    continue
+                node = _node_from_chains(conn.get("chains"), group_hint)
+                if node:
+                    return {
+                        "controller_url": base_url,
+                        "controller_source": source,
+                        "group_name": group_hint,
+                        "node_name": node,
+                        "delay_ms": None,
+                    }
+        except Exception:
+            continue
+    return {}
+
+
+def remember_active_proxy_node(proxy_url: Optional[str], run_ctx: Optional[dict] = None, host_hint: str = "auth.openai.com") -> None:
+    proxy_url = _normalize_proxy_url(proxy_url or (run_ctx or {}).get("proxy"))
+    snap = _active_connection_snapshot(proxy_url, host_hint=host_hint)
+    node = str(snap.get("node_name") or "").strip()
+    if not node:
+        return
+    remember_selected_node(proxy_url, node, str(snap.get("group_name") or ""), snap.get("delay_ms"))
+    if run_ctx is not None:
+        run_ctx["proxy_node"] = node
+        run_ctx["proxy_group"] = snap.get("group_name") or ""
+
+
 def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
     config_data = _read_yaml_config()
     raw_conf = config_data.get("raw_proxy_pool", {}) if isinstance(config_data.get("raw_proxy_pool"), dict) else {}
@@ -213,6 +267,9 @@ def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
     selected = _selected_nodes.get(_proxy_fingerprint(proxy_url))
     if selected and (_now() - float(selected.get("selected_at") or 0)) < 900:
         return dict(selected)
+    active = _active_connection_snapshot(proxy_url)
+    if active:
+        return active
 
     for base_url, source in _controller_candidates(config_data, proxy_url):
         try:
@@ -348,6 +405,47 @@ def clear_node_stats() -> None:
         _write_stats_unlocked({"version": 1, "items": {}})
 
 
+def _merge_exclude_filter(existing: str, node_name: str) -> str:
+    escaped = re.escape(str(node_name or "").strip())
+    if not escaped:
+        return str(existing or "")
+    current = str(existing or "").strip()
+    if escaped in current:
+        return current
+    return f"{current}|{escaped}" if current else escaped
+
+
+def _apply_mihomo_blacklist(config_data: dict, node_name: str) -> str:
+    path = os.path.join(DATA_DIR, "mihomo-dukadi-15559", "config.yaml")
+    if not os.path.exists(path):
+        return "未找到 15559 Mihomo 配置，已仅写入 Wenfxl 黑名单。"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            mihomo_cfg = yaml.safe_load(f) or {}
+        providers = mihomo_cfg.get("proxy-providers") or {}
+        for provider in providers.values():
+            if isinstance(provider, dict):
+                provider["exclude-filter"] = _merge_exclude_filter(provider.get("exclude-filter", ""), node_name)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(mihomo_cfg, f, allow_unicode=True, sort_keys=False)
+    except Exception as exc:
+        return f"写入 15559 Mihomo 黑名单失败：{exc}"
+
+    for base_url, _ in _controller_candidates(config_data, str(config_data.get("default_proxy") or "")):
+        try:
+            resp = requests.put(
+                f"{base_url.rstrip('/')}/configs?force=true",
+                headers=_controller_headers(config_data),
+                json={"path": "/root/.config/mihomo/config.yaml"},
+                timeout=3,
+            )
+            if resp.status_code in {200, 204}:
+                return "已写入 15559 Mihomo exclude-filter 并热重载。"
+        except Exception:
+            continue
+    return "已写入 15559 Mihomo exclude-filter；控制口热重载失败，请重启 mihomo-dukadi-15559。"
+
+
 def blacklist_node(node_name: str) -> tuple[bool, str]:
     value = str(node_name or "").strip()
     if not value:
@@ -364,12 +462,13 @@ def blacklist_node(node_name: str) -> tuple[bool, str]:
     raw_conf["blacklist"] = blacklist
     config_data["raw_proxy_pool"] = raw_conf
     _write_yaml_config(config_data)
+    mihomo_msg = _apply_mihomo_blacklist(config_data, value)
     try:
         from utils import config as cfg
         cfg.reload_all_configs(new_config_dict=config_data)
     except Exception:
         pass
-    return True, f"已加入 raw_proxy_pool 黑名单：{value}"
+    return True, f"已加入 15559 节点池黑名单：{value}；{mihomo_msg}"
 
 
 def _group_rows_from_proxy_map(proxy_map: dict, group_hint: str, blacklist: list[str]) -> list[dict]:

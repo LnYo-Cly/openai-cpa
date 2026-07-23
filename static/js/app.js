@@ -4177,7 +4177,7 @@ async exportSub2Api() {
             }
         },
         async clearRawProxyStats() {
-            const confirmed = await this.customConfirm('确定清空 raw_proxy_pool / 15559 节点运行统计吗？不会删除代理配置。');
+            const confirmed = await this.customConfirm('确定清空 15559 节点池运行统计吗？不会删除代理配置。');
             if (!confirmed) return;
             this.rawProxyPool.statsLoading = true;
             try {
@@ -4186,7 +4186,7 @@ async exportSub2Api() {
                 this.showToast(data.message || '已清空统计', data.status);
                 await this.fetchRawProxyPool();
             } catch (e) {
-                this.showToast('清空 raw_proxy_pool 统计失败', 'error');
+                this.showToast('清空 15559 节点池统计失败', 'error');
             } finally {
                 this.rawProxyPool.statsLoading = false;
             }
@@ -4199,7 +4199,7 @@ async exportSub2Api() {
                 this.showToast('没有可拉黑的节点名称', 'warning');
                 return;
             }
-            const confirmed = await this.customConfirm(`确定把节点/关键词 [${nodeName}] 加入 raw_proxy_pool 黑名单吗？`);
+            const confirmed = await this.customConfirm(`确定把节点/关键词 [${nodeName}] 加入 15559 节点池黑名单吗？`);
             if (!confirmed) return;
             this.rawProxyPool.blacklistActionLoading = true;
             try {
@@ -4212,7 +4212,7 @@ async exportSub2Api() {
                 await this.fetchConfig();
                 await this.fetchRawProxyPool();
             } catch (e) {
-                this.showToast('加入 raw_proxy_pool 黑名单失败', 'error');
+                this.showToast('加入 15559 节点池黑名单失败', 'error');
             } finally {
                 this.rawProxyPool.blacklistActionLoading = false;
             }
@@ -5690,3 +5690,4 @@ async exportSub2Api() {
         }
     }
 }).mount('#app');
+
