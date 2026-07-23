@@ -1525,6 +1525,12 @@ createApp({
                 if (this.config.sub2api_mode.agent_identity_use_reg_proxy === undefined) {
                     this.config.sub2api_mode.agent_identity_use_reg_proxy = true;
                 }
+                if (this.config.sub2api_mode.agent_identity_runtime_recovery === undefined) {
+                    this.config.sub2api_mode.agent_identity_runtime_recovery = true;
+                }
+                if (this.config.sub2api_mode.agent_identity_recovery_cross_account === undefined) {
+                    this.config.sub2api_mode.agent_identity_recovery_cross_account = true;
+                }
                 if (this.config.sub2api_mode.update_existing === undefined) {
                     this.config.sub2api_mode.update_existing = true;
                 }

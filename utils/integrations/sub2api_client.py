@@ -116,6 +116,15 @@ def get_sub2api_push_settings() -> Dict[str, Any]:
             getattr(cfg, "SUB2API_AGENT_IDENTITY_USE_REG_PROXY", True),
             default=True,
         ),
+        # Path B 内嵌 Path C：register 被拒时从 Sub2API Runtime 池恢复
+        "agent_identity_runtime_recovery": _safe_bool(
+            getattr(cfg, "SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY", True),
+            default=True,
+        ),
+        "agent_identity_recovery_cross_account": _safe_bool(
+            getattr(cfg, "SUB2API_AGENT_IDENTITY_RECOVERY_CROSS_ACCOUNT", True),
+            default=True,
+        ),
         "update_existing": _safe_bool(
             getattr(cfg, "SUB2API_UPDATE_EXISTING", True),
             default=True,
@@ -467,6 +476,243 @@ class Sub2APIClient:
             proxy = proxy.replace("socks5://", "socks5h://", 1)
         return {"http": proxy, "https": proxy}
 
+    def _export_account_data_by_ids(self, account_ids: List[Any]) -> Tuple[bool, Any]:
+        """Export full account credentials (including agent_private_key when permitted)."""
+        ids = []
+        for item in account_ids or []:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                ids.append(value)
+        if not ids:
+            return False, "empty account ids"
+        url = f"{self.api_url}/api/v1/admin/accounts/data"
+        params = {
+            "ids": ",".join(str(i) for i in ids[:20]),
+            "include_proxies": "false",
+        }
+        try:
+            response = cffi_requests.get(
+                url,
+                headers=self.headers,
+                params=params,
+                **self._request_kwargs(timeout=60),
+            )
+            return self._handle_response(response)
+        except Exception as exc:
+            logger.error("Export Sub2API account data failed: %s", exc)
+            return False, self._build_network_error(exc)
+
+    @staticmethod
+    def _iter_exported_accounts(export_payload: Any) -> List[Dict[str, Any]]:
+        """Normalize /admin/accounts/data response into a list of account dicts."""
+        if not isinstance(export_payload, dict):
+            return []
+        candidates: List[Any] = []
+        for key in ("accounts", "items", "data"):
+            value = export_payload.get(key)
+            if isinstance(value, list):
+                candidates = value
+                break
+            if isinstance(value, dict):
+                nested = value.get("accounts") or value.get("items")
+                if isinstance(nested, list):
+                    candidates = nested
+                    break
+                # some builds nest once more under data.data
+                deeper = value.get("data")
+                if isinstance(deeper, dict):
+                    nested = deeper.get("accounts") or deeper.get("items")
+                    if isinstance(nested, list):
+                        candidates = nested
+                        break
+        out: List[Dict[str, Any]] = []
+        for item in candidates:
+            if isinstance(item, dict):
+                out.append(item)
+        return out
+
+    def find_reusable_agent_identity(
+        self,
+        chatgpt_account_id: str,
+        chatgpt_user_id: str,
+        *,
+        allow_cross_account: bool = True,
+        max_pages: int = 20,
+    ) -> Optional[Dict[str, str]]:
+        """Path C pool lookup: recover runtime_id + private_key from active Agent Identity rows.
+
+        Preference order:
+        1) exact chatgpt_account_id + chatgpt_user_id match
+        2) other complete active Agent Identity runtimes (if allow_cross_account)
+        """
+        target_account = str(chatgpt_account_id or "").strip()
+        target_user = str(chatgpt_user_id or "").strip()
+        if not target_account or not target_user:
+            return None
+
+        candidates: List[Tuple[int, int, str, str, str]] = []
+        page = 1
+        while page <= max(1, int(max_pages or 20)):
+            ok, data = self.get_accounts(page=page, page_size=100)
+            if not ok:
+                logger.warning("Path C pool list page=%s failed: %s", page, data)
+                break
+            inner = data.get("data", data) if isinstance(data, dict) else {}
+            if not isinstance(inner, dict):
+                break
+            items = inner.get("items") or []
+            if not isinstance(items, list) or not items:
+                break
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                status = str(item.get("status") or "").strip().lower()
+                if status and status not in {"active", "enabled", "ok"}:
+                    continue
+                credentials = item.get("credentials")
+                if not isinstance(credentials, dict):
+                    continue
+                cred_status = item.get("credentials_status")
+                runtime_id = str(
+                    credentials.get("agent_runtime_id")
+                    or credentials.get("agentRuntimeId")
+                    or ""
+                ).strip()
+                task_id = str(credentials.get("task_id") or credentials.get("taskId") or "").strip()
+                source_account = str(
+                    credentials.get("chatgpt_account_id")
+                    or credentials.get("account_id")
+                    or ""
+                ).strip()
+                source_user = str(
+                    credentials.get("chatgpt_user_id")
+                    or credentials.get("chatgptUserId")
+                    or ""
+                ).strip()
+                auth_mode = str(credentials.get("auth_mode") or credentials.get("authMode") or "").strip()
+                has_key = True
+                if isinstance(cred_status, dict) and "has_agent_private_key" in cred_status:
+                    has_key = bool(cred_status.get("has_agent_private_key"))
+                if (
+                    auth_mode != "agentIdentity"
+                    or not runtime_id
+                    or not task_id
+                    or not source_account
+                    or not source_user
+                    or not has_key
+                ):
+                    continue
+                try:
+                    account_row_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if account_row_id <= 0:
+                    continue
+                exact = source_account == target_account and source_user == target_user
+                if not exact and not allow_cross_account:
+                    continue
+                candidates.append(
+                    (
+                        0 if exact else 1,
+                        account_row_id,
+                        runtime_id,
+                        source_account,
+                        source_user,
+                    )
+                )
+
+            total = inner.get("total")
+            try:
+                total_i = int(total) if total is not None else None
+            except (TypeError, ValueError):
+                total_i = None
+            if total_i is not None and page * 100 >= total_i:
+                break
+            pages = inner.get("pages")
+            try:
+                pages_i = int(pages) if pages is not None else None
+            except (TypeError, ValueError):
+                pages_i = None
+            if pages_i is not None and page >= pages_i:
+                break
+            page += 1
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda row: (row[0], -row[1]))
+        for priority, account_row_id, listed_runtime, listed_account, listed_user in candidates:
+            ok, exported = self._export_account_data_by_ids([account_row_id])
+            if not ok:
+                err_text = str(exported or "")
+                logger.warning(
+                    "Path C export id=%s failed: %s",
+                    account_row_id,
+                    err_text[:200],
+                )
+                # Permission errors should fail closed quickly.
+                if any(
+                    marker in err_text.upper()
+                    for marker in (
+                        "STEP_UP",
+                        "FORBIDDEN",
+                        "403",
+                        "UNAUTHORIZED",
+                        "401",
+                    )
+                ):
+                    raise RuntimeError(
+                        f"Sub2API 拒绝导出 Agent Identity 私钥（id={account_row_id}）：{err_text[:180]}"
+                    )
+                continue
+
+            for account in self._iter_exported_accounts(exported if isinstance(exported, dict) else {}):
+                credentials = account.get("credentials")
+                if not isinstance(credentials, dict):
+                    continue
+                runtime_id = str(
+                    credentials.get("agent_runtime_id")
+                    or credentials.get("agentRuntimeId")
+                    or ""
+                ).strip()
+                private_key = str(
+                    credentials.get("agent_private_key")
+                    or credentials.get("agentPrivateKey")
+                    or ""
+                ).strip()
+                source_account = str(
+                    credentials.get("chatgpt_account_id")
+                    or credentials.get("account_id")
+                    or ""
+                ).strip()
+                source_user = str(
+                    credentials.get("chatgpt_user_id")
+                    or credentials.get("chatgptUserId")
+                    or ""
+                ).strip()
+                auth_mode = str(credentials.get("auth_mode") or credentials.get("authMode") or "").strip()
+                if (
+                    auth_mode != "agentIdentity"
+                    or runtime_id != listed_runtime
+                    or source_account != listed_account
+                    or source_user != listed_user
+                    or not private_key
+                ):
+                    continue
+                return {
+                    "agent_runtime_id": runtime_id,
+                    "agent_private_key": private_key,
+                    "source_account_id": source_account,
+                    "source_user_id": source_user,
+                    "source_sub2api_id": str(account_row_id),
+                    "exact_match": "1" if priority == 0 else "0",
+                }
+        return None
+
     def _import_codex_session(
         self,
         auth_json: Dict[str, Any],
@@ -612,19 +858,24 @@ class Sub2APIClient:
         settings: Dict[str, Any],
     ) -> Tuple[bool, str]:
         """
-        Path B: access_token only -> register Agent Identity -> push auth.json.
+        Path B: access_token only -> Agent Identity auth.json -> import.
 
-        Unlike classic OAuth push, this path does not require refresh_token /
-        workspace OAuth credentials for Sub2API storage.
+        B1: register new Runtime + task on auth.openai.com.
+        B2/Path C (embedded): if registry disabled, recover Runtime+key from
+        Sub2API pool, register a fresh task, then import the same way.
         """
         from utils.integrations.agent_identity import (
             AgentIdentityError,
             create_agent_identity_auth_json,
+            create_agent_identity_auth_json_from_recovered,
+            is_agent_registry_not_enabled_error,
+            parse_id_token_identity,
             resolve_identity_bootstrap_tokens,
         )
 
         account_name = str(token_data.get("email") or "unknown")[:64]
         group_ids = settings.get("group_ids") or []
+        strategy = "register"
         try:
             _ai_user_log(account_name, "bootstrap", "校验 session access_token claims")
             logger.info("Agent Identity bootstrap start name=%s", account_name)
@@ -635,19 +886,77 @@ class Sub2APIClient:
             _ai_user_log(
                 account_name,
                 "register",
-                f"向 auth.openai.com 注册 agent 公钥/task（proxy={'yes' if proxies else 'no'}）",
+                f"Path B1 向 auth.openai.com 注册 agent 公钥/task（proxy={'yes' if proxies else 'no'}）",
             )
             logger.info(
                 "Agent Identity register start name=%s proxy=%s",
                 account_name,
                 "yes" if proxies else "no",
             )
-            auth_json = create_agent_identity_auth_json(
-                tokens["access_token"],
-                id_token=tokens.get("id_token"),
-                email=token_data.get("email"),
-                proxies=proxies,
-            )
+            try:
+                auth_json = create_agent_identity_auth_json(
+                    tokens["access_token"],
+                    id_token=tokens.get("id_token"),
+                    email=token_data.get("email"),
+                    proxies=proxies,
+                )
+                strategy = "register"
+            except AgentIdentityError as reg_exc:
+                recovery_enabled = bool(settings.get("agent_identity_runtime_recovery", True))
+                if not recovery_enabled or not is_agent_registry_not_enabled_error(reg_exc):
+                    raise
+                _ai_user_log(
+                    account_name,
+                    "recover",
+                    f"Path C：Registry 不可用，尝试从 Sub2API Runtime 池恢复（{reg_exc}）",
+                )
+                logger.warning(
+                    "Agent Identity B1 failed name=%s, trying Path C pool recovery: %s",
+                    account_name,
+                    reg_exc,
+                )
+                identity_claims = parse_id_token_identity(
+                    tokens.get("id_token") or tokens["access_token"]
+                )
+                allow_cross = bool(settings.get("agent_identity_recovery_cross_account", True))
+                try:
+                    reusable = self.find_reusable_agent_identity(
+                        identity_claims["account_id"],
+                        identity_claims["chatgpt_user_id"],
+                        allow_cross_account=allow_cross,
+                    )
+                except RuntimeError as pool_exc:
+                    raise AgentIdentityError(str(pool_exc)) from pool_exc
+                if not reusable:
+                    raise AgentIdentityError(
+                        "Agent Registry 未启用，且 Sub2API 中没有可恢复的完整 Agent Identity Runtime "
+                        f"（cross_account={allow_cross}）; 原始错误: {reg_exc}"
+                    ) from reg_exc
+                _ai_user_log(
+                    account_name,
+                    "recover",
+                    (
+                        f"命中池 runtime={str(reusable.get('agent_runtime_id') or '')[:20]} "
+                        f"exact={reusable.get('exact_match')} "
+                        f"src_sub2api_id={reusable.get('source_sub2api_id')}"
+                    ),
+                )
+                auth_json = create_agent_identity_auth_json_from_recovered(
+                    tokens["access_token"],
+                    agent_runtime_id=reusable["agent_runtime_id"],
+                    agent_private_key_pkcs8=reusable["agent_private_key"],
+                    id_token=tokens.get("id_token"),
+                    email=token_data.get("email"),
+                    proxies=proxies,
+                    recovery_source=(
+                        f"sub2api_pool:id={reusable.get('source_sub2api_id')}"
+                        f":exact={reusable.get('exact_match')}"
+                    ),
+                )
+                strategy = "recover_pool"
+                # Avoid retaining exported private key in local dict longer than needed.
+                reusable.clear()
+
             # Prefer local account email as display name
             if account_name and account_name != "unknown":
                 identity = auth_json.get("agent_identity")
@@ -658,11 +967,17 @@ class Sub2APIClient:
                 _ai_user_log(
                     account_name,
                     "auth.json",
-                    f"runtime={str(identity.get('agent_runtime_id') or '')[:20]} task={str(identity.get('task_id') or '')[:20]} account_id={str(identity.get('account_id') or '')[:12]}",
+                    (
+                        f"strategy={strategy} "
+                        f"runtime={str(identity.get('agent_runtime_id') or '')[:20]} "
+                        f"task={str(identity.get('task_id') or '')[:20]} "
+                        f"account_id={str(identity.get('account_id') or '')[:12]}"
+                    ),
                 )
                 logger.info(
-                    "Agent Identity register ok name=%s runtime=%s task=%s account_id=%s",
+                    "Agent Identity auth ready name=%s strategy=%s runtime=%s task=%s account_id=%s",
                     account_name,
+                    strategy,
                     str(identity.get("agent_runtime_id") or "")[:24],
                     str(identity.get("task_id") or "")[:24],
                     str(identity.get("account_id") or "")[:24],
@@ -672,11 +987,12 @@ class Sub2APIClient:
             if not ok:
                 _ai_user_log(account_name, "import", f"fail ({msg})")
             if ok:
-                _ai_user_log(account_name, "import", f"ok ({msg})")
+                _ai_user_log(account_name, "import", f"ok strategy={strategy} ({msg})")
                 # Enrich local token_data so inventory can display full Agent Identity credential.
                 token_data["auth_mode"] = "agentIdentity"
                 token_data["status"] = "agent_identity"
                 token_data["credential_type"] = "codex_agent_identity"
+                token_data["agent_identity_strategy"] = strategy
                 if isinstance(identity, dict):
                     token_data["agent_identity"] = identity
                 # Drop bootstrap bearer after successful conversion (matches codex-agent-identity flow).
@@ -685,6 +1001,8 @@ class Sub2APIClient:
                 token_data.pop("accessToken", None)
                 token_data.pop("idToken", None)
                 self._force_bind_groups(account_name, group_ids)
+                if strategy == "recover_pool" and "recover" not in str(msg).lower():
+                    msg = f"{msg}; strategy=recover_pool"
             return ok, msg
         except AgentIdentityError as exc:
             _ai_user_log(account_name, "error", str(exc))
@@ -727,7 +1045,12 @@ class Sub2APIClient:
                 _ai_user_log(
                     account_name,
                     "push",
-                    f"Path B 开始 groups={group_ids or []} fallback_oauth={bool(settings.get('agent_identity_fallback_oauth'))}",
+                    (
+                        f"Path B 开始 groups={group_ids or []} "
+                        f"runtime_recovery={bool(settings.get('agent_identity_runtime_recovery'))} "
+                        f"cross_account={bool(settings.get('agent_identity_recovery_cross_account'))} "
+                        f"fallback_oauth={bool(settings.get('agent_identity_fallback_oauth'))}"
+                    ),
                 )
                 ok, msg = self._add_account_agent_identity(working_token_data, settings)
                 if ok:
@@ -737,6 +1060,7 @@ class Sub2APIClient:
                         "status",
                         "credential_type",
                         "agent_identity",
+                        "agent_identity_strategy",
                         "access_token",
                         "id_token",
                         "accessToken",

@@ -73,6 +73,8 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
             patch.object(self.cfg, "SUB2API_PUSH_FORMAT", "agent_identity"),
             patch.object(self.cfg, "SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH", False),
             patch.object(self.cfg, "SUB2API_AGENT_IDENTITY_USE_REG_PROXY", True),
+            patch.object(self.cfg, "SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY", True),
+            patch.object(self.cfg, "SUB2API_AGENT_IDENTITY_RECOVERY_CROSS_ACCOUNT", True),
             patch.object(self.cfg, "SUB2API_UPDATE_EXISTING", True),
         ]
         for item in self.cfg_patches:
@@ -100,7 +102,10 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
                 self.identity_module._http_json("POST", "https://auth.openai.com/api/accounts/v1/agent/register")
 
         msg = str(ctx.exception)
-        self.assertIn("content-type=text/html", msg)
+        self.assertTrue(
+            "content-type=text/html" in msg or "content_type=text/html" in msg,
+            msg,
+        )
         self.assertIn("still blocked", msg)
         self.assertIn("不是 JSON", msg)
 
@@ -110,6 +115,8 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         self.assertEqual(settings["push_format"], "agent_identity")
         self.assertFalse(settings["agent_identity_fallback_oauth"])
         self.assertTrue(settings["agent_identity_use_reg_proxy"])
+        self.assertTrue(settings["agent_identity_runtime_recovery"])
+        self.assertTrue(settings["agent_identity_recovery_cross_account"])
         self.assertTrue(settings["update_existing"])
         self.assertEqual(settings["group_ids"], [7])
 
@@ -428,6 +435,116 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("拒绝 OAuth 回退", msg)
 
+    def test_path_c_runtime_recovery_when_registry_disabled(self):
+        """B1 agent_registry_not_enabled -> Path C pool recover -> import."""
+        captured = []
+
+        def fake_post(url, json=None, headers=None, **kwargs):
+            captured.append({"url": url, "json": json})
+            if url.endswith("/import/codex-session"):
+                return _FakeResponse(
+                    200, {"data": {"created": 1, "updated": 0, "failed": 0, "skipped": 0}}
+                )
+            raise AssertionError(f"unexpected post: {url}")
+
+        recovered_auth = {
+            "auth_mode": "agentIdentity",
+            "agent_identity": {
+                "account_id": "acct-new",
+                "agent_private_key": "MC4CAQAwBQYDK2VwBCIEAAAA",
+                "agent_runtime_id": "agent-recovered",
+                "chatgpt_user_id": "user-new",
+                "task_id": "task-new",
+                "email": "agent@example.com",
+                "plan_type": "free",
+                "chatgpt_account_is_fedramp": False,
+            },
+            "recovery_source": "sub2api_pool:id=99:exact=0",
+        }
+
+        with patch.object(self.client_module.cffi_requests, "post", side_effect=fake_post), patch.object(
+            self.identity_module,
+            "create_agent_identity_auth_json",
+            side_effect=self.identity_module.AgentIdentityError(
+                'POST x 返回 HTTP 403：{"error":{"code":"agent_registry_not_enabled"}}'
+            ),
+        ), patch.object(
+            self.identity_module,
+            "create_agent_identity_auth_json_from_recovered",
+            return_value=recovered_auth,
+        ) as recover_mock, patch.object(
+            self.identity_module,
+            "resolve_identity_bootstrap_tokens",
+            return_value={"access_token": "at-demo", "id_token": "at-demo"},
+        ), patch.object(
+            self.identity_module,
+            "parse_id_token_identity",
+            return_value={
+                "account_id": "acct-new",
+                "chatgpt_user_id": "user-new",
+                "email": "agent@example.com",
+                "plan_type": "free",
+                "chatgpt_account_is_fedramp": False,
+            },
+        ), patch.object(
+            self.Sub2APIClient,
+            "find_reusable_agent_identity",
+            return_value={
+                "agent_runtime_id": "agent-recovered",
+                "agent_private_key": "MC4CAQAwBQYDK2VwBCIEAAAA",
+                "source_account_id": "acct-old",
+                "source_user_id": "user-old",
+                "source_sub2api_id": "99",
+                "exact_match": "0",
+            },
+        ), patch.object(self.Sub2APIClient, "_force_bind_groups"), patch.dict(
+            sys.modules, {"utils.integrations.agent_identity": self.identity_module}
+        ):
+            client = self.Sub2APIClient(api_url="https://sub2api.example", api_key="demo-key")
+            token = {
+                "email": "agent@example.com",
+                "access_token": "at-demo",
+                "auth_source": "agent_identity_session",
+                "status": "agent_identity_pending",
+            }
+            ok, msg = client.add_account(token)
+
+        self.assertTrue(ok, msg)
+        self.assertIn("recover_pool", msg)
+        recover_mock.assert_called_once()
+        self.assertTrue(any(item["url"].endswith("/import/codex-session") for item in captured))
+        self.assertEqual(token.get("agent_identity_strategy"), "recover_pool")
+        self.assertEqual(token.get("auth_mode"), "agentIdentity")
+
+    def test_path_c_disabled_does_not_recover(self):
+        with patch.object(self.cfg, "SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY", False), patch.object(
+            self.identity_module,
+            "create_agent_identity_auth_json",
+            side_effect=self.identity_module.AgentIdentityError(
+                'HTTP 403 agent_registry_not_enabled'
+            ),
+        ), patch.object(
+            self.identity_module,
+            "resolve_identity_bootstrap_tokens",
+            return_value={"access_token": "at-demo", "id_token": "at-demo"},
+        ), patch.object(
+            self.Sub2APIClient, "find_reusable_agent_identity"
+        ) as find_mock, patch.dict(
+            sys.modules, {"utils.integrations.agent_identity": self.identity_module}
+        ):
+            client = self.Sub2APIClient(api_url="https://sub2api.example", api_key="demo-key")
+            token = {"email": "agent@example.com", "access_token": "at-demo"}
+            ok, msg = client.add_account(token)
+        self.assertFalse(ok)
+        self.assertTrue(
+            "agent_registry_not_enabled" in msg
+            or "Agent Registry" in msg
+            or "agent_identity_unsupported" in str(token.get("status") or ""),
+            msg,
+        )
+        self.assertEqual(token.get("status"), "agent_identity_unsupported")
+        find_mock.assert_not_called()
+
 class AgentIdentityRegSkipTests(unittest.TestCase):
     """Registration path must skip OAuth when push_format=agent_identity."""
 
@@ -462,6 +579,30 @@ class AgentIdentityRegSkipTests(unittest.TestCase):
         # Must not look like half-finished statuses that skip Sub2API push.
         self.assertNotIn(data.get("status"), ["image2api", "仅注册成功"])
         self.assertNotIn("refresh_token", data)
+
+    def test_is_agent_registry_not_enabled_error(self):
+        self.assertTrue(
+            self.mod.is_agent_registry_not_enabled_error(
+                'POST x 返回 HTTP 403：{"error":{"code":"agent_registry_not_enabled"}}'
+            )
+        )
+        self.assertTrue(
+            self.mod.is_agent_registry_not_enabled_error("Agent registry is not enabled.")
+        )
+        self.assertFalse(self.mod.is_agent_registry_not_enabled_error("unsupported_country"))
+
+    def test_pkcs8_roundtrip_helpers(self):
+        import base64
+        from nacl.signing import SigningKey
+
+        seed = bytes(range(32))
+        key = SigningKey(seed)
+        encoded = self.mod.signing_key_pkcs8_base64(key)
+        restored = self.mod.signing_key_from_pkcs8_base64(encoded)
+        self.assertEqual(restored.encode(), seed)
+        # invalid length rejected
+        with self.assertRaises(self.mod.AgentIdentityError):
+            self.mod.signing_key_from_pkcs8_base64(base64.b64encode(b"short").decode("ascii"))
 
     def test_resolve_bootstrap_accepts_session_payload(self):
         import base64

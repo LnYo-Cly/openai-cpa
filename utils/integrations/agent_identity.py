@@ -85,6 +85,30 @@ def signing_key_pkcs8_base64(signing_key: SigningKey) -> str:
     return base64.b64encode(private_key_der).decode("ascii")
 
 
+def signing_key_from_pkcs8_base64(private_key_b64: str) -> SigningKey:
+    """Load Ed25519 SigningKey from Sub2API / Codex PKCS#8 Base64 private key."""
+    raw = str(private_key_b64 or "").strip()
+    if not raw:
+        raise AgentIdentityError("恢复用 private key 为空")
+    try:
+        der = base64.b64decode(raw, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise AgentIdentityError("恢复用 private key 不是合法 Base64") from exc
+    if not der.startswith(ED25519_PKCS8_PREFIX) or len(der) != len(ED25519_PKCS8_PREFIX) + 32:
+        raise AgentIdentityError("恢复用 private key 不是 PKCS#8 Ed25519 格式")
+    seed = der[len(ED25519_PKCS8_PREFIX) :]
+    return SigningKey(seed)
+
+
+def is_agent_registry_not_enabled_error(exc_or_text: Any) -> bool:
+    """True when OpenAI rejects new Runtime registration (Path C trigger)."""
+    text = str(exc_or_text or "").lower()
+    return (
+        "agent_registry_not_enabled" in text
+        or "agent registry is not enabled" in text
+    )
+
+
 def certificate_to_codex_auth_json(certificate: Dict[str, Any]) -> Dict[str, Any]:
     signing_key = SigningKey(base64.b64decode(certificate["private_key_seed"], validate=True))
     return {
@@ -155,6 +179,14 @@ def _normalize_proxies(proxies: Any) -> Optional[Dict[str, str]]:
     return {"http": text, "https": text}
 
 
+def _response_content_type(response: Any) -> str:
+    try:
+        headers = getattr(response, "headers", None) or {}
+        return str(headers.get("Content-Type") or headers.get("content-type") or "").strip()
+    except Exception:
+        return ""
+
+
 def _http_json(
     method: str,
     url: str,
@@ -184,9 +216,13 @@ def _http_json(
             raise AgentIdentityError(f"{method} {url} 网络失败：{exc}") from exc
 
         body_text = (response.text or "").strip()
+        content_type = _response_content_type(response)
         if response.status_code < 200 or response.status_code >= 300:
             detail = body_text[:1000]
-            raise AgentIdentityError(f"{method} {url} 返回 HTTP {response.status_code}：{detail}")
+            raise AgentIdentityError(
+                f"{method} {url} 返回 HTTP {response.status_code}"
+                f"（content_type={content_type or 'unknown'}）：{detail}"
+            )
         try:
             value = response.json() if body_text else {}
         except ValueError as exc:
@@ -194,18 +230,76 @@ def _http_json(
             if attempt == 0:
                 time.sleep(0.3)
                 continue
-            headers_obj = getattr(response, "headers", {}) or {}
-            content_type = headers_obj.get("content-type") if hasattr(headers_obj, "get") else ""
             preview = body_text[:500].replace("\n", " ").replace("\r", " ")
             raise AgentIdentityError(
-                f"{method} {url} 返回的内容不是 JSON："
-                f"HTTP {response.status_code}, content-type={content_type or 'unknown'}, "
-                f"body_prefix={preview!r}"
+                f"{method} {url} 返回的内容不是 JSON "
+                f"(status={response.status_code}, content_type={content_type or 'unknown'}, "
+                f"body={preview!r})"
             ) from exc
         if not isinstance(value, dict):
             raise AgentIdentityError(f"{method} {url} 返回的 JSON 不是对象")
         return value
     raise AgentIdentityError(f"{method} {url} 返回的内容不是 JSON：{last_json_error}")
+
+
+def _register_task_id(
+    signing_key: SigningKey,
+    runtime_id: str,
+    *,
+    proxies: Any = None,
+    auth_api_base_url: str = DEFAULT_AUTH_API_BASE_URL,
+) -> str:
+    """Register a fresh task on an existing runtime (Path B1 / Path C)."""
+    base = auth_api_base_url.rstrip("/")
+    timestamp = utc_timestamp()
+    task = _http_json(
+        "POST",
+        f"{base}/v1/agent/{runtime_id}/task/register",
+        json_body={
+            "timestamp": timestamp,
+            "signature": sign_task_registration(signing_key, runtime_id, timestamp),
+        },
+        proxies=proxies,
+    )
+    task_id = task.get("task_id") or task.get("taskId")
+    if not isinstance(task_id, str) or not task_id:
+        encrypted = task.get("encrypted_task_id") or task.get("encryptedTaskId")
+        if not isinstance(encrypted, str) or not encrypted:
+            raise AgentIdentityError("task 注册响应缺少 task_id")
+        task_id = decrypt_task_id(signing_key, encrypted)
+    return task_id
+
+
+def _build_certificate(
+    *,
+    identity: Dict[str, Any],
+    runtime_id: str,
+    signing_key: SigningKey,
+    task_id: str,
+    email: Optional[str] = None,
+    auth_api_base_url: str = DEFAULT_AUTH_API_BASE_URL,
+    codex_base_url: str = DEFAULT_CODEX_BASE_URL,
+    recovery_source: Optional[str] = None,
+) -> Dict[str, Any]:
+    certificate: Dict[str, Any] = {
+        "version": CERTIFICATE_VERSION,
+        "credential_type": "codex_agent_identity",
+        "capabilities": ["responsesapi"],
+        "created_at": utc_timestamp(),
+        "agent_runtime_id": runtime_id,
+        "private_key_seed": base64.b64encode(signing_key.encode()).decode("ascii"),
+        "task_id": task_id,
+        "account_id": identity["account_id"],
+        "chatgpt_user_id": identity["chatgpt_user_id"],
+        "email": identity.get("email") or email,
+        "plan_type": identity["plan_type"],
+        "chatgpt_account_is_fedramp": identity["chatgpt_account_is_fedramp"],
+        "codex_base_url": codex_base_url.rstrip("/"),
+        "auth_api_base_url": auth_api_base_url.rstrip("/"),
+    }
+    if recovery_source:
+        certificate["recovery_source"] = recovery_source
+    return certificate
 
 
 def register_agent_identity_certificate(
@@ -217,7 +311,7 @@ def register_agent_identity_certificate(
     auth_api_base_url: str = DEFAULT_AUTH_API_BASE_URL,
     codex_base_url: str = DEFAULT_CODEX_BASE_URL,
 ) -> Dict[str, Any]:
-    """Register a new agent runtime and return the internal certificate dict."""
+    """Path B1: register a new agent runtime + task and return certificate dict."""
     token = str(access_token or "").strip()
     if not token:
         raise AgentIdentityError("缺少 access_token，无法注册 Agent Identity")
@@ -228,7 +322,12 @@ def register_agent_identity_certificate(
         identity["email"] = email
 
     signing_key = SigningKey.generate()
-    registration_headers = {"Authorization": f"Bearer {token}"}
+    registration_headers = {
+        "Authorization": f"Bearer {token}",
+        "ChatGPT-Account-ID": identity["account_id"],
+        "Origin": "https://chatgpt.com",
+        "Referer": "https://chatgpt.com/",
+    }
     if identity["chatgpt_account_is_fedramp"]:
         registration_headers["X-OpenAI-Fedramp"] = "true"
 
@@ -249,43 +348,69 @@ def register_agent_identity_certificate(
         },
         proxies=proxies,
     )
-    runtime_id = registration.get("agent_runtime_id")
+    runtime_id = registration.get("agent_runtime_id") or registration.get("agentRuntimeId")
     if not isinstance(runtime_id, str) or not runtime_id:
         raise AgentIdentityError("Agent 注册响应缺少 agent_runtime_id")
 
-    timestamp = utc_timestamp()
-    task = _http_json(
-        "POST",
-        f"{base}/v1/agent/{runtime_id}/task/register",
-        json_body={
-            "timestamp": timestamp,
-            "signature": sign_task_registration(signing_key, runtime_id, timestamp),
-        },
+    task_id = _register_task_id(
+        signing_key,
+        runtime_id,
         proxies=proxies,
+        auth_api_base_url=base,
     )
-    task_id = task.get("task_id") or task.get("taskId")
-    if not isinstance(task_id, str) or not task_id:
-        encrypted = task.get("encrypted_task_id") or task.get("encryptedTaskId")
-        if not isinstance(encrypted, str) or not encrypted:
-            raise AgentIdentityError("task 注册响应缺少 task_id")
-        task_id = decrypt_task_id(signing_key, encrypted)
+    return _build_certificate(
+        identity=identity,
+        runtime_id=runtime_id,
+        signing_key=signing_key,
+        task_id=task_id,
+        email=email,
+        auth_api_base_url=base,
+        codex_base_url=codex_base_url,
+    )
 
-    return {
-        "version": CERTIFICATE_VERSION,
-        "credential_type": "codex_agent_identity",
-        "capabilities": ["responsesapi"],
-        "created_at": utc_timestamp(),
-        "agent_runtime_id": runtime_id,
-        "private_key_seed": base64.b64encode(signing_key.encode()).decode("ascii"),
-        "task_id": task_id,
-        "account_id": identity["account_id"],
-        "chatgpt_user_id": identity["chatgpt_user_id"],
-        "email": identity.get("email") or email,
-        "plan_type": identity["plan_type"],
-        "chatgpt_account_is_fedramp": identity["chatgpt_account_is_fedramp"],
-        "codex_base_url": codex_base_url.rstrip("/"),
-        "auth_api_base_url": base,
-    }
+
+def certificate_from_recovered_runtime(
+    access_token: str,
+    *,
+    agent_runtime_id: str,
+    agent_private_key_pkcs8: str,
+    id_token: Optional[str] = None,
+    email: Optional[str] = None,
+    proxies: Any = None,
+    auth_api_base_url: str = DEFAULT_AUTH_API_BASE_URL,
+    codex_base_url: str = DEFAULT_CODEX_BASE_URL,
+    recovery_source: str = "sub2api_pool",
+) -> Dict[str, Any]:
+    """Path C: reuse recovered Runtime + private key; register a fresh task for target account."""
+    token = str(access_token or "").strip()
+    if not token:
+        raise AgentIdentityError("缺少 access_token，无法恢复 Agent Identity")
+    runtime_id = str(agent_runtime_id or "").strip()
+    if not runtime_id:
+        raise AgentIdentityError("恢复用 agent_runtime_id 为空")
+
+    claim_token = str(id_token or "").strip() or token
+    identity = parse_id_token_identity(claim_token)
+    if email and not identity.get("email"):
+        identity["email"] = email
+
+    signing_key = signing_key_from_pkcs8_base64(agent_private_key_pkcs8)
+    task_id = _register_task_id(
+        signing_key,
+        runtime_id,
+        proxies=proxies,
+        auth_api_base_url=auth_api_base_url,
+    )
+    return _build_certificate(
+        identity=identity,
+        runtime_id=runtime_id,
+        signing_key=signing_key,
+        task_id=task_id,
+        email=email,
+        auth_api_base_url=auth_api_base_url,
+        codex_base_url=codex_base_url,
+        recovery_source=recovery_source,
+    )
 
 
 def create_agent_identity_auth_json(
@@ -295,7 +420,7 @@ def create_agent_identity_auth_json(
     email: Optional[str] = None,
     proxies: Any = None,
 ) -> Dict[str, Any]:
-    """Create Codex-compatible auth.json (auth_mode=agentIdentity)."""
+    """Path B1: create Codex-compatible auth.json via new Runtime registration."""
     certificate = register_agent_identity_certificate(
         access_token,
         id_token=id_token,
@@ -303,9 +428,35 @@ def create_agent_identity_auth_json(
         proxies=proxies,
     )
     auth_json = certificate_to_codex_auth_json(certificate)
-    # Prefer caller email when claims omit it.
     if email and isinstance(auth_json.get("agent_identity"), dict):
         auth_json["agent_identity"]["email"] = email
+    return auth_json
+
+
+def create_agent_identity_auth_json_from_recovered(
+    access_token: str,
+    *,
+    agent_runtime_id: str,
+    agent_private_key_pkcs8: str,
+    id_token: Optional[str] = None,
+    email: Optional[str] = None,
+    proxies: Any = None,
+    recovery_source: str = "sub2api_pool",
+) -> Dict[str, Any]:
+    """Path C: create auth.json from recovered Runtime materials + new task."""
+    certificate = certificate_from_recovered_runtime(
+        access_token,
+        agent_runtime_id=agent_runtime_id,
+        agent_private_key_pkcs8=agent_private_key_pkcs8,
+        id_token=id_token,
+        email=email,
+        proxies=proxies,
+        recovery_source=recovery_source,
+    )
+    auth_json = certificate_to_codex_auth_json(certificate)
+    if email and isinstance(auth_json.get("agent_identity"), dict):
+        auth_json["agent_identity"]["email"] = email
+    auth_json["recovery_source"] = recovery_source
     return auth_json
 
 
