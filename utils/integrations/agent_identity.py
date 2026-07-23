@@ -166,7 +166,7 @@ def _http_json(
 ) -> Dict[str, Any]:
     from curl_cffi import requests as cffi_requests
 
-    request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    request_headers = {"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})}
     kwargs: Dict[str, Any] = {
         "headers": request_headers,
         "timeout": timeout,
@@ -176,22 +176,36 @@ def _http_json(
     if proxy_map is not None:
         kwargs["proxies"] = proxy_map
 
-    try:
-        response = cffi_requests.request(method.upper(), url, json=json_body, **kwargs)
-    except Exception as exc:
-        raise AgentIdentityError(f"{method} {url} 网络失败：{exc}") from exc
+    last_json_error: Optional[ValueError] = None
+    for attempt in range(2):
+        try:
+            response = cffi_requests.request(method.upper(), url, json=json_body, **kwargs)
+        except Exception as exc:
+            raise AgentIdentityError(f"{method} {url} 网络失败：{exc}") from exc
 
-    body_text = (response.text or "").strip()
-    if response.status_code < 200 or response.status_code >= 300:
-        detail = body_text[:1000]
-        raise AgentIdentityError(f"{method} {url} 返回 HTTP {response.status_code}：{detail}")
-    try:
-        value = response.json() if body_text else {}
-    except ValueError as exc:
-        raise AgentIdentityError(f"{method} {url} 返回的内容不是 JSON") from exc
-    if not isinstance(value, dict):
-        raise AgentIdentityError(f"{method} {url} 返回的 JSON 不是对象")
-    return value
+        body_text = (response.text or "").strip()
+        if response.status_code < 200 or response.status_code >= 300:
+            detail = body_text[:1000]
+            raise AgentIdentityError(f"{method} {url} 返回 HTTP {response.status_code}：{detail}")
+        try:
+            value = response.json() if body_text else {}
+        except ValueError as exc:
+            last_json_error = exc
+            if attempt == 0:
+                time.sleep(0.3)
+                continue
+            headers_obj = getattr(response, "headers", {}) or {}
+            content_type = headers_obj.get("content-type") if hasattr(headers_obj, "get") else ""
+            preview = body_text[:500].replace("\n", " ").replace("\r", " ")
+            raise AgentIdentityError(
+                f"{method} {url} 返回的内容不是 JSON："
+                f"HTTP {response.status_code}, content-type={content_type or 'unknown'}, "
+                f"body_prefix={preview!r}"
+            ) from exc
+        if not isinstance(value, dict):
+            raise AgentIdentityError(f"{method} {url} 返回的 JSON 不是对象")
+        return value
+    raise AgentIdentityError(f"{method} {url} 返回的内容不是 JSON：{last_json_error}")
 
 
 def register_agent_identity_certificate(

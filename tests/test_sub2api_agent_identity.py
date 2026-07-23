@@ -13,12 +13,15 @@ _yaml_module = types.SimpleNamespace(
 
 
 class _FakeResponse:
-    def __init__(self, status_code, payload, text=""):
+    def __init__(self, status_code, payload, text="", headers=None):
         self.status_code = status_code
         self._payload = payload
         self.text = text or (json.dumps(payload) if payload is not None else "")
+        self.headers = headers or {}
 
     def json(self):
+        if isinstance(self._payload, BaseException):
+            raise self._payload
         return self._payload
 
 
@@ -81,6 +84,25 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         for module_name in ["curl_cffi", "requests", "yaml", *self.repo_module_names]:
             sys.modules.pop(module_name, None)
         sys.modules.update(self.original_modules)
+
+
+    def test_http_json_non_json_error_includes_response_preview(self):
+        responses = [
+            _FakeResponse(200, ValueError("not json"), text="<html>blocked</html>", headers={"content-type": "text/html"}),
+            _FakeResponse(200, ValueError("not json"), text="<html>still blocked</html>", headers={"content-type": "text/html"}),
+        ]
+
+        def fake_request(*args, **kwargs):
+            return responses.pop(0)
+
+        with patch.object(self.client_module.cffi_requests, "request", side_effect=fake_request):
+            with self.assertRaises(self.identity_module.AgentIdentityError) as ctx:
+                self.identity_module._http_json("POST", "https://auth.openai.com/api/accounts/v1/agent/register")
+
+        msg = str(ctx.exception)
+        self.assertIn("content-type=text/html", msg)
+        self.assertIn("still blocked", msg)
+        self.assertIn("不是 JSON", msg)
 
     def test_push_settings_normalize_agent_identity_aliases(self):
         with patch.object(self.cfg, "SUB2API_PUSH_FORMAT", "agent-identity"):
