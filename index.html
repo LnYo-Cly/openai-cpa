@@ -401,13 +401,13 @@
                                     <div class="w-10"></div>
                                 </div>
 
-                                <div class="flex-1 overflow-y-auto p-3 md:p-5 text-[12px] md:text-[14px] font-mono leading-relaxed" id="terminal-container" style="scroll-behavior: smooth;">
-                                    <div v-if="logs.length === 0" class="h-full flex flex-col items-center justify-center text-slate-500 gap-4">
+                                <div class="flex-1 overflow-y-auto p-3 md:p-5 text-[12px] md:text-[14px] font-mono leading-relaxed" id="terminal-container" style="scroll-behavior: auto;">
+                                    <div v-if="visibleLogs.length === 0" class="h-full flex flex-col items-center justify-center text-slate-500 gap-4">
                                         <div class="text-4xl md:text-5xl opacity-30 grayscale"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></div>
                                         <div class="font-medium text-sm md:text-base tracking-wide text-slate-400">系统待命，日志将在此打印...</div>
                                     </div>
 
-                                    <div v-for="(log, index) in logs" :key="log.id"
+                                    <div v-for="(log, index) in visibleLogs" :key="log.id || index"
                                          class="flex items-start gap-2.5 md:gap-4 py-1.5 px-2 md:px-3 rounded-lg hover:bg-slate-800/50 transition-colors group">
 
                                         <template v-if="log.parsed">
@@ -3346,6 +3346,118 @@
                                         </p>
                                         <textarea v-model="rawProxyListStr" class="w-full appearance-none bg-white border border-cyan-200 text-cyan-900 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-colors shadow-inner h-[160px] font-mono text-xs leading-relaxed placeholder:text-cyan-300" placeholder="http://user:pass@1.2.3.4:8080&#10;socks5://user:pass@1.2.3.5:1080&#10;1.2.3.6:1080:user:pass"></textarea>
                                     </div>
+
+                                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                        <div class="bg-white border border-cyan-100 rounded-2xl p-4 shadow-sm">
+                                            <label class="block text-cyan-800 text-xs font-black mb-2 uppercase tracking-wider">15559 / 外部 Mihomo 控制口</label>
+                                            <input type="text" v-model="config.raw_proxy_pool.api_url" class="w-full bg-cyan-50/50 border border-cyan-200 text-cyan-900 rounded-xl py-2.5 px-3 text-xs font-mono focus:outline-none focus:border-cyan-500" placeholder="http://host.docker.internal:42559">
+                                            <p class="text-[11px] text-cyan-700/70 mt-2">用于读取当前策略组/节点；不填时会按 15559 → 42559 自动猜测。</p>
+                                        </div>
+                                        <div class="bg-white border border-cyan-100 rounded-2xl p-4 shadow-sm">
+                                            <label class="block text-cyan-800 text-xs font-black mb-2 uppercase tracking-wider">目标策略组关键词</label>
+                                            <input type="text" v-model="config.raw_proxy_pool.group_name" class="w-full bg-cyan-50/50 border border-cyan-200 text-cyan-900 rounded-xl py-2.5 px-3 text-xs font-mono focus:outline-none focus:border-cyan-500" placeholder="GLOBAL / AUTO / 节点选择">
+                                            <p class="text-[11px] text-cyan-700/70 mt-2">用于解析 load-balance / url-test 当前落到哪个节点。</p>
+                                        </div>
+                                        <div class="bg-white border border-cyan-100 rounded-2xl p-4 shadow-sm">
+                                            <label class="block text-cyan-800 text-xs font-black mb-2 uppercase tracking-wider">控制口 Secret</label>
+                                            <input type="password" v-model="config.raw_proxy_pool.secret" class="w-full bg-cyan-50/50 border border-cyan-200 text-cyan-900 rounded-xl py-2.5 px-3 text-xs font-mono focus:outline-none focus:border-cyan-500" placeholder="可选">
+                                            <p class="text-[11px] text-cyan-700/70 mt-2">外部 Mihomo 有 secret 时填写；不会影响代理 URL。</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-white border border-cyan-100 rounded-2xl p-4 shadow-sm">
+                                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+                                            <div>
+                                                <h4 class="text-sm font-black text-cyan-800">15559 / raw_proxy_pool 运行状态</h4>
+                                                <p class="text-[11px] text-cyan-700/70 mt-1">这里统计的是当前实际注册走过的 raw_proxy_pool / 外部代理出口，不再只看上面的 Clash 智能池。</p>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button @click="fetchRawProxyPool" :disabled="rawProxyPool.loading" class="px-3 py-2 rounded-lg bg-cyan-600 text-white text-xs font-black hover:bg-cyan-700 disabled:opacity-60">刷新状态</button>
+                                                <button @click="clearRawProxyStats" :disabled="rawProxyPool.statsLoading" class="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-black hover:bg-slate-200 disabled:opacity-60">清空统计</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                                            <div class="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                                <div class="text-cyan-500 font-bold">代理数</div>
+                                                <div class="text-cyan-900 font-black text-lg">{{ rawProxyPool.status?.proxy_count ?? config.raw_proxy_pool.proxy_list.length }}</div>
+                                            </div>
+                                            <div class="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                                <div class="text-cyan-500 font-bold">控制口</div>
+                                                <div class="font-black" :class="rawProxyPool.status?.controller_ok ? 'text-emerald-600' : 'text-amber-600'">{{ rawProxyPool.status?.controller_ok ? '已连接' : '未连接' }}</div>
+                                            </div>
+                                            <div class="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                                <div class="text-cyan-500 font-bold">目标组</div>
+                                                <div class="text-cyan-900 font-black truncate">{{ rawProxyPool.status?.group_name || config.raw_proxy_pool.group_name || '-' }}</div>
+                                            </div>
+                                            <div class="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                                <div class="text-cyan-500 font-bold">黑名单</div>
+                                                <div class="text-cyan-900 font-black text-lg">{{ config.raw_proxy_pool.blacklist?.length || 0 }}</div>
+                                            </div>
+                                        </div>
+                                        <p class="mt-3 text-[11px] text-slate-500">{{ rawProxyPool.status?.message || '保存配置后可读取 raw_proxy_pool 状态。' }}</p>
+
+                                        <div v-if="rawProxyPool.status?.groups?.length" class="mt-4 border border-cyan-100 rounded-xl overflow-hidden">
+                                            <div class="px-4 py-2 bg-cyan-50 text-cyan-800 text-xs font-black">外部 Mihomo 策略组快照</div>
+                                            <div class="divide-y divide-cyan-50 max-h-[260px] overflow-y-auto">
+                                                <div v-for="group in rawProxyPool.status.groups" :key="group.name" class="px-4 py-2 flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs">
+                                                    <div class="min-w-0">
+                                                        <div class="font-black text-slate-800 truncate">{{ group.name }} <span class="text-slate-400 font-bold">({{ group.type || '-' }} / {{ group.count }} 节点)</span></div>
+                                                        <div class="text-slate-500 truncate">当前: {{ group.leaf_current || group.current || '-' }} <span v-if="group.leaf_delay_ms">· {{ group.leaf_delay_ms }}ms</span></div>
+                                                    </div>
+                                                    <button v-if="group.leaf_current" @click="blacklistRawProxyNode(group.leaf_current)" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 font-bold hover:bg-rose-100">拉黑当前节点</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-slate-900 rounded-2xl border border-slate-800 shadow-inner overflow-hidden">
+                                        <div class="px-4 py-3 bg-slate-800/80 flex items-center justify-between">
+                                            <div>
+                                                <h4 class="text-sm font-black text-cyan-200">节点运行统计 / 错误分布</h4>
+                                                <p class="text-[11px] text-slate-400 mt-0.5">按实际注册结果累计：成功、403/409、鉴权/网络异常等；一键拉黑会写入 raw_proxy_pool.blacklist。</p>
+                                            </div>
+                                            <span class="text-[11px] text-slate-400 font-bold">{{ sortedRawProxyStats.length }} 条</span>
+                                        </div>
+                                        <div class="overflow-x-auto">
+                                            <table class="min-w-full text-xs">
+                                                <thead class="bg-slate-950/70 text-slate-400">
+                                                    <tr>
+                                                        <th class="px-3 py-2 text-left">节点/出口</th>
+                                                        <th class="px-3 py-2 text-right">成功</th>
+                                                        <th class="px-3 py-2 text-right">失败</th>
+                                                        <th class="px-3 py-2 text-right">失败率</th>
+                                                        <th class="px-3 py-2 text-left">错误分布</th>
+                                                        <th class="px-3 py-2 text-left">最后错误</th>
+                                                        <th class="px-3 py-2 text-left">操作</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-800">
+                                                    <tr v-if="sortedRawProxyStats.length === 0">
+                                                        <td colspan="7" class="px-3 py-6 text-center text-slate-500">暂无运行统计，启动注册后会自动记录。</td>
+                                                    </tr>
+                                                    <tr v-for="row in sortedRawProxyStats" :key="row.key" class="hover:bg-slate-800/60">
+                                                        <td class="px-3 py-2 min-w-[240px]">
+                                                            <div class="text-cyan-200 font-black truncate">{{ row.node_name || row.group_name || row.proxy_label }}</div>
+                                                            <div class="text-slate-500 font-mono truncate">{{ row.proxy_url_masked }}</div>
+                                                            <div class="text-slate-500 truncate">组: {{ row.group_name || '-' }} · 地区: {{ row.region || '-' }} · 延迟: {{ row.last_delay_ms || '-' }}ms</div>
+                                                        </td>
+                                                        <td class="px-3 py-2 text-right text-emerald-300 font-black">{{ row.success || 0 }}</td>
+                                                        <td class="px-3 py-2 text-right text-rose-300 font-black">{{ row.failed || 0 }}</td>
+                                                        <td class="px-3 py-2 text-right font-black" :class="(row.fail_rate || 0) >= 50 ? 'text-rose-300' : 'text-amber-300'">{{ row.fail_rate || 0 }}%</td>
+                                                        <td class="px-3 py-2 text-slate-300 min-w-[220px]">{{ formatRawProxyErrors(row.errors) }}</td>
+                                                        <td class="px-3 py-2 text-slate-400 min-w-[180px]">
+                                                            <div>{{ row.last_error || '-' }}</div>
+                                                            <div class="text-slate-600">{{ formatRawProxyLastSeen(row.last_seen) }}</div>
+                                                        </td>
+                                                        <td class="px-3 py-2">
+                                                            <button @click="blacklistRawProxyNode(row)" :disabled="rawProxyPool.blacklistActionLoading || !row.node_name" class="px-2.5 py-1.5 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/20 font-bold hover:bg-rose-500/20 disabled:opacity-40">拉黑节点</button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -5292,10 +5404,10 @@
                                             <span class="text-[10px] text-slate-400 font-normal ml-2 bg-white px-2 py-0.5 rounded border border-slate-200">超出设定值后自动删除最早日志防卡顿</span>
                                         </label>
                                         <div>
-                                            <input type="number" v-model.number="config.max_log_lines" class="w-full appearance-none bg-white border-2 border-slate-200 text-slate-800 font-bold rounded-xl py-3.5 px-4 focus:outline-none focus:ring-0 focus:border-slate-400 transition-colors shadow-sm text-base">
+                                            <input type="number" min="50" max="500" v-model.number="config.max_log_lines" class="w-full appearance-none bg-white border-2 border-slate-200 text-slate-800 font-bold rounded-xl py-3.5 px-4 focus:outline-none focus:ring-0 focus:border-slate-400 transition-colors shadow-sm text-base">
                                         </div>
                                         <p class="text-[11px] text-amber-600/80 mt-3 font-medium bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100 shadow-sm inline-block">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 设置过大(>1000)可能导致浏览器严重卡顿
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 前端已强制限制 50-500 行，避免日志过多导致浏览器 CPU 100%
                                         </p>
                                     </div>
 

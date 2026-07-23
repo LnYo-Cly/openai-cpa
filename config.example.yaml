@@ -196,6 +196,18 @@ raw_proxy_pool:
   # 独立于 Clash 的批量代理池；启用后优先使用这里的代理列表
   # 支持 HTTP / HTTPS / SOCKS5 显式协议；未写协议时默认按 socks5h 解析
   enable: false
+  # 可选：外部 Mihomo/Clash 控制口。例：15559 代理口通常对应 42559 控制口
+  api_url: ""
+  # 可选：控制口 secret
+  secret: ""
+  # 可选：要读取/统计的策略组关键词，如 GLOBAL / AUTO / 节点选择
+  group_name: "GLOBAL"
+  # raw_proxy_pool 专用黑名单；一键拉黑会写入这里
+  blacklist:
+    - "港"
+    - "HK"
+    - "台"
+    - "TW"
   proxy_list:
     # 支持以下格式：
     # - http://user:pass@host:8080

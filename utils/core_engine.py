@@ -33,6 +33,7 @@ from utils.auth_pipeline.register import run
 from utils.auth_pipeline.oauth import refresh_oauth_token as _refresh_oauth_token
 
 from utils.proxy_manager import smart_switch_node
+from utils.proxy_node_stats import record_registration_result
 from utils.integrations.sub2api_client import Sub2APIClient
 from utils.integrations.tg_notifier import send_tg_msg_sync
 from utils.email_providers.postman_center import global_postman_fleet
@@ -619,6 +620,10 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
 
     last_email = mail_service.get_last_email()
     if not last_email or "@" not in last_email:
+        try:
+            record_registration_result((run_ctx or {}).get("proxy"), "failed", run_ctx)
+        except Exception:
+            pass
         return "failed"
 
     if "+" in last_email:
@@ -780,6 +785,10 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
                     print(f"[Plus激活] 账号 {account_email} 已加入激活队列 (id={result})")
             except Exception as e:
                 print(f"[Plus激活] 入队失败 {account_email}: {e}")
+    try:
+        record_registration_result((run_ctx or {}).get("proxy"), ret_status, run_ctx)
+    except Exception:
+        pass
     return ret_status
 
 def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False, assigned_domain=None, batch_id=None, worker_index=None):
@@ -790,7 +799,7 @@ def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False, assigned_d
             print(f"[{ts()}] [WARNING] {proxy} 节点切换失败，将使用当前 IP 继续尝试...")
 
     result = None
-    run_ctx = {}
+    run_ctx = {"proxy": proxy}
     try:
         result = run(
             proxy,
@@ -1628,7 +1637,7 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                     if not skip_switch:
                         if not smart_switch_node(p):
                             print(f"[{ts()}] [WARNING] [Sub2API补货] 全局节点切换失败...")
-                    run_ctx = {}
+                    run_ctx = {"proxy": p}
                     result = run(
                         p,
                         run_ctx=run_ctx,

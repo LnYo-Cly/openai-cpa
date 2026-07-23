@@ -373,6 +373,8 @@ createApp({
             logs: [],
             logBuffer: [],
             logFlushTimer: null,
+            maxLogFlushBatch: 80,
+            maxLogBufferBacklog: 1000,
             config: null,
             mailDomainRuntimeStats: [],
             mailDomainRuntimeStatsError: '',
@@ -384,6 +386,13 @@ createApp({
             blacklistStr: "",
             warpListStr: "",
             rawProxyListStr: "",
+            rawProxyPool: {
+                loading: false,
+                statsLoading: false,
+                status: null,
+                stats: [],
+                blacklistActionLoading: false
+            },
             accountStatusFilter: 'all',
             accounts: [],
             selectedAccounts: [],
@@ -709,9 +718,23 @@ createApp({
         cooldownMailDomainCount() {
             return this.mailDomainRuntimeStats.filter(item => item && !item.is_available).length;
         },
+        visibleLogs() {
+            const configured = Number(this.config?.max_log_lines || 300);
+            const limit = Math.max(50, Math.min(500, Number.isFinite(configured) ? configured : 300));
+            return this.logs.slice(-limit);
+        },
         activeClashGroup() {
             if (!this.clashPool?.activeGroupName) return null;
             return (this.clashPool.groups || []).find(group => group.name === this.clashPool.activeGroupName) || null;
+        },
+        sortedRawProxyStats() {
+            const rows = Array.isArray(this.rawProxyPool?.stats) ? this.rawProxyPool.stats : [];
+            return rows.slice().sort((a, b) => {
+                const ar = Number(a.fail_rate || 0);
+                const br = Number(b.fail_rate || 0);
+                if (br !== ar) return br - ar;
+                return Number(b.total || 0) - Number(a.total || 0);
+            });
         },
         selectedClashSubscription() {
             return (this.clashPool?.subscriptions || []).find(item => item.selected) || null;
@@ -1256,6 +1279,7 @@ createApp({
             }
             if (this.currentTab === 'proxy') {
                 this.fetchClashPool();
+                this.fetchRawProxyPool();
             }
             if (this.currentTab === 'concurrency') {
                 this.fetchMemoryPrediction();
@@ -1546,13 +1570,20 @@ createApp({
                     this.clashPool.subUrl = this.config.clash_proxy_pool.sub_url;
                 }
                 if (!this.config.raw_proxy_pool || typeof this.config.raw_proxy_pool !== 'object' || Array.isArray(this.config.raw_proxy_pool)) {
-                    this.config.raw_proxy_pool = { enable: false, proxy_list: [] };
+                    this.config.raw_proxy_pool = { enable: false, proxy_list: [], api_url: '', group_name: '', blacklist: [] };
                 } else {
                     this.config.raw_proxy_pool.enable = normalizeBooleanLike(this.config.raw_proxy_pool.enable, false);
                     if (!Array.isArray(this.config.raw_proxy_pool.proxy_list)) {
                         this.config.raw_proxy_pool.proxy_list = [];
                     }
+                    if (!Array.isArray(this.config.raw_proxy_pool.blacklist)) {
+                        this.config.raw_proxy_pool.blacklist = [];
+                    }
+                    if (this.config.raw_proxy_pool.api_url === undefined) this.config.raw_proxy_pool.api_url = '';
+                    if (this.config.raw_proxy_pool.group_name === undefined) this.config.raw_proxy_pool.group_name = '';
+                    if (this.config.raw_proxy_pool.secret === undefined) this.config.raw_proxy_pool.secret = '';
                 }
+                this.config.max_log_lines = Math.max(50, Math.min(500, parseInt(this.config.max_log_lines, 10) || 300));
                 if(Array.isArray(this.config.warp_proxy_list)) {
                     this.warpListStr = this.config.warp_proxy_list.join('\n');
                 } else {
@@ -1904,10 +1935,15 @@ createApp({
                 this.config.cluster_upload_timeout_sec = Math.max(15, Math.min(3600, clusterUploadTimeout));
                 this.config.warp_proxy_list = this.warpListStr.split('\n').map(s => s.trim()).filter(s => s);
                 if (!this.config.raw_proxy_pool || typeof this.config.raw_proxy_pool !== 'object' || Array.isArray(this.config.raw_proxy_pool)) {
-                    this.config.raw_proxy_pool = { enable: false, proxy_list: [] };
+                    this.config.raw_proxy_pool = { enable: false, proxy_list: [], api_url: '', group_name: '', blacklist: [] };
                 }
                 this.config.raw_proxy_pool.enable = normalizeBooleanLike(this.config.raw_proxy_pool.enable, false);
                 this.config.raw_proxy_pool.proxy_list = this.rawProxyListStr.split('\n').map(s => s.trim()).filter(s => s);
+                if (!Array.isArray(this.config.raw_proxy_pool.blacklist)) {
+                    this.config.raw_proxy_pool.blacklist = [];
+                }
+                this.config.raw_proxy_pool.blacklist = [...new Set(this.config.raw_proxy_pool.blacklist.map(s => String(s || '').trim()).filter(Boolean))];
+                this.config.max_log_lines = Math.max(50, Math.min(500, parseInt(this.config.max_log_lines, 10) || 300));
                 const res = await this.authFetch('/api/config', {
                     method: 'POST', body: JSON.stringify(this.config)
                 });
@@ -2021,6 +2057,7 @@ createApp({
             }
             if (tabId === 'proxy') {
                 this.fetchClashPool();
+                this.fetchRawProxyPool();
             }
             if (tabId === 'concurrency') {
                 this.fetchMemoryPrediction();
@@ -2571,9 +2608,14 @@ createApp({
                     if (container) {
                         isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 100;
                     }
-                    this.logs.push(...this.logBuffer);
-                    this.logBuffer = [];
-                    const maxLines = (this.config && this.config.max_log_lines) ? this.config.max_log_lines : 500;
+                    const batchSize = Math.max(20, Math.min(200, Number(this.maxLogFlushBatch || 80)));
+                    const batch = this.logBuffer.splice(0, batchSize);
+                    if (this.logBuffer.length > this.maxLogBufferBacklog) {
+                        this.logBuffer.splice(0, this.logBuffer.length - this.maxLogBufferBacklog);
+                    }
+                    this.logs.push(...batch);
+                    const configured = Number((this.config && this.config.max_log_lines) ? this.config.max_log_lines : 300);
+                    const maxLines = Math.max(50, Math.min(500, Number.isFinite(configured) ? configured : 300));
                     if (this.logs.length > maxLines) {
                         this.logs.splice(0, this.logs.length - maxLines);
                     }
@@ -2599,6 +2641,7 @@ createApp({
 
                 if (match) {
                     logObj = {
+                        id: Date.now() + Math.random(),
                         parsed: true,
                         time: match[1],
                         level: match[2].toUpperCase(),
@@ -4087,6 +4130,91 @@ async exportSub2Api() {
                 }
             } catch (e) {
                 this.showToast("请求异常", "error");
+            }
+        },
+        formatRawProxyErrors(errors) {
+            if (!errors || typeof errors !== 'object') return '-';
+            const pairs = Object.entries(errors)
+                .filter(([, count]) => Number(count) > 0)
+                .sort((a, b) => Number(b[1]) - Number(a[1]))
+                .slice(0, 4);
+            if (pairs.length === 0) return '-';
+            return pairs.map(([name, count]) => `${name}: ${count}`).join(' / ');
+        },
+        formatRawProxyLastSeen(ts) {
+            const value = Number(ts || 0);
+            if (!value) return '-';
+            try {
+                return new Date(value * 1000).toLocaleString('zh-CN', { hour12: false });
+            } catch (e) {
+                return '-';
+            }
+        },
+        async fetchRawProxyPool() {
+            this.rawProxyPool.loading = true;
+            this.rawProxyPool.statsLoading = true;
+            try {
+                const [statusRes, statsRes] = await Promise.all([
+                    this.authFetch('/api/raw_proxy_pool/status'),
+                    this.authFetch('/api/raw_proxy_pool/node_stats')
+                ]);
+                const statusData = await statusRes.json();
+                const statsData = await statsRes.json();
+                if (statusData.status === 'success') {
+                    this.rawProxyPool.status = statusData.data;
+                    if (this.config?.raw_proxy_pool && Array.isArray(statusData.data?.blacklist)) {
+                        this.config.raw_proxy_pool.blacklist = statusData.data.blacklist;
+                    }
+                }
+                if (statsData.status === 'success') {
+                    this.rawProxyPool.stats = Array.isArray(statsData.data) ? statsData.data : [];
+                }
+            } catch (e) {
+                console.error('fetchRawProxyPool failed', e);
+            } finally {
+                this.rawProxyPool.loading = false;
+                this.rawProxyPool.statsLoading = false;
+            }
+        },
+        async clearRawProxyStats() {
+            const confirmed = await this.customConfirm('确定清空 raw_proxy_pool / 15559 节点运行统计吗？不会删除代理配置。');
+            if (!confirmed) return;
+            this.rawProxyPool.statsLoading = true;
+            try {
+                const res = await this.authFetch('/api/raw_proxy_pool/node_stats/clear', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message || '已清空统计', data.status);
+                await this.fetchRawProxyPool();
+            } catch (e) {
+                this.showToast('清空 raw_proxy_pool 统计失败', 'error');
+            } finally {
+                this.rawProxyPool.statsLoading = false;
+            }
+        },
+        async blacklistRawProxyNode(rowOrName) {
+            const nodeName = typeof rowOrName === 'string'
+                ? rowOrName
+                : (rowOrName?.node_name || rowOrName?.leaf_current || rowOrName?.name || '');
+            if (!nodeName) {
+                this.showToast('没有可拉黑的节点名称', 'warning');
+                return;
+            }
+            const confirmed = await this.customConfirm(`确定把节点/关键词 [${nodeName}] 加入 raw_proxy_pool 黑名单吗？`);
+            if (!confirmed) return;
+            this.rawProxyPool.blacklistActionLoading = true;
+            try {
+                const res = await this.authFetch('/api/raw_proxy_pool/blacklist', {
+                    method: 'POST',
+                    body: JSON.stringify({ node_name: nodeName })
+                });
+                const data = await res.json();
+                this.showToast(data.message || '已加入黑名单', data.status);
+                await this.fetchConfig();
+                await this.fetchRawProxyPool();
+            } catch (e) {
+                this.showToast('加入 raw_proxy_pool 黑名单失败', 'error');
+            } finally {
+                this.rawProxyPool.blacklistActionLoading = false;
             }
         },
         async fetchClashPool() {

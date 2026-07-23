@@ -14,6 +14,7 @@ from global_state import verify_token
 from utils import core_engine
 import utils.config as cfg
 import utils.integrations.clash_manager as clash_manager
+import utils.proxy_node_stats as proxy_node_stats
 from utils.email_providers.gmail_oauth_handler import GmailOAuthHandler
 
 router = APIRouter()
@@ -33,6 +34,7 @@ class ClashTestedNodesClearReq(BaseModel): group_name: str
 class ClashSubscriptionAddReq(BaseModel): name: str = ""; url: str; make_selected: bool = False
 class ClashSubscriptionSelectReq(BaseModel): subscription_id: str; target: str = "all"; resolved_url: str = ""
 class ClashSubscriptionDeleteReq(BaseModel): subscription_id: str
+class RawProxyBlacklistReq(BaseModel): node_name: str
 class TestTgReq(BaseModel):token: str; chat_id: str
 class GmailCredentialsReq(BaseModel):content: str
 
@@ -303,6 +305,33 @@ async def post_clash_subscription_select(req: ClashSubscriptionSelectReq, token:
 @router.post("/api/clash/subscriptions/delete")
 async def post_clash_subscription_delete(req: ClashSubscriptionDeleteReq, token: str = Depends(verify_token)):
     success, msg = clash_manager.delete_subscription(req.subscription_id)
+    return {"status": "success" if success else "error", "message": msg}
+
+@router.get("/api/raw_proxy_pool/status")
+async def get_raw_proxy_pool_status(token: str = Depends(verify_token)):
+    try:
+        return {"status": "success", "data": proxy_node_stats.get_raw_pool_status()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.get("/api/raw_proxy_pool/node_stats")
+async def get_raw_proxy_pool_node_stats(token: str = Depends(verify_token)):
+    try:
+        return {"status": "success", "data": proxy_node_stats.list_node_stats()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/api/raw_proxy_pool/node_stats/clear")
+async def clear_raw_proxy_pool_node_stats(token: str = Depends(verify_token)):
+    try:
+        proxy_node_stats.clear_node_stats()
+        return {"status": "success", "message": "已清空 raw_proxy_pool 节点运行统计。"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/api/raw_proxy_pool/blacklist")
+async def blacklist_raw_proxy_pool_node(req: RawProxyBlacklistReq, token: str = Depends(verify_token)):
+    success, msg = proxy_node_stats.blacklist_node(req.node_name)
     return {"status": "success" if success else "error", "message": msg}
 
 

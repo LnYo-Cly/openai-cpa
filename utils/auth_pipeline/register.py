@@ -32,6 +32,23 @@ from .session_bootstrap import (
 from .user_utils import _generate_password
 
 
+def _mark_proxy_error(run_ctx: Optional[dict], error_type: str, detail: str = "") -> None:
+    if run_ctx is None:
+        return
+    if run_ctx.get("proxy_error") and not run_ctx.get("proxy_first_error"):
+        run_ctx["proxy_first_error"] = run_ctx.get("proxy_error")
+    run_ctx["proxy_error"] = str(error_type or "").strip()
+    if detail:
+        run_ctx["proxy_error_detail"] = str(detail)[:240]
+
+
+def _mark_proxy_warning(run_ctx: Optional[dict], warning_type: str, detail: str = "") -> None:
+    if run_ctx is None:
+        return
+    warnings = run_ctx.setdefault("proxy_warnings", [])
+    warnings.append({"type": str(warning_type or "").strip(), "detail": str(detail or "")[:160]})
+
+
 def run(
     proxy: Optional[str],
     run_ctx: dict = None,
@@ -43,6 +60,8 @@ def run(
     proxy = cfg.format_docker_url(proxy)
     if proxy and proxy.startswith("socks5://"):
         proxy = proxy.replace("socks5://", "socks5h://")
+    if run_ctx is not None:
+        run_ctx["proxy"] = proxy
     proxies = {"http": proxy, "https": proxy} if proxy else None
     s_reg = None
     s_log = None
@@ -73,9 +92,13 @@ def run(
                 loc = (re.search(r"^loc=(.+)$", res.text, re.MULTILINE) or [None, None])[1]
                 if loc in ("CN", "HK"):
                     raise RuntimeError(f"当前{proxies}代理所在地不支持 OpenAI ({loc})")
+                if run_ctx is not None:
+                    run_ctx["proxy_region"] = loc or ""
+                    run_ctx["proxy_latency_ms"] = int(elapsed * 1000)
                 print(f"[{cfg.ts()}] [INFO] 节点测活成功！地区: {loc} | 延迟: {elapsed:.2f}s")
             except Exception as e:
                 print(f"[{cfg.ts()}] [ERROR] 代理网络检查失败: {e}")
+                _mark_proxy_error(run_ctx, "proxy_net_check_failed", str(e))
                 return None, None
         try:
             s_reg.close()
@@ -91,6 +114,7 @@ def run(
             worker_index=worker_index,
         )
         if not email:
+            _mark_proxy_error(run_ctx, "email_fetch_failed", "get_email_and_token returned empty")
             return None, None
 
         password = _generate_password()
@@ -170,6 +194,7 @@ def run(
 
                 if not did or not current_ua:
                     print(f"[{cfg.ts()}] [WARNING] 未获取到 oai-did，节点环境可能被关注，正在为你生成did。")
+                    _mark_proxy_warning(run_ctx, "missing_oai_did", "init_auth returned empty did/user-agent")
                     did = str(uuid.uuid4())
 
                 if run_ctx is not None:
@@ -199,6 +224,8 @@ def run(
                                                    impersonate="chrome", ctx=reg_ctx)
                 if sentinel_signup:
                     print(f"[{cfg.ts()}] [SUCCESS] （{masked_login}）算力挑战成功。")
+                else:
+                    _mark_proxy_error(run_ctx, "auth_channel_failed", "authorize_continue sentinel empty")
                 signup_headers = _oai_headers(did, {
                     "Referer": "https://auth.openai.com/create-account",
                     "content-type": "application/json",
@@ -221,9 +248,11 @@ def run(
 
                 if signup_resp.status_code == 403:
                     print(f"[{cfg.ts()}] [WARNING] （{masked_login}）注册请求触发 403 拦截，稍作等待后重试...")
+                    _mark_proxy_error(run_ctx, "signup_403", "authorize/continue returned 403")
                     return "retry_403", None
                 if signup_resp.status_code != 200:
                     print(f"[{cfg.ts()}] [ERROR] （{masked_login}）提交账号环节异常, 返回: {signup_resp.status_code}")
+                    _mark_proxy_error(run_ctx, f"signup_http_{signup_resp.status_code}", f"authorize/continue returned {signup_resp.status_code}")
                     return None, None
 
                 try:
@@ -682,6 +711,7 @@ def run(
                         err_json = create_account_resp.json()
                         err_code = str(err_json.get("error", {}).get("code", "")).strip()
                         err_msg = str(err_json.get("error", {}).get("message", "")).strip()
+                        _mark_proxy_error(run_ctx, f"create_account_http_{create_account_resp.status_code}", err_code or err_msg)
                         if err_code == "identity_provider_mismatch" or err_code == "user_already_exists":
                             if getattr(cfg, 'DISABLE_FORCED_TAKEOVER', True):
                                 print(
@@ -1441,10 +1471,12 @@ def run(
                         error_reason = url_code
                     print(f"[{cfg.ts()}] [ERROR] （{masked_login}） OAuth 授权链路追踪失败！当前死在网页: {current_url}")
                     print(f"[{cfg.ts()}] [ERROR] （{masked_login}） 阻断原因: {error_reason}")
+                    _mark_proxy_error(run_ctx, "oauth_trace_failed", error_reason or current_url)
                     return None, None
 
             except Exception as e:
                 print(f"[{cfg.ts()}] [ERROR] （{masked_login}） 注册主流程发生严重异常: {e}")
+                _mark_proxy_error(run_ctx, "register_main_exception", str(e))
                 if attempt < MAX_REG_RETRIES - 1:
                     print(f"[{cfg.ts()}] [INFO] 正在准备重试...")
                     time.sleep(2)

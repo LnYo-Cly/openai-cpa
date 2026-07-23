@@ -9,6 +9,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from utils.clash_group_utils import resolve_group_name
+from utils.proxy_node_stats import remember_selected_node
 
 CLASH_API_URL = ""
 LOCAL_PROXY_URL = ""
@@ -261,6 +262,7 @@ def _do_smart_switch(proxy_url=None):
                         if switch_resp.status_code == 204:
                             time.sleep(1)
                             if test_proxy_liveness(proxy_url):
+                                remember_selected_node(proxy_url, best_node, actual_group_name, int(min_delay))
                                 return True
                             print(f"[{ts()}] [代理池] {display_name} 最快节点测活失败，回退到随机抽卡模式...")
                     else:
@@ -287,6 +289,15 @@ def _do_smart_switch(proxy_url=None):
             if switch_resp.status_code == 204:
                 time.sleep(1.5)
                 if test_proxy_liveness(proxy_url):
+                    selected_delay = None
+                    try:
+                        for node_name, delay_value in nodes_with_delay:
+                            if node_name == selected_node:
+                                selected_delay = int(delay_value)
+                                break
+                    except Exception:
+                        selected_delay = None
+                    remember_selected_node(proxy_url, selected_node, actual_group_name, selected_delay)
                     return True
                 print(f"[{ts()}] [代理池] {display_name} 测活失败，重新抽卡...")
             else:
