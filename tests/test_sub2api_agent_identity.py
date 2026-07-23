@@ -332,6 +332,27 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
 
 
 
+
+    def test_agent_registry_not_enabled_marks_token_unsupported(self):
+        client = self.Sub2APIClient(api_url="https://sub2api.example", api_key="demo-key")
+
+        def fake_agent_identity(token, settings):
+            return False, 'Agent Identity 注册失败: {"error":{"code":"agent_registry_not_enabled"}}'
+
+        token = {
+            "email": "free@example.com",
+            "access_token": "at-demo",
+            "auth_source": "agent_identity_session",
+            "status": "agent_identity_pending",
+        }
+        client._add_account_agent_identity = fake_agent_identity
+        ok, msg = client.add_account(token)
+
+        self.assertFalse(ok)
+        self.assertEqual(token["status"], "agent_identity_unsupported")
+        self.assertEqual(token["agent_identity_error_code"], "agent_registry_not_enabled")
+        self.assertIn("未开启 Agent Registry", msg)
+
     def test_agent_identity_session_payload_forces_path_b_even_if_push_format_oauth(self):
         """Reg Path B payload must never be imported as type=oauth via /accounts/data."""
         captured = []

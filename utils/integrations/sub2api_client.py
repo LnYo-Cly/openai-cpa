@@ -769,7 +769,17 @@ class Sub2APIClient:
                         msg,
                     )
                 else:
-                    if settings.get("agent_identity_fallback_oauth") and not has_refresh:
+                    if "agent_registry_not_enabled" in str(msg):
+                        working_token_data["status"] = "agent_identity_unsupported"
+                        working_token_data["agent_identity_error_code"] = "agent_registry_not_enabled"
+                        working_token_data["agent_identity_error"] = str(msg)
+                        token_data.update(working_token_data)
+                        msg = (
+                            "Agent Identity 不可用：该账号未开启 Agent Registry/Codex；"
+                            "不是代理或 URL 问题。可换支持 Codex 的账号，或改用 OAuth 推送。"
+                        )
+                        _ai_user_log(account_name, "unsupported", msg)
+                    elif settings.get("agent_identity_fallback_oauth") and not has_refresh:
                         msg = (
                             f"Agent Identity 失败且无 refresh_token，拒绝 OAuth 回退"
                             f"（否则会导入不可用 OAuth 账号）: {msg}"

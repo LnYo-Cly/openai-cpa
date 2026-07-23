@@ -229,6 +229,11 @@ def account_action(data: dict, token: str = Depends(verify_token)):
                     success, resp = client.add_account(token_data)
                     if not success:
                         last_error = resp
+                        if token_data.get("status") == "agent_identity_unsupported":
+                            try:
+                                db_manager.update_account_token_only(email, json.dumps(token_data, ensure_ascii=False))
+                            except Exception as persist_exc:
+                                print(f"[{cfg.ts()}] [警告] Sub2API 失败状态回写失败: {persist_exc}")
                         print(f"[{cfg.ts()}] [错误] ❌ 推送 Sub2API 失败 ({mask_email(email)}): {resp}")
                     else:
                         print(f"[{cfg.ts()}] [成功] ✅ 账号 {mask_email(email)} 成功推送至 Sub2API！{(' ' + str(resp)) if resp else ''}")

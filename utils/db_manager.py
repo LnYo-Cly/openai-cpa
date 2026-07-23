@@ -275,6 +275,10 @@ def _status_from_token_json(token_json) -> str:
     if '"image2api"' in text:
         return "image2api"
     # Prefer explicit Agent Identity markers over access_token-only pending payloads.
+    if '"agent_identity_unsupported"' in text:
+        return "Agent Identity不支持"
+    if '"agent_identity_pending"' in text:
+        return "Agent Identity待推送"
     if (
         '"auth_mode": "agentIdentity"' in text
         or '"auth_mode":"agentIdentity"' in text
@@ -283,8 +287,6 @@ def _status_from_token_json(token_json) -> str:
         or '"status":"agent_identity"' in text
     ):
         return "Agent Identity"
-    if '"agent_identity_pending"' in text:
-        return "Agent Identity待推送"
     if '"refresh_token"' in text:
         return "有凭证"
     if '"仅注册成功"' in text:
@@ -302,12 +304,13 @@ def _agent_identity_fields_from_token_json(token_json):
         return None, None
     identity = data.get("agent_identity")
     if not isinstance(identity, dict):
-        if str(data.get("status") or "") == "agent_identity_pending" or str(data.get("auth_source") or "") == "agent_identity_session":
+        if str(data.get("status") or "") in {"agent_identity_pending", "agent_identity_unsupported"} or str(data.get("auth_source") or "") == "agent_identity_session":
             return None, {
                 "status": data.get("status"),
                 "auth_source": data.get("auth_source"),
                 "email": data.get("email"),
-                "note": "session bootstrap only; not yet converted to auth.json",
+                "error_code": data.get("agent_identity_error_code"),
+                "note": "agent registry not enabled" if data.get("status") == "agent_identity_unsupported" else "session bootstrap only; not yet converted to auth.json",
             }
         return None, None
     auth_json = {

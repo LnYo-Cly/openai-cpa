@@ -1664,6 +1664,14 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                                     except Exception as persist_exc:
                                         print(f"[{ts()}] [WARNING] Sub2API 入库后本地凭证回写失败: {persist_exc}")
                                 else:
+                                    if token_dict.get("status") == "agent_identity_unsupported":
+                                        try:
+                                            db_manager.update_account_token_only(
+                                                token_dict.get("email", ""),
+                                                json.dumps(token_dict, ensure_ascii=False),
+                                            )
+                                        except Exception as persist_exc:
+                                            print(f"[{ts()}] [WARNING] Sub2API 失败状态回写失败: {persist_exc}")
                                     print(f"[{ts()}] [ERROR] Sub2API 补货入库失败: {msg}")
                     return status
 
@@ -1918,6 +1926,11 @@ def handle_oauth_upgrade_result(email: str, result: Any, run_ctx: dict = None) -
                     except Exception as persist_exc:
                         print(f"[{ts()}] [WARNING] [提权] Sub2API 入库后本地凭证回写失败: {persist_exc}")
                 else:
+                    if token_data.get("status") == "agent_identity_unsupported":
+                        try:
+                            db_manager.update_account_token_only(email, json.dumps(token_data, ensure_ascii=False))
+                        except Exception as persist_exc:
+                            print(f"[{ts()}] [WARNING] [提权] Sub2API 失败状态回写失败: {persist_exc}")
                     print(f"[{ts()}] [ERROR] [提权] Sub2API 补货入库失败: {msg}")
 
     # TEAM拉人：注册/提权成功后自动邀请进 Team 工作区
