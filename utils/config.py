@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v17.1.10"
+APP_VERSION = "v17.1.12"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -1051,3 +1051,4 @@ def reload_all_configs(new_config_dict=None):
     print(f"[{ts()}] [系统] 核心配置已完成同步。")
 
 reload_all_configs()
+
