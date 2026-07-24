@@ -30,7 +30,11 @@ from .session_bootstrap import (
     pick_session_access_token,
 )
 from .user_utils import _generate_password
-from utils.proxy_node_stats import remember_active_proxy_node
+from utils.proxy_node_stats import (
+    remember_active_proxy_node,
+    start_proxy_node_watcher,
+    stop_proxy_node_watcher,
+)
 
 
 def _mark_proxy_error(run_ctx: Optional[dict], error_type: str, detail: str = "") -> None:
@@ -71,7 +75,10 @@ def run(
     sys_handle_a = ""
     sys_handle_b = ""
     sys_handle_c = ""
+    node_watcher = None
     try:
+        if run_ctx is not None and proxy:
+            node_watcher = start_proxy_node_watcher(proxy, run_ctx, host_hint="auth.openai.com")
         if getattr(cfg, 'TEAM_MODE_OVERSPEED', False):
             if not getattr(cfg, 'CF_API_EMAIL', ""):
                 print(f"[{cfg.ts()}] [ERROR] 请确认填写好CF邮箱和KEY在启动")
@@ -1490,6 +1497,10 @@ def run(
                 return None, None
         return None, None
     finally:
+        try:
+            stop_proxy_node_watcher(node_watcher)
+        except Exception:
+            pass
         if getattr(cfg, 'TEAM_MODE_ENABLE', False) and not getattr(cfg, 'TEAM_INVITE_ENABLE', False):
             try:
                 time.sleep(random.uniform(0.1, 0.5))

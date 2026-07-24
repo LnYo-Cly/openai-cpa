@@ -325,7 +325,7 @@ async def get_raw_proxy_pool_node_stats(token: str = Depends(verify_token)):
 async def clear_raw_proxy_pool_node_stats(token: str = Depends(verify_token)):
     try:
         proxy_node_stats.clear_node_stats()
-        return {"status": "success", "message": "已清空 raw_proxy_pool 节点运行统计。"}
+        return {"status": "success", "message": "已清空 15559 全局代理节点池运行统计。"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

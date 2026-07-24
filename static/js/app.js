@@ -4150,6 +4150,26 @@ async exportSub2Api() {
                 return '-';
             }
         },
+        isUncapturedProxyNode(rowOrName) {
+            const name = typeof rowOrName === 'string'
+                ? rowOrName
+                : (rowOrName?.node_name || '');
+            const text = String(name || '').trim().toLowerCase();
+            return !text || text === 'uncaptured' || text === 'unknown'
+                || text === 'direct' || text === 'global' || text === 'reject'
+                || text.startsWith('lb-');
+        },
+        formatRawProxyNodeName(row) {
+            const name = String(row?.node_name || '').trim();
+            if (this.isUncapturedProxyNode(name)) {
+                return 'uncaptured / 未捕获出口';
+            }
+            return name;
+        },
+        canBlacklistRawProxyNode(row) {
+            const name = String(row?.node_name || '').trim();
+            return !!name && !this.isUncapturedProxyNode(name);
+        },
         async fetchRawProxyPool() {
             this.rawProxyPool.loading = true;
             this.rawProxyPool.statsLoading = true;

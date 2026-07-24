@@ -20,7 +20,9 @@ CONFIG_PATH = os.path.join(DATA_DIR, "config.yaml")
 
 _lock = threading.Lock()
 _selected_nodes: dict[str, dict[str, Any]] = {}
-_GROUP_MARKERS = {"DIRECT", "REJECT", "GLOBAL"}
+_GROUP_MARKERS = {"DIRECT", "REJECT", "GLOBAL", "COMPATIBLE", "PASS", "REJECT-DROP"}
+_PSEUDO_PREFIXES = ("LB-", "AUTO", "URL-TEST", "FALLBACK", "LOADBALANCE", "SELECT")
+UNCAPTURED_NODE = "uncaptured"
 
 
 def _now() -> float:
@@ -174,8 +176,85 @@ def _controller_headers(config_data: dict) -> dict:
     return {"Authorization": f"Bearer {secret}"} if secret else {}
 
 
+def _is_group_entry(proxy_map: Optional[dict], name: str) -> bool:
+    if not proxy_map or not name:
+        return False
+    value = proxy_map.get(name)
+    return isinstance(value, dict) and "all" in value
+
+
+def is_real_exit_node(name: Any, group_hint: str = "", proxy_map: Optional[dict] = None) -> bool:
+    """True only for leaf exit nodes; DIRECT/GLOBAL/LB-* strategy groups are excluded."""
+    text = str(name or "").strip()
+    if not text:
+        return False
+    if text.lower() in {UNCAPTURED_NODE, "unknown", "endpoint"}:
+        return False
+    upper = text.upper()
+    if upper in _GROUP_MARKERS:
+        return False
+    if upper.startswith(_PSEUDO_PREFIXES):
+        return False
+    hint = str(group_hint or "").strip()
+    if hint and (text == hint or upper == hint.upper()):
+        return False
+    if _is_group_entry(proxy_map, text):
+        return False
+    return True
+
+
+def _sanitize_node_name(name: Any, group_hint: str = "", proxy_map: Optional[dict] = None) -> str:
+    text = str(name or "").strip()
+    if is_real_exit_node(text, group_hint=group_hint, proxy_map=proxy_map):
+        return text
+    return ""
+
+
+def _real_member_count(proxy_map: dict, group_name: str) -> int:
+    runtime = proxy_map.get(group_name) if isinstance(proxy_map, dict) else None
+    if not isinstance(runtime, dict):
+        return 0
+    nodes = runtime.get("all") or []
+    return sum(1 for node in nodes if is_real_exit_node(node, group_hint=group_name, proxy_map=proxy_map))
+
+
+def select_target_node_pool_group(proxy_map: dict, group_hint: str = "GLOBAL") -> tuple[str, int]:
+    """
+    Pick the Mihomo group used for 15559 node-pool counting.
+    When group_hint is GLOBAL (or a pure selector), prefer the biggest non-DIRECT/non-REJECT
+    real proxy group such as LB-GLOBAL-REFINED.
+    """
+    proxy_map = proxy_map if isinstance(proxy_map, dict) else {}
+    hint = str(group_hint or "GLOBAL").strip() or "GLOBAL"
+    resolved = resolve_group_name(proxy_map, hint) or hint
+
+    def _candidate_score(name: str) -> int:
+        return _real_member_count(proxy_map, name)
+
+    prefer_biggest = (not resolved) or (str(resolved).strip().upper() in {"GLOBAL", "PROXY", "SELECT", "NODE", "节点选择"})
+    if prefer_biggest:
+        best_name = ""
+        best_count = -1
+        for name, value in proxy_map.items():
+            if not isinstance(value, dict) or "all" not in value:
+                continue
+            upper = str(name or "").upper()
+            if upper in _GROUP_MARKERS:
+                continue
+            count = _candidate_score(name)
+            if count > best_count:
+                best_count = count
+                best_name = name
+        if best_name and best_count > 0:
+            return best_name, best_count
+
+    if resolved and isinstance(proxy_map.get(resolved), dict) and "all" in proxy_map[resolved]:
+        return resolved, _candidate_score(resolved)
+    return resolved or hint, 0
+
+
 def _resolve_leaf_node(proxy_map: dict, group_name: str) -> tuple[str, str, Optional[int]]:
-    """Return (runtime group, current leaf node, last delay)."""
+    """Return (runtime group, current leaf node, last delay). Leaf is never DIRECT/GLOBAL/LB-*."""
     current_group = resolve_group_name(proxy_map, group_name) or group_name
     node = ""
     delay = None
@@ -186,16 +265,21 @@ def _resolve_leaf_node(proxy_map: dict, group_name: str) -> tuple[str, str, Opti
         visited.add(current_group)
         runtime = proxy_map.get(current_group)
         if not isinstance(runtime, dict):
-            node = current_group
+            node = current_group if is_real_exit_node(current_group, group_hint=group_name, proxy_map=proxy_map) else ""
             break
         now_name = str(runtime.get("now") or "").strip()
         if not now_name:
-            node = current_group
+            # Load-balance / empty selector: no single leaf from /proxies.
+            node = ""
             break
-        node = now_name
         if now_name in proxy_map and isinstance(proxy_map.get(now_name), dict) and "all" in proxy_map[now_name]:
             current_group = now_name
+            node = ""
             continue
+        if not is_real_exit_node(now_name, group_hint=group_name, proxy_map=proxy_map):
+            node = ""
+            break
+        node = now_name
         history = proxy_map.get(now_name, {}).get("history", []) if isinstance(proxy_map.get(now_name), dict) else []
         if history:
             last_delay = history[-1].get("delay")
@@ -206,10 +290,9 @@ def _resolve_leaf_node(proxy_map: dict, group_name: str) -> tuple[str, str, Opti
 
 
 def _node_from_chains(chains: Any, group_hint: str = "") -> str:
-    groups = {str(group_hint or "").strip(), *_GROUP_MARKERS}
     for item in chains or []:
-        name = str(item or "").strip()
-        if name and name not in groups and not name.upper().startswith(("LB-", "AUTO", "URL-TEST")):
+        name = _sanitize_node_name(item, group_hint=group_hint)
+        if name:
             return name
     return ""
 
@@ -226,18 +309,31 @@ def _active_connection_snapshot(proxy_url: str = "", host_hint: str = "") -> dic
             resp = requests.get(f"{base_url.rstrip('/')}/connections", headers=_controller_headers(config_data), timeout=1.5)
             if resp.status_code != 200:
                 continue
-            for conn in resp.json().get("connections") or []:
+            connections = resp.json().get("connections") or []
+            # Prefer host_hint matches (auth.openai.com), then any inboundPort match.
+            ranked = []
+            for conn in connections:
                 meta = conn.get("metadata") or {}
                 if port and str(meta.get("inboundPort") or "") != str(port):
                     continue
-                if host_hint and host_hint not in str(meta.get("host") or "").lower():
-                    continue
+                host = str(meta.get("host") or "").lower()
+                prefer = 0 if (host_hint and host_hint in host) else 1
+                ranked.append((prefer, conn))
+            ranked.sort(key=lambda item: item[0])
+            for _, conn in ranked:
                 node = _node_from_chains(conn.get("chains"), group_hint)
                 if node:
+                    # Prefer reporting the actual load-balance pool when chain exposes it.
+                    chain_groups = [
+                        str(x or "").strip()
+                        for x in (conn.get("chains") or [])
+                        if str(x or "").strip().upper().startswith("LB-")
+                    ]
+                    report_group = chain_groups[0] if chain_groups else group_hint
                     return {
                         "controller_url": base_url,
                         "controller_source": source,
-                        "group_name": group_hint,
+                        "group_name": report_group,
                         "node_name": node,
                         "delay_ms": None,
                     }
@@ -249,13 +345,62 @@ def _active_connection_snapshot(proxy_url: str = "", host_hint: str = "") -> dic
 def remember_active_proxy_node(proxy_url: Optional[str], run_ctx: Optional[dict] = None, host_hint: str = "auth.openai.com") -> None:
     proxy_url = _normalize_proxy_url(proxy_url or (run_ctx or {}).get("proxy"))
     snap = _active_connection_snapshot(proxy_url, host_hint=host_hint)
-    node = str(snap.get("node_name") or "").strip()
+    node = _sanitize_node_name(snap.get("node_name"), group_hint=str(snap.get("group_name") or ""))
     if not node:
         return
     remember_selected_node(proxy_url, node, str(snap.get("group_name") or ""), snap.get("delay_ms"))
     if run_ctx is not None:
         run_ctx["proxy_node"] = node
         run_ctx["proxy_group"] = snap.get("group_name") or ""
+
+
+def start_proxy_node_watcher(
+    proxy_url: Optional[str],
+    run_ctx: Optional[dict] = None,
+    host_hint: str = "auth.openai.com",
+    interval: float = 0.4,
+    max_seconds: float = 90.0,
+) -> dict:
+    """
+    Bounded daemon that polls Mihomo /connections during an active registration.
+    Stop with stop_proxy_node_watcher(handle) in finally.
+    """
+    handle = {"stop": threading.Event(), "thread": None}
+    if run_ctx is None:
+        return handle
+    proxy_url = _normalize_proxy_url(proxy_url or run_ctx.get("proxy"))
+    if not proxy_url:
+        return handle
+    stop_event: threading.Event = handle["stop"]
+
+    def _loop() -> None:
+        deadline = _now() + max(5.0, float(max_seconds or 90.0))
+        sleep_s = max(0.2, float(interval or 0.4))
+        while not stop_event.is_set() and _now() < deadline:
+            try:
+                remember_active_proxy_node(proxy_url, run_ctx, host_hint=host_hint)
+            except Exception:
+                pass
+            stop_event.wait(sleep_s)
+
+    thread = threading.Thread(target=_loop, name="proxy-node-watcher", daemon=True)
+    handle["thread"] = thread
+    thread.start()
+    return handle
+
+
+def stop_proxy_node_watcher(handle: Optional[dict], join_timeout: float = 1.0) -> None:
+    if not isinstance(handle, dict):
+        return
+    stop_event = handle.get("stop")
+    if isinstance(stop_event, threading.Event):
+        stop_event.set()
+    thread = handle.get("thread")
+    if thread is not None and getattr(thread, "is_alive", lambda: False)():
+        try:
+            thread.join(timeout=max(0.1, float(join_timeout or 1.0)))
+        except Exception:
+            pass
 
 
 def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
@@ -266,10 +411,14 @@ def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
 
     selected = _selected_nodes.get(_proxy_fingerprint(proxy_url))
     if selected and (_now() - float(selected.get("selected_at") or 0)) < 900:
-        return dict(selected)
+        snap = dict(selected)
+        snap["node_name"] = _sanitize_node_name(snap.get("node_name"), group_hint=str(snap.get("group_name") or group_hint))
+        return snap
     active = _active_connection_snapshot(proxy_url)
     if active:
-        return active
+        active["node_name"] = _sanitize_node_name(active.get("node_name"), group_hint=str(active.get("group_name") or group_hint))
+        if active.get("node_name"):
+            return active
 
     for base_url, source in _controller_candidates(config_data, proxy_url):
         try:
@@ -279,12 +428,13 @@ def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
             proxy_map = (resp.json() or {}).get("proxies", {})
             if not isinstance(proxy_map, dict):
                 continue
-            group_name, node_name, delay = _resolve_leaf_node(proxy_map, group_hint)
+            pool_group, _ = select_target_node_pool_group(proxy_map, group_hint)
+            group_name, node_name, delay = _resolve_leaf_node(proxy_map, pool_group or group_hint)
             return {
                 "controller_url": base_url,
                 "controller_source": source,
-                "group_name": group_name or group_hint,
-                "node_name": node_name or "",
+                "group_name": group_name or pool_group or group_hint,
+                "node_name": _sanitize_node_name(node_name, group_hint=group_name or pool_group or group_hint, proxy_map=proxy_map),
                 "delay_ms": delay,
             }
         except Exception:
@@ -294,11 +444,12 @@ def _fetch_runtime_snapshot(proxy_url: str = "") -> dict:
 
 def remember_selected_node(proxy_url: Optional[str], node_name: str, group_name: str = "", delay_ms: Optional[int] = None) -> None:
     proxy_url = _normalize_proxy_url(proxy_url)
+    node_name = _sanitize_node_name(node_name, group_hint=group_name)
     if not proxy_url or not node_name:
         return
     _selected_nodes[_proxy_fingerprint(proxy_url)] = {
         "group_name": str(group_name or "").strip(),
-        "node_name": str(node_name or "").strip(),
+        "node_name": node_name,
         "delay_ms": delay_ms,
         "selected_at": _now(),
     }
@@ -325,16 +476,20 @@ def classify_error_type(status: str, run_ctx: Optional[dict] = None) -> str:
 def record_registration_result(proxy_url: Optional[str], status: str, run_ctx: Optional[dict] = None) -> None:
     proxy_url = _normalize_proxy_url(proxy_url or (run_ctx or {}).get("proxy"))
     if not proxy_url:
-        proxy_url = "DIRECT"
+        # Endpoint-less local direct traffic; never treat this as a Mihomo leaf node name.
+        proxy_url = "local-direct"
     status = str(status or "failed").strip() or "failed"
     ctx = run_ctx or {}
     runtime = _fetch_runtime_snapshot(proxy_url)
-    node_name = str(ctx.get("proxy_node") or runtime.get("node_name") or "").strip()
+    group_name = str(ctx.get("proxy_group") or runtime.get("group_name") or "").strip()
+    node_name = _sanitize_node_name(ctx.get("proxy_node") or runtime.get("node_name"), group_hint=group_name)
+    if not node_name:
+        node_name = UNCAPTURED_NODE
     error_type = classify_error_type(status, ctx)
     detail = str(ctx.get("proxy_error_detail") or ctx.get("proxy_error_message") or "").strip()[:240]
     region = str(ctx.get("proxy_region") or "").strip()
 
-    key_material = f"{_proxy_fingerprint(proxy_url)}|{node_name or runtime.get('group_name') or 'endpoint'}"
+    key_material = f"{_proxy_fingerprint(proxy_url)}|{node_name}"
     key = hashlib.sha256(key_material.encode("utf-8")).hexdigest()[:24]
     now_ts = _now()
 
@@ -349,7 +504,7 @@ def record_registration_result(proxy_url: Optional[str], status: str, run_ctx: O
                 "proxy_label": _proxy_label(proxy_url),
                 "proxy_url_masked": _mask_proxy_url(proxy_url),
                 "node_name": node_name,
-                "group_name": str(runtime.get("group_name") or ""),
+                "group_name": group_name,
                 "controller_url": str(runtime.get("controller_url") or ""),
                 "subscription": str(runtime.get("controller_source") or ""),
                 "region": region,
@@ -367,8 +522,8 @@ def record_registration_result(proxy_url: Optional[str], status: str, run_ctx: O
         )
         item["proxy_label"] = _proxy_label(proxy_url)
         item["proxy_url_masked"] = _mask_proxy_url(proxy_url)
-        item["node_name"] = node_name or item.get("node_name", "")
-        item["group_name"] = str(runtime.get("group_name") or item.get("group_name") or "")
+        item["node_name"] = node_name
+        item["group_name"] = group_name or str(item.get("group_name") or "")
         item["controller_url"] = str(runtime.get("controller_url") or item.get("controller_url") or "")
         item["subscription"] = str(runtime.get("controller_source") or item.get("subscription") or "")
         item["last_delay_ms"] = runtime.get("delay_ms", item.get("last_delay_ms"))
@@ -450,6 +605,8 @@ def blacklist_node(node_name: str) -> tuple[bool, str]:
     value = str(node_name or "").strip()
     if not value:
         return False, "节点名称不能为空。"
+    if not is_real_exit_node(value):
+        return False, f"不能拉黑非真实出口节点：{value}"
     config_data = _read_yaml_config()
     raw_conf = config_data.get("raw_proxy_pool", {}) if isinstance(config_data.get("raw_proxy_pool"), dict) else {}
     raw_conf.setdefault("enable", False)
@@ -518,12 +675,17 @@ def get_raw_pool_status() -> dict:
     group_hint = str(raw_conf.get("group_name") or clash_conf.get("group_name") or "GLOBAL").strip()
     default_proxy = str(config_data.get("default_proxy") or "").strip()
     raw_enabled = bool(raw_conf.get("enable", False))
-    probe_proxy = raw_list[0] if raw_enabled and raw_list else default_proxy
+    # Always prefer default_proxy (e.g. 15559) for controller probe; raw list is secondary.
+    probe_proxy = default_proxy or (raw_list[0] if raw_enabled and raw_list else "")
 
     status = {
         "enabled": raw_enabled,
+        "pool_mode": "default_proxy_mihomo" if default_proxy else ("raw_proxy_pool" if raw_enabled else "none"),
+        "pool_label": "15559 全局代理节点池",
         "default_proxy_masked": _mask_proxy_url(default_proxy),
-        "proxy_count": len(raw_list),
+        "proxy_count": 0,
+        "raw_proxy_list_count": len(raw_list),
+        "node_pool_count": 0,
         "proxies": [
             {
                 "label": _proxy_label(_normalize_proxy_url(p)),
@@ -536,9 +698,10 @@ def get_raw_pool_status() -> dict:
         "controller_source": "",
         "controller_ok": False,
         "group_name": group_hint,
+        "target_group": group_hint,
         "groups": [],
         "blacklist": blacklist,
-        "message": "raw_proxy_pool 只按代理 URL 轮换；配置控制口后可读取 15559/Mihomo 当前组和节点。",
+        "message": "统计目标是 default_proxy（如 15559）背后的 Mihomo 全局节点池；raw_proxy_pool 开关不影响下方状态。",
     }
 
     for base_url, source in _controller_candidates(config_data, _normalize_proxy_url(probe_proxy)):
@@ -549,16 +712,31 @@ def get_raw_pool_status() -> dict:
             proxy_map = (resp.json() or {}).get("proxies", {})
             if not isinstance(proxy_map, dict):
                 continue
+            target_group, node_pool_count = select_target_node_pool_group(proxy_map, group_hint)
             status.update(
                 {
                     "controller_url": base_url,
                     "controller_source": source,
                     "controller_ok": True,
-                    "groups": _group_rows_from_proxy_map(proxy_map, group_hint, blacklist),
-                    "message": f"已连接外部 Mihomo 控制口 ({source})，可读取当前策略组和节点。",
+                    "group_name": target_group or group_hint,
+                    "target_group": target_group or group_hint,
+                    "proxy_count": int(node_pool_count or 0),
+                    "node_pool_count": int(node_pool_count or 0),
+                    "groups": _group_rows_from_proxy_map(proxy_map, target_group or group_hint, blacklist),
+                    "message": (
+                        f"已连接 15559 Mihomo 控制口 ({source})，"
+                        f"目标节点池 {target_group or group_hint} 共 {int(node_pool_count or 0)} 个真实出口节点。"
+                    ),
                 }
             )
             break
         except Exception as exc:
-            status["message"] = f"raw_proxy_pool 已启用，但暂未连上控制口：{exc}"
+            status["message"] = f"15559 Mihomo 控制口暂未连上：{exc}"
+    if not status["controller_ok"] and raw_enabled and raw_list:
+        # Fallback only when controller is down and raw list is actually used.
+        status["proxy_count"] = len(raw_list)
+        status["message"] = (
+            status.get("message")
+            or "未连上 15559 Mihomo 控制口；临时显示 raw_proxy_pool.proxy_list 数量。"
+        )
     return status

@@ -195,14 +195,16 @@ clash_proxy_pool:
 raw_proxy_pool:
   # 独立于 Clash 的批量代理池；启用后优先使用这里的代理列表
   # 支持 HTTP / HTTPS / SOCKS5 显式协议；未写协议时默认按 socks5h 解析
+  # 注意：UI 中的「15559 全局代理节点池」统计的是 default_proxy 背后的 Mihomo 节点池，
+  # 即使本开关为 false 也会读取控制口并累计真实出口；勿把 DIRECT/GLOBAL 当节点。
   enable: false
   # 可选：外部 Mihomo/Clash 控制口。default_proxy=15559 时通常对应 42559，用于统计真实出口节点
   api_url: ""
   # 可选：控制口 secret
   secret: ""
-  # 可选：要读取/统计的策略组关键词，如 GLOBAL / AUTO / 节点选择
+  # 可选：要读取/统计的策略组关键词。填 GLOBAL 时会自动优选最大真实节点池（如 LB-GLOBAL-REFINED）
   group_name: "GLOBAL"
-  # 节点黑名单；15559 节点池一键拉黑也会尝试写入 Mihomo exclude-filter
+  # 节点黑名单；15559 节点池一键拉黑也会尝试写入 Mihomo exclude-filter 并热重载
   blacklist:
     - "港"
     - "HK"
