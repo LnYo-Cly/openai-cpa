@@ -334,6 +334,368 @@ def _wait_turnstile_token(
     lg("CF人机校验失败")
     return False
 
+def _signup_on_page(
+    page,
+    *,
+    email: str,
+    password: str,
+    fetch_code: Callable[[], str],
+    headless: bool = True,
+    given_name: str = "Alex",
+    family_name: str = "Chen",
+    timeout: float = 180.0,
+    log: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """在已有 page 上完成注册并取 SSO（不负责开关浏览器）。"""
+    email = (email or "").strip()
+    password = password or ""
+    lg = _log_fn(log)
+    if not email or not password:
+        return {"ok": False, "error": "email/password empty"}
+
+    if not given_name or given_name == "Alex":
+        given_name = "".join(random.choices(string.ascii_lowercase, k=5)).capitalize()
+    if not family_name or family_name == "Chen":
+        family_name = "".join(random.choices(string.ascii_lowercase, k=5)).capitalize()
+
+    deadline = time.time() + max(60.0, float(timeout or 180.0))
+
+    try:
+        page.set_default_timeout(20000)
+
+        try:
+            page.goto(SIGNUP_URL, wait_until="networkidle", timeout=60000)
+        except Exception:
+            page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=60000)
+        time.sleep(2.0)
+
+        if not _click_email_signup(page, timeout=12.0):
+            _dump_debug(page, "no_email_entry")
+            return {"ok": False, "error": "未提交邮箱", "url": page.url}
+
+        email_sel = ", ".join(EMAIL_INPUT_SELECTORS)
+        try:
+            page.wait_for_selector(email_sel, timeout=15000)
+        except Exception:
+            _click_email_signup(page, timeout=6.0)
+            try:
+                page.wait_for_selector(email_sel, timeout=10000)
+            except Exception:
+                _dump_debug(page, "email_input_missing")
+                return {"ok": False, "error": "未提交邮箱", "url": page.url}
+
+        if not _fill_selector(page, email_sel, email):
+            _dump_debug(page, "email_fill_fail")
+            return {"ok": False, "error": "邮箱提交失败", "url": page.url}
+
+        if not _click_first(page, SUBMIT_SELECTORS):
+            for txt in ("Continue", "Next", "继续", "下一步", "Sign up"):
+                if _click_first(page, [f'button:has-text("{txt}")']):
+                    break
+        time.sleep(2.0)
+
+        code_sel = ", ".join(CODE_INPUT_SELECTORS)
+        code_ready = False
+        for _ in range(20):
+            if time.time() > deadline:
+                break
+            if page.query_selector(code_sel):
+                code_ready = True
+                break
+            _click_first(page, SUBMIT_SELECTORS)
+            time.sleep(1.0)
+
+        if not code_ready:
+            _dump_debug(page, "code_page_missing")
+            return {"ok": False, "error": "验证码页未出现", "url": page.url}
+
+        code = ""
+        for _attempt in range(1, 10):
+            if time.time() > deadline:
+                break
+            try:
+                code = str(fetch_code() or "").strip()
+            except Exception as exc:
+                lg(f"取验证码异常: {exc}")
+                code = ""
+            if code:
+                break
+            time.sleep(3.0)
+        if not code:
+            return {"ok": False, "error": "邮箱验证码超时", "url": page.url}
+
+        clean_code = re.sub(r"[\s\-]+", "", code)
+        try:
+            page.fill(code_sel, clean_code, force=True)
+        except Exception:
+            try:
+                page.locator(code_sel).first.press_sequentially(clean_code, delay=30)
+            except Exception:
+                try:
+                    page.keyboard.type(clean_code, delay=30)
+                except Exception:
+                    return {"ok": False, "error": "验证码填写失败", "url": page.url}
+
+        for sel in [
+            'button:has-text("Confirm email")',
+            'button:has-text("确认邮箱")',
+            'button:has-text("Verify")',
+            'button:has-text("Continue")',
+            'button:has-text("继续")',
+        ] + SUBMIT_SELECTORS:
+            if _click_first(page, [sel]):
+                break
+        time.sleep(2.0)
+
+        profile_sel = (
+            'input[name="given_name"], input[name="givenName"], input[placeholder*="First"], '
+            'input[name="password"], input[type="password"], input[data-testid="password"]'
+        )
+        for _ in range(20):
+            if page.query_selector(profile_sel):
+                break
+            time.sleep(1.0)
+
+        fname_sel = (
+            'input[name="given_name"], input[name="givenName"], '
+            'input[data-testid="givenName"], input[autocomplete="given-name"], '
+            'input[placeholder*="First"]'
+        )
+        lname_sel = (
+            'input[name="family_name"], input[name="familyName"], '
+            'input[data-testid="familyName"], input[autocomplete="family-name"], '
+            'input[placeholder*="Last"]'
+        )
+        if page.query_selector(fname_sel):
+            _fill_selector(page, fname_sel, given_name)
+        if page.query_selector(lname_sel):
+            _fill_selector(page, lname_sel, family_name)
+
+        pass_sel = 'input[name="password"], input[type="password"], input[data-testid="password"]'
+        if page.query_selector(fname_sel) and not page.query_selector(pass_sel):
+            _click_first(page, SUBMIT_SELECTORS)
+            time.sleep(1.5)
+
+        for _ in range(12):
+            if page.query_selector(pass_sel):
+                break
+            time.sleep(1.0)
+
+        if page.query_selector(pass_sel):
+            _fill_selector(page, pass_sel, password)
+            lg("邮箱与密码校验通过")
+            try:
+                for cb in page.query_selector_all('input[type="checkbox"]') or []:
+                    try:
+                        cb.click(force=True)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            ts_timeout = 90.0 if not headless else 60.0
+            ts_rounds = 3
+            ts_ok = _wait_turnstile_token(page, timeout=ts_timeout, log=lg, rounds=ts_rounds)
+            if not ts_ok:
+                return {
+                    "ok": False,
+                    "error": "CF人机校验失败（常见原因: 代理不通/过慢、目标打开失败）",
+                    "url": page.url,
+                }
+
+            for attempt in range(1, 8):
+                if _read_turnstile_token(page) or attempt >= 2:
+                    _click_first(page, COMPLETE_SELECTORS, force=True)
+                time.sleep(2.0)
+                sso_now = _get_cookies(page, ["sso", "sso-rw"])
+                if sso_now.get("sso") or sso_now.get("sso-rw"):
+                    break
+                url_l = (page.url or "").lower()
+                if "sign-up" not in url_l and any(k in url_l for k in ("account", "grok.com", "consent")):
+                    break
+                if not _read_turnstile_token(page):
+                    _click_turnstile_if_any(page, rounds=3)
+
+        remain = max(15.0, deadline - time.time())
+        cookies_partial = _wait_for_cookies(page, ["sso"], timeout=min(90.0, remain))
+        sso = str(cookies_partial.get("sso") or cookies_partial.get("sso-rw") or "").strip()
+        all_ck = _all_cookies(page)
+        if not sso:
+            sso = str(all_ck.get("sso") or all_ck.get("sso-rw") or "").strip()
+        if not sso:
+            _dump_debug(page, "sso_missing")
+            return {
+                "ok": False,
+                "error": "SSO 提取失败",
+                "cookies": all_ck,
+                "url": page.url,
+            }
+
+        all_ck.setdefault("sso", sso)
+        all_ck.setdefault("sso-rw", sso)
+        return {
+            "ok": True,
+            "sso": sso,
+            "cookies": all_ck,
+            "url": page.url,
+            "email": email,
+            "password": password,
+        }
+    except Exception as exc:
+        detail = str(exc).strip() or repr(exc)
+        low = detail.lower()
+        if "geoip" in low:
+            return {"ok": False, "error": "Camoufox geoip 依赖问题（当前已不强制 geoip）"}
+        if "turnstile" in low or "timeout" in low:
+            return {"ok": False, "error": "CF人机校验失败（常见原因: 代理不通/过慢、目标打开失败）"}
+        short = detail.split(" at ")[0].split(" url=")[0]
+        if len(short) > 120:
+            short = short[:117] + "..."
+        return {"ok": False, "error": short}
+
+
+def _signup_with_browser(
+    browser,
+    *,
+    email: str,
+    password: str,
+    fetch_code: Callable[[], str],
+    proxy: str = "",
+    headless: bool = True,
+    given_name: str = "Alex",
+    family_name: str = "Chen",
+    timeout: float = 180.0,
+    log: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """在池内 browser 上为当前账号新建独立 Context，用完即关。"""
+    context = None
+    try:
+        ctx_opts: Dict[str, Any] = {}
+        proxy_cfg = _build_proxy_config(proxy)
+        if proxy_cfg:
+            ctx_opts["proxy"] = proxy_cfg
+        try:
+            context = browser.new_context(**ctx_opts)
+        except TypeError:
+            context = browser.new_context()
+        page = context.new_page()
+        return _signup_on_page(
+            page,
+            email=email,
+            password=password,
+            fetch_code=fetch_code,
+            headless=headless,
+            given_name=given_name,
+            family_name=family_name,
+            timeout=timeout,
+            log=log,
+        )
+    finally:
+        if context is not None:
+            try:
+                context.close()
+            except Exception:
+                pass
+
+
+def _signup_oneshot(
+    *,
+    email: str,
+    password: str,
+    fetch_code: Callable[[], str],
+    proxy: str = "",
+    headless: bool = True,
+    given_name: str = "Alex",
+    family_name: str = "Chen",
+    timeout: float = 180.0,
+    log: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """池不可用时的单次启动兜底（仍一号一 Context）。"""
+    try:
+        from camoufox.sync_api import Camoufox
+    except Exception as exc:
+        return {"ok": False, "error": f"camoufox import failed: {exc}"}
+
+    try:
+        from .embedded_turnstile import ensure_camoufox
+        ok_c, msg_c = ensure_camoufox(force=False)
+        if not ok_c:
+            return {"ok": False, "error": msg_c}
+    except Exception:
+        pass
+
+    proxy_cfg = _build_proxy_config(proxy)
+    launch_opts: Dict[str, Any] = {"headless": bool(headless)}
+    try:
+        with Camoufox(**launch_opts) as browser:
+            return _signup_with_browser(
+                browser,
+                email=email,
+                password=password,
+                fetch_code=fetch_code,
+                proxy=proxy,
+                headless=headless,
+                given_name=given_name,
+                family_name=family_name,
+                timeout=timeout,
+                log=log,
+            )
+    except Exception as exc:
+        if proxy_cfg:
+            launch_opts["proxy"] = proxy_cfg
+        try:
+            with Camoufox(**launch_opts) as browser:
+                page = browser.new_page()
+                return _signup_on_page(
+                    page,
+                    email=email,
+                    password=password,
+                    fetch_code=fetch_code,
+                    headless=headless,
+                    given_name=given_name,
+                    family_name=family_name,
+                    timeout=timeout,
+                    log=log,
+                )
+        except Exception as exc2:
+            detail = str(exc2).strip() or repr(exc2)
+            low = detail.lower()
+            if "geoip" in low:
+                return {"ok": False, "error": "Camoufox geoip 依赖问题（当前已不强制 geoip）"}
+            if "turnstile" in low or "timeout" in low:
+                return {"ok": False, "error": "CF人机校验失败（常见原因: 代理不通/过慢、目标打开失败）"}
+            short = detail.split(" at ")[0].split(" url=")[0]
+            if len(short) > 120:
+                short = short[:117] + "..."
+            return {"ok": False, "error": short or (str(exc).strip() or repr(exc))}
+
+
+def _pool_job(
+    browser,
+    *,
+    email: str,
+    password: str,
+    fetch_code: Callable[[], str],
+    proxy: str = "",
+    signup_headless: bool = True,
+    given_name: str = "Alex",
+    family_name: str = "Chen",
+    signup_timeout: float = 180.0,
+    log: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    return _signup_with_browser(
+        browser,
+        email=email,
+        password=password,
+        fetch_code=fetch_code,
+        proxy=proxy,
+        headless=bool(signup_headless),
+        given_name=given_name,
+        family_name=family_name,
+        timeout=float(signup_timeout or 180.0),
+        log=log,
+    )
+
 
 def _signup_sync(
     *,
@@ -349,14 +711,8 @@ def _signup_sync(
 ) -> Dict[str, Any]:
     email = (email or "").strip()
     password = password or ""
-    lg = _log_fn(log)
     if not email or not password:
         return {"ok": False, "error": "email/password empty"}
-
-    try:
-        from camoufox.sync_api import Camoufox
-    except Exception as exc:
-        return {"ok": False, "error": f"camoufox import failed: {exc}"}
 
     try:
         from .embedded_turnstile import ensure_camoufox
@@ -366,201 +722,39 @@ def _signup_sync(
     except Exception:
         pass
 
-    if not given_name or given_name == "Alex":
-        given_name = "".join(random.choices(string.ascii_lowercase, k=5)).capitalize()
-    if not family_name or family_name == "Chen":
-        family_name = "".join(random.choices(string.ascii_lowercase, k=5)).capitalize()
-
-    proxy_cfg = _build_proxy_config(proxy)
-    launch_opts: Dict[str, Any] = {"headless": bool(headless)}
-    if proxy_cfg:
-        launch_opts["proxy"] = proxy_cfg
-
-    deadline = time.time() + max(60.0, float(timeout or 180.0))
+    # 优先走浏览器池：注册结束后立刻释放 Context，OAuth 可与下一号注册错峰
+    try:
+        from .browser_pool import ensure_browser_pool, run_with_browser
+        ensure_browser_pool(headless=bool(headless))
+    except Exception:
+        return _signup_oneshot(
+            email=email,
+            password=password,
+            fetch_code=fetch_code,
+            proxy=proxy or "",
+            headless=bool(headless),
+            given_name=given_name,
+            family_name=family_name,
+            timeout=timeout,
+            log=log,
+        )
 
     try:
-        with Camoufox(**launch_opts) as browser:
-            page = browser.new_page()
-            page.set_default_timeout(20000)
-
-            try:
-                page.goto(SIGNUP_URL, wait_until="networkidle", timeout=60000)
-            except Exception:
-                page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(2.0)
-
-            if not _click_email_signup(page, timeout=12.0):
-                _dump_debug(page, "no_email_entry")
-                return {"ok": False, "error": "未提交邮箱", "url": page.url}
-
-            email_sel = ", ".join(EMAIL_INPUT_SELECTORS)
-            try:
-                page.wait_for_selector(email_sel, timeout=15000)
-            except Exception:
-                _click_email_signup(page, timeout=6.0)
-                try:
-                    page.wait_for_selector(email_sel, timeout=10000)
-                except Exception:
-                    _dump_debug(page, "email_input_missing")
-                    return {"ok": False, "error": "未提交邮箱", "url": page.url}
-
-            if not _fill_selector(page, email_sel, email):
-                _dump_debug(page, "email_fill_fail")
-                return {"ok": False, "error": "邮箱提交失败", "url": page.url}
-
-            if not _click_first(page, SUBMIT_SELECTORS):
-                for txt in ("Continue", "Next", "继续", "下一步", "Sign up"):
-                    if _click_first(page, [f'button:has-text("{txt}")']):
-                        break
-            time.sleep(2.0)
-
-            code_sel = ", ".join(CODE_INPUT_SELECTORS)
-            code_ready = False
-            for _ in range(20):
-                if time.time() > deadline:
-                    break
-                if page.query_selector(code_sel):
-                    code_ready = True
-                    break
-                _click_first(page, SUBMIT_SELECTORS)
-                time.sleep(1.0)
-
-            if not code_ready:
-                _dump_debug(page, "code_page_missing")
-                return {"ok": False, "error": "验证码页未出现", "url": page.url}
-
-            code = ""
-            for _attempt in range(1, 10):
-                if time.time() > deadline:
-                    break
-                try:
-                    code = str(fetch_code() or "").strip()
-                except Exception as exc:
-                    lg(f"取验证码异常: {exc}")
-                    code = ""
-                if code:
-                    break
-                time.sleep(3.0)
-            if not code:
-                return {"ok": False, "error": "邮箱验证码超时", "url": page.url}
-
-            clean_code = re.sub(r"[\s\-]+", "", code)
-            try:
-                page.fill(code_sel, clean_code, force=True)
-            except Exception:
-                try:
-                    page.locator(code_sel).first.press_sequentially(clean_code, delay=30)
-                except Exception:
-                    try:
-                        page.keyboard.type(clean_code, delay=30)
-                    except Exception:
-                        return {"ok": False, "error": "验证码填写失败", "url": page.url}
-
-            for sel in [
-                'button:has-text("Confirm email")',
-                'button:has-text("确认邮箱")',
-                'button:has-text("Verify")',
-                'button:has-text("Continue")',
-                'button:has-text("继续")',
-            ] + SUBMIT_SELECTORS:
-                if _click_first(page, [sel]):
-                    break
-            time.sleep(2.0)
-
-            profile_sel = (
-                'input[name="given_name"], input[name="givenName"], input[placeholder*="First"], '
-                'input[name="password"], input[type="password"], input[data-testid="password"]'
-            )
-            for _ in range(20):
-                if page.query_selector(profile_sel):
-                    break
-                time.sleep(1.0)
-
-            fname_sel = (
-                'input[name="given_name"], input[name="givenName"], '
-                'input[data-testid="givenName"], input[autocomplete="given-name"], '
-                'input[placeholder*="First"]'
-            )
-            lname_sel = (
-                'input[name="family_name"], input[name="familyName"], '
-                'input[data-testid="familyName"], input[autocomplete="family-name"], '
-                'input[placeholder*="Last"]'
-            )
-            if page.query_selector(fname_sel):
-                _fill_selector(page, fname_sel, given_name)
-            if page.query_selector(lname_sel):
-                _fill_selector(page, lname_sel, family_name)
-
-            pass_sel = 'input[name="password"], input[type="password"], input[data-testid="password"]'
-            if page.query_selector(fname_sel) and not page.query_selector(pass_sel):
-                _click_first(page, SUBMIT_SELECTORS)
-                time.sleep(1.5)
-
-            for _ in range(12):
-                if page.query_selector(pass_sel):
-                    break
-                time.sleep(1.0)
-
-            if page.query_selector(pass_sel):
-                _fill_selector(page, pass_sel, password)
-                lg("邮箱与密码校验通过")
-                try:
-                    for cb in page.query_selector_all('input[type="checkbox"]') or []:
-                        try:
-                            cb.click(force=True)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-                ts_timeout = 90.0 if not headless else 60.0
-                ts_rounds = 3
-                ts_ok = _wait_turnstile_token(page, timeout=ts_timeout, log=lg, rounds=ts_rounds)
-                if not ts_ok:
-                    return {
-                        "ok": False,
-                        "error": "CF人机校验失败（常见原因: 代理不通/过慢、目标打开失败）",
-                        "url": page.url,
-                    }
-
-                for attempt in range(1, 8):
-                    if _read_turnstile_token(page) or attempt >= 2:
-                        _click_first(page, COMPLETE_SELECTORS, force=True)
-                    time.sleep(2.0)
-                    sso_now = _get_cookies(page, ["sso", "sso-rw"])
-                    if sso_now.get("sso") or sso_now.get("sso-rw"):
-                        break
-                    url_l = (page.url or "").lower()
-                    if "sign-up" not in url_l and any(k in url_l for k in ("account", "grok.com", "consent")):
-                        break
-                    if not _read_turnstile_token(page):
-                        _click_turnstile_if_any(page, rounds=3)
-
-            remain = max(15.0, deadline - time.time())
-            cookies_partial = _wait_for_cookies(page, ["sso"], timeout=min(90.0, remain))
-            sso = str(cookies_partial.get("sso") or cookies_partial.get("sso-rw") or "").strip()
-            all_ck = _all_cookies(page)
-            if not sso:
-                sso = str(all_ck.get("sso") or all_ck.get("sso-rw") or "").strip()
-            if not sso:
-                _dump_debug(page, "sso_missing")
-                return {
-                    "ok": False,
-                    "error": "SSO 提取失败",
-                    "cookies": all_ck,
-                    "url": page.url,
-                }
-
-            all_ck.setdefault("sso", sso)
-            all_ck.setdefault("sso-rw", sso)
-            return {
-                "ok": True,
-                "sso": sso,
-                "cookies": all_ck,
-                "url": page.url,
-                "email": email,
-                "password": password,
-            }
+        wait_timeout = max(90.0, float(timeout or 180.0) + 60.0)
+        return run_with_browser(
+            _pool_job,
+            headless=bool(headless),
+            timeout=wait_timeout,
+            email=email,
+            password=password,
+            fetch_code=fetch_code,
+            proxy=proxy or "",
+            signup_headless=bool(headless),
+            given_name=given_name,
+            family_name=family_name,
+            signup_timeout=float(timeout or 180.0),
+            log=log,
+        )
     except Exception as exc:
         detail = str(exc).strip() or repr(exc)
         low = detail.lower()
@@ -603,3 +797,4 @@ def signup_with_camoufox(
         timeout=timeout,
         log=log,
     )
+

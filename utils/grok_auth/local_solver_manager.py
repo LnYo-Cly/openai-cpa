@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""兼容主程序停止接口（HTTP 打码旁路已不用）。"""
 from __future__ import annotations
 
 from typing import Optional, Tuple
@@ -21,4 +20,8 @@ def start_local_solver_if_needed(*, force: bool = False, wait_sec: float = 45.0)
 
 
 def stop_local_solver_if_owned(timeout: float = 5.0) -> None:
-    return None
+    try:
+        from .browser_pool import shutdown_browser_pool
+        shutdown_browser_pool(timeout=timeout)
+    except Exception:
+        pass
