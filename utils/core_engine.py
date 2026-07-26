@@ -165,6 +165,57 @@ def set_cpa_auth_file_status(
         return False
 
 
+
+def _is_xai_like_token(token_or_item: Any) -> bool:
+    """识别 Grok/xAI 账号（CPA 文件或 Sub2API 账号项）。"""
+    if not isinstance(token_or_item, dict):
+        return False
+    for key in ("type", "provider", "platform", "status"):
+        val = str(token_or_item.get(key) or "").lower()
+        if "xai" in val or "grok" in val:
+            return True
+    creds = token_or_item.get("credentials")
+    if isinstance(creds, dict):
+        for key in ("type", "provider", "platform"):
+            val = str(creds.get(key) or "").lower()
+            if "xai" in val or "grok" in val:
+                return True
+    return False
+
+
+def _is_codex_free_cpa_file(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    typ = str(item.get("type", "")).lower()
+    provider = str(item.get("provider", "")).lower()
+    if "codex" not in typ and "codex" not in provider:
+        return False
+    id_token = item.get("id_token") if isinstance(item.get("id_token"), dict) else {}
+    plan = str(id_token.get("plan_type") or id_token.get("planType") or "").lower()
+    return plan == "free"
+
+
+def _filter_cpa_inventory_files(all_files: list) -> list:
+    """按当前注册平台筛选 CPA 云端库存。"""
+    files = all_files if isinstance(all_files, list) else []
+    provider = str(getattr(cfg, "REG_PROVIDER", "openai") or "openai").strip().lower()
+    if provider == "grok":
+        return [f for f in files if _is_xai_like_token(f)]
+    return [f for f in files if _is_codex_free_cpa_file(f)]
+
+
+def _is_sub2api_openai_free_item(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("platform") or "").lower() != "openai":
+        return False
+    plan = str((item.get("credentials") or {}).get("plan_type", "free")).lower()
+    if plan != "free":
+        return False
+    extra = item.get("extra") or {}
+    return int(extra.get("codex_5h_window_minutes", 0) or 0) == 0
+
+
 def upload_to_cpa_integrated(
     token_data: dict, api_url: str, api_token: str, custom_filename: str = None
 ) -> Tuple[bool, str]:
@@ -335,7 +386,40 @@ def refresh_oauth_token(refresh_token: str, proxies: Any = None) -> Tuple[bool, 
     return _refresh_oauth_token(refresh_token, proxies=proxies)
 
 
+
+def test_cpa_xai_auth_file(item: dict) -> Tuple[bool, str]:
+    """CPA 中的 Grok/xAI 凭证轻量测活（不走 ChatGPT）。"""
+    if not isinstance(item, dict):
+        return False, "无效凭证"
+    access_token = str(item.get("access_token") or "").strip()
+    if not access_token:
+        return False, "缺少 access_token"
+    base_url = str(item.get("base_url") or "https://cli-chat-proxy.grok.com/v1").strip().rstrip("/")
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    extra_headers = item.get("headers")
+    if isinstance(extra_headers, dict):
+        for k, v in extra_headers.items():
+            if v is not None:
+                headers[str(k)] = str(v)
+    try:
+        resp = requests.get(
+            f"{base_url}/models",
+            headers=headers,
+            timeout=30,
+            impersonate="chrome",
+        )
+        code = int(getattr(resp, "status_code", 0) or 0)
+        if code == 200:
+            return True, "正常"
+        if code in (401, 403):
+            return False, f"凭证失效 HTTP {code}"
+        return False, f"HTTP {code}"
+    except Exception as exc:
+        return False, f"测活异常: {exc}"
+
+
 def test_cliproxy_auth_file(item: dict, api_url: str, api_token: str) -> Tuple[bool, str]:
+    """通过 CPA/CLIProxy 的 api-call 测活。OpenAI 走 ChatGPT ；Grok/xAI 走其 models。"""
     auth_index = item.get("auth_index")
     base_url   = api_url.strip().rstrip("/")
     call_url   = (
@@ -343,16 +427,38 @@ def test_cliproxy_auth_file(item: dict, api_url: str, api_token: str) -> Tuple[b
         if "/auth-files" in base_url
         else f"{base_url}/v0/management/api-call"
     )
+
+    is_xai = _is_xai_like_token(item)
+    if is_xai:
+        grok_base = str(item.get("base_url") or "https://cli-chat-proxy.grok.com/v1").strip().rstrip("/")
+        target_url = f"{grok_base}/models"
+        header = {
+            "Authorization": "Bearer $TOKEN$",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        extra_headers = item.get("headers")
+        if isinstance(extra_headers, dict):
+            for k, v in extra_headers.items():
+                key = str(k)
+                if key.lower() == "authorization":
+                    continue
+                if v is not None:
+                    header[key] = str(v)
+    else:
+        target_url = "https://chatgpt.com/backend-api/wham/usage"
+        header = {
+            "Authorization": "Bearer $TOKEN$",
+            "Content-Type": "application/json",
+            "User-Agent": DEFAULT_CLIPROXY_UA,
+            "Chatgpt-Account-Id": str(item.get("account_id") or ""),
+        }
+
     payload = {
         "authIndex": auth_index,
-        "method":    "GET",
-        "url":       "https://chatgpt.com/backend-api/wham/usage",
-        "header": {
-            "Authorization":     "Bearer $TOKEN$",
-            "Content-Type":      "application/json",
-            "User-Agent":        DEFAULT_CLIPROXY_UA,
-            "Chatgpt-Account-Id": str(item.get("account_id") or ""),
-        },
+        "method": "GET",
+        "url": target_url,
+        "header": header,
     }
     try:
         resp = requests.post(
@@ -362,10 +468,16 @@ def test_cliproxy_auth_file(item: dict, api_url: str, api_token: str) -> Tuple[b
         )
         if resp.status_code != 200:
             return False, f"HTTP {resp.status_code}"
-        data        = resp.json()
-        item['_raw_usage'] = data
+        data = resp.json()
+        item["_raw_usage"] = data
         status_code = data.get("status_code", 0)
-        reason      = _extract_cliproxy_failure_reason(data, cfg.MIN_REMAINING_WEEKLY_PERCENT)
+        if is_xai:
+            # Grok 无 ChatGPT 周限额结构，只按上游 HTTP 状态判断
+            if int(status_code or 0) >= 400:
+                return False, f"HTTP {status_code}"
+            return True, "正常"
+
+        reason = _extract_cliproxy_failure_reason(data, cfg.MIN_REMAINING_WEEKLY_PERCENT)
         if status_code >= 400 or reason:
             return False, reason or f"HTTP {status_code}"
         return True, "正常"
@@ -431,6 +543,7 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
     name        = item.get("name")
     email = name.replace(".json", "")
     is_disabled = item.get("disabled", False)
+    is_xai = _is_xai_like_token(item)
     is_ok, msg  = test_cliproxy_auth_file(item, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)
 
     if is_ok:
@@ -439,9 +552,13 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
         except Exception:
             pass
         if is_disabled:
-            can_reenable, reason = _should_reenable_cpa_account(
-                item.get("_raw_usage"), cfg.MIN_REMAINING_WEEKLY_PERCENT
-            )
+            if is_xai:
+                # Grok/xAI 无 ChatGPT 周限额字段，测活通过即可恢复启用
+                can_reenable, reason = True, "Grok/xAI 测活通过"
+            else:
+                can_reenable, reason = _should_reenable_cpa_account(
+                    item.get("_raw_usage"), cfg.MIN_REMAINING_WEEKLY_PERCENT
+                )
             if not can_reenable:
                 print(f"[{ts()}] [INFO] 测活: {mask_email(name)} 额度尚未恢复（{reason}），继续保持禁用状态。")
                 return False
@@ -456,6 +573,15 @@ def process_account_worker(i: int, total: int, item: dict, args: Any) -> bool:
         return True
 
     print(f"[{ts()}] [WARNING] 测活: 凭证 {mask_email(name)} 失效，原因: {msg}")
+
+    if is_xai:
+        # Grok 不走 OpenAI refresh / OAuth 提权
+        try:
+            db_manager.update_account_status([email], 0)
+        except Exception:
+            pass
+        _handle_dead_account(name, is_disabled)
+        return False
 
     if "周限额" in msg or "usage_limit_reached" in msg:
         if cfg.REMOVE_ON_LIMIT_REACHED:
@@ -618,6 +744,14 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
     global run_stats
 
     last_email = mail_service.get_last_email()
+    if (not last_email or "@" not in last_email) and result and isinstance(result, (tuple, list)) and len(result) >= 1:
+        try:
+            _tmp = json.loads(result[0]) if result[0] and result[0] != "retry_403" else {}
+            if isinstance(_tmp, dict) and "@" in str(_tmp.get("email") or ""):
+                last_email = str(_tmp.get("email"))
+                mail_service.set_last_email(last_email)
+        except Exception:
+            pass
     if not last_email or "@" not in last_email:
         return "failed"
 
@@ -686,12 +820,20 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
         with _stats_lock: run_stats["success"] += 1
         token_data    = json.loads(token_json_str)
         account_email = token_data.get("email", "unknown")
+
+        if "agentIdentity" in token_data or token_data.get("auth_mode") == "agentIdentity":
+            account_email = token_data.get("agentIdentity", {}).get("email", account_email)
+            token_data = {
+                "email": account_email,
+                "status": "Codex_Identity",
+                "codex_agent": token_data.copy()
+            }
+            token_json_str = json.dumps(token_data, ensure_ascii=False)
+
         if run_ctx and run_ctx.get('device_id') and run_ctx.get('user_agent'):
             token_data['device_id'] = run_ctx['device_id']
             token_data['user_agent'] = run_ctx['user_agent']
             token_json_str = json.dumps(token_data, ensure_ascii=False)
-
-
 
         domain_result = mail_service.record_domain_success(account_email if account_email and "@" in account_email else cur_dom)
         if domain_result:
@@ -699,7 +841,11 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             extra_text = f"，冷却结束时间: {cooldown_text}" if cooldown_text else ""
             print(f"[{ts()}] [INFO] 成功域名 {mask_email(domain_result.get('domain', cur_dom or ''))} -> 失败 {domain_result.get('fail_count', 0)} / 成功 {domain_result.get('success_count', 0)}{extra_text}")
 
-        # 存入本地数据库
+        is_grok_token = (
+            str(token_data.get("type", "")).lower() == "xai"
+            or str(token_data.get("provider", "")).lower() == "grok"
+            or str(getattr(cfg, "REG_PROVIDER", "openai")).lower() == "grok"
+        )
         if cpa_upload:
             should_sync = cfg.SAVE_TO_LOCAL_IN_CPA_MODE
             mode_label = "CPA模式"
@@ -709,6 +855,9 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
         else:
             should_sync = True
             mode_label = "常规模式"
+        if is_grok_token:
+            # 仅调整展示名；是否入库由上面仓管模式开关决定
+            mode_label = f"Grok/{mode_label}"
 
         if should_sync:
             if db_manager.save_account_to_db(account_email, password, token_json_str):
@@ -739,13 +888,14 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
             else:
                 success, up_msg = upload_to_cpa_integrated(token_data, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)
                 if success:
-                    print(f"[{ts()}] [SUCCESS] 补货凭证 {mask_email(account_email)} 云端上传成功！")
+                    platform_tag = "Grok/CPA" if is_grok_token else "OpenAI"
+                    print(f"[{ts()}] [SUCCESS] [{platform_tag}] 补货凭证 {mask_email(account_email)} 已自动同步至 CPA！")
                     try:
                         db_manager.update_account_push_info([account_email], "CPA", mode="sync")
                     except Exception:
                         pass
                 else:
-                    print(f"[{ts()}] [ERROR] 云端上传失败: {up_msg}")
+                    print(f"[{ts()}] [ERROR] CPA 云端上传失败: {up_msg}")
 
         if getattr(cfg, "LOCAL_MS_POOL_FISSION", False) and cfg.EMAIL_API_MODE == "local_microsoft":
             db_manager.update_pool_fission_result(master_email, is_blocked=False, is_raw=is_raw)
@@ -782,6 +932,30 @@ def handle_registration_result(result: Any, cpa_upload: bool = False, run_ctx: d
                 print(f"[Plus激活] 入队失败 {account_email}: {e}")
     return ret_status
 
+
+def dispatch_register(proxy, run_ctx=None, assigned_domain=None, batch_id=None, worker_index=None):
+    """按 reg_provider 分发注册实现。默认 openai，grok 走 xAI 协议注册。"""
+    if run_ctx is None:
+        run_ctx = {}
+    provider = str(getattr(cfg, "REG_PROVIDER", "openai") or "openai").strip().lower()
+    if provider == "grok":
+        from utils.grok_auth.register import run as grok_run
+        return grok_run(
+            proxy,
+            run_ctx=run_ctx,
+            assigned_domain=assigned_domain,
+            batch_id=batch_id,
+            worker_index=worker_index,
+        )
+    return run(
+        proxy,
+        run_ctx=run_ctx,
+        assigned_domain=assigned_domain,
+        batch_id=batch_id,
+        worker_index=worker_index,
+    )
+
+
 def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False, assigned_domain=None, batch_id=None, worker_index=None):
     proxy = format_docker_url(proxy)
     """切节点 → 注册 → 处理结果。"""
@@ -792,7 +966,7 @@ def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False, assigned_d
     result = None
     run_ctx = {}
     try:
-        result = run(
+        result = dispatch_register(
             proxy,
             run_ctx=run_ctx,
             assigned_domain=assigned_domain,
@@ -982,12 +1156,14 @@ def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> 
 def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: Any) -> bool:
     """Sub2API 测活 Worker（使用 Sub2API /test SSE 接口）"""
     if hasattr(args, 'check_stop') and args.check_stop(): return False
-    creds = item.get("credentials", {})
-    if item.get("platform") != "openai" or str(creds.get("plan_type", "free")).lower() != "free":
+    is_grok = _is_xai_like_token(item)
+    if not is_grok and not _is_sub2api_openai_free_item(item):
         return True
     name = item.get("name", "unknown")
     account_id = item.get("id")
-    result, reason = client.test_account(account_id)
+    # Grok 用 grok-4.5；OpenAI 继续用配置的测活模型
+    test_model = "grok-4.5" if is_grok else None
+    result, reason = client.test_account(account_id, model_id=test_model)
 
     if result == "ok":
         print(f"[{ts()}] [SUCCESS] Sub2API测活: {mask_email(name)} 状态健康")
@@ -1013,6 +1189,14 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
 
     print(f"[{ts()}] [ERROR] Sub2API测活: {mask_email(name)} 测活失败 ({reason})")
     refresh_success = False
+    if is_grok:
+        # Grok 不走 OpenAI refresh / OAuth 提权
+        try:
+            db_manager.update_account_status_by_fuzzy_name(name, 0)
+        except Exception:
+            pass
+        _handle_sub2api_dead_account(item, client, is_disabled=False)
+        return False
     if not cfg.SUB2API_ENABLE_TOKEN_REVIVE:
         print(f"[{ts()}] [ERROR] Token 普通复活已关闭。")
     else:
@@ -1243,27 +1427,27 @@ async def perform_cpa_check(args, async_stop_event, loop, executor=None):
         timeout=20,
     )
     all_files = res.json().get("files", [])
-    codex_files = [
-        f for f in all_files
-        if ("codex" in str(f.get("type", "")).lower() or "codex" in str(f.get("provider", "")).lower())
-           and (str(f.get("id_token", {}).get("plan_type", "")).lower() == "free"
-                or str(f.get("id_token", {}).get("planType", "")).lower() == "free")
-    ]
-    total_files = len(codex_files)
+    inventory_files = _filter_cpa_inventory_files(all_files)
+    # codex 与 xai 都走 CPA api-call（test_cliproxy_auth_file 内部分流）
+    test_files = list(inventory_files)
+    total_files = len(test_files)
+    xai_count = sum(1 for f in test_files if _is_xai_like_token(f))
+    if xai_count:
+        print(f"[{ts()}] [INFO] CPA 库存含 Grok/xAI {xai_count} 个，将通过 CPA api-call 测活")
 
     if executor is not None:
         futures = [
-            loop.run_in_executor(executor, process_account_worker, i, total_files, item, args)
-            for i, item in enumerate(codex_files, 1)
+            loop.run_in_executor(executor, process_account_worker, i, len(test_files), item, args)
+            for i, item in enumerate(test_files, 1)
         ]
-        results = await asyncio.gather(*futures)
+        results = await asyncio.gather(*futures) if futures else []
     else:
         with ThreadPoolExecutor(max_workers=cfg.CPA_THREADS) as _ex:
             futures = [
-                loop.run_in_executor(_ex, process_account_worker, i, total_files, item, args)
-                for i, item in enumerate(codex_files, 1)
+                loop.run_in_executor(_ex, process_account_worker, i, len(test_files), item, args)
+                for i, item in enumerate(test_files, 1)
             ]
-            results = await asyncio.gather(*futures)
+            results = await asyncio.gather(*futures) if futures else []
 
     valid_count = sum(1 for r in results if r)
     print(f"[{ts()}] [INFO] CPA 测活结束，当前有效数: {valid_count} / {total_files}")
@@ -1279,9 +1463,7 @@ async def perform_sub2api_check(args, async_stop_event, loop, client, executor=N
 
     filtered_list = [
         item for item in account_list
-        if item.get("platform") == "openai"
-           and str(item.get("credentials", {}).get("plan_type", "free")).lower() == "free"
-           and (item.get("extra") or {}).get("codex_5h_window_minutes", 0) == 0
+        if _is_xai_like_token(item) or _is_sub2api_openai_free_item(item)
     ]
 
     total_files = len(filtered_list)
@@ -1367,13 +1549,8 @@ async def cpa_main_loop(args, async_stop_event: asyncio.Event, executor=None):
                     timeout=20,
                 )
                 all_files = res.json().get("files", [])
-                codex_files = [
-                    f for f in all_files
-                    if ("codex" in str(f.get("type", "")).lower() or "codex" in str(f.get("provider", "")).lower())
-                       and (str(f.get("id_token", {}).get("plan_type", "")).lower() == "free"
-                            or str(f.get("id_token", {}).get("planType", "")).lower() == "free")
-                ]
-                total_files = len(codex_files)
+                inventory_files = _filter_cpa_inventory_files(all_files)
+                total_files = len(inventory_files)
                 valid_count = total_files
                 print(f"[{ts()}] [INFO] 当前云端总数: {total_files} (未开启自动巡检，默认全部视为有效)")
 
@@ -1629,7 +1806,7 @@ async def sub2api_main_loop(args, async_stop_event: asyncio.Event, executor=None
                         if not smart_switch_node(p):
                             print(f"[{ts()}] [WARNING] [Sub2API补货] 全局节点切换失败...")
                     run_ctx = {}
-                    result = run(
+                    result = dispatch_register(
                         p,
                         run_ctx=run_ctx,
                         assigned_domain=assigned_domain,
@@ -2208,6 +2385,17 @@ class RegEngine:
         self.thread_stop_event.set()
         if self.loop and self.async_stop_event:
             self.loop.call_soon_threadsafe(self.async_stop_event.set)
+        # 停止时立刻关掉 Grok 过盾浏览器，避免窗口/进程残留
+        try:
+            from utils.grok_auth.embedded_turnstile import stop_embedded_solver
+            stop_embedded_solver(timeout=5.0)
+        except Exception:
+            pass
+        try:
+            from utils.grok_auth.local_solver_manager import stop_local_solver_if_owned
+            stop_local_solver_if_owned(timeout=5.0)
+        except Exception:
+            pass
         time.sleep(0.5)
         self._shutdown_executor()
         if cfg.EMAIL_API_MODE in ["local_microsoft", "gmail_fission"]:

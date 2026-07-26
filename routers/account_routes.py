@@ -20,7 +20,7 @@ router = APIRouter()
 
 class ExportReq(BaseModel): emails: list[str]
 class DeleteReq(BaseModel): emails: list[str]
-class CloudAccountItem(BaseModel): id: str; type: str
+class CloudAccountItem(BaseModel): id: str; type: str; platform: Optional[str] = None
 class CloudActionReq(BaseModel): accounts: List[CloudAccountItem]; action: str
 class ImportMailboxReq(BaseModel): raw_text: str
 class DeleteMailboxReq(BaseModel): ids: list[Any]
@@ -398,6 +398,8 @@ def get_cloud_accounts(background_tasks: BackgroundTasks, types: str = "sub2api,
                         "last_check": raw_time,
                         "details": {
                             "plan_type": item.get("credentials", {}).get("plan_type", "未知"),
+                            "platform": item.get("platform") or item.get("type") or item.get("provider") or "",
+                            "type": item.get("type") or item.get("platform") or "",
                             "codex_5h_used_percent": extra.get("codex_5h_used_percent", 0),
                             "codex_7d_used_percent": extra.get("codex_7d_used_percent", 0),
                             "window_stats": window_stats
@@ -417,13 +419,24 @@ def get_cloud_accounts(background_tasks: BackgroundTasks, types: str = "sub2api,
                                headers={"Authorization": f"Bearer {cfg.CPA_API_TOKEN}"}, timeout=20,
                                impersonate="chrome110")
             if res.status_code == 200:
-                for item in [f for f in res.json().get("files", []) if
-                             "codex" in str(f.get("type", "")).lower() or "codex" in str(
-                                 f.get("provider", "")).lower()]:
-                    combined_data.append({"id": item.get("name", ""), "account_type": "cpa",
-                                          "credential": item.get("name", "").replace(".json", ""),
-                                          "status": "disabled" if item.get("disabled", False) else "active",
-                                          "details": {}, "last_check": "-"})
+                for item in res.json().get("files", []):
+                    typ = str(item.get("type", "")).lower()
+                    provider = str(item.get("provider", "")).lower()
+                    is_codex = "codex" in typ or "codex" in provider
+                    is_xai = ("xai" in typ or "xai" in provider or "grok" in typ or "grok" in provider)
+                    if not (is_codex or is_xai):
+                        continue
+                    combined_data.append({
+                        "id": item.get("name", ""),
+                        "account_type": "cpa",
+                        "credential": item.get("name", "").replace(".json", ""),
+                        "status": "disabled" if item.get("disabled", False) else "active",
+                        "details": {
+                            "platform": "xai" if is_xai else "codex",
+                            "type": item.get("type") or item.get("provider") or ("xai" if is_xai else "codex"),
+                        },
+                        "last_check": "-",
+                    })
         except Exception as e:
             print(f"[{cfg.ts()}] [CPA] 拉取 CPA 数据异常，如果未填写相关数据可忽略该提示，将跳过: {e}")
     if "image2api" in type_list and getattr(cfg, 'ENABLE_IMAGE2API_MODE', False):
@@ -536,14 +549,39 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
             if res.status_code == 200: cpa_files_map = {f.get("name"): f for f in res.json().get("files", [])}
         except:
             pass
+
+    sub2_item_map = {}
+    if any(a.type == "sub2api" for a in req.accounts) and req.action == "check" and sub2api_client:
+        try:
+            ok_all, all_items = sub2api_client.get_all_accounts()
+            if ok_all and isinstance(all_items, list):
+                for it in all_items:
+                    sub2_item_map[str(it.get("id", ""))] = it
+        except Exception:
+            pass
+
+    def _resolve_sub2_test_model(acc: CloudAccountItem):
+        platform = str(getattr(acc, "platform", None) or "").lower()
+        if "grok" in platform or "xai" in platform:
+            return "grok-4.5"
+        item = sub2_item_map.get(str(acc.id), {})
+        if core_engine._is_xai_like_token(item):
+            return "grok-4.5"
+        return None
+
     def _worker(acc: CloudAccountItem):
         is_success, details = False, None
         try:
             if acc.type == "sub2api" and sub2api_client:
                 if req.action == "check":
-                    result, _ = sub2api_client.test_account(acc.id)
+                    model_id = _resolve_sub2_test_model(acc)
+                    result, reason = sub2api_client.test_account(acc.id, model_id=model_id)
                     is_success = (result == "ok")
-                    if not is_success: sub2api_client.set_account_status(acc.id, disabled=True)
+                    if not is_success:
+                        sub2api_client.set_account_status(acc.id, disabled=True)
+                        details = {"check_msg": str(reason or "测活失败"), "test_model": model_id or getattr(cfg, "SUB2API_TEST_MODEL", "")}
+                    else:
+                        details = {"check_msg": "测活成功", "test_model": model_id or getattr(cfg, "SUB2API_TEST_MODEL", "")}
                 elif req.action in ["enable", "disable"]:
                     is_success = sub2api_client.set_account_status(acc.id, disabled=(req.action == "disable"))
                 elif req.action == "delete":
@@ -552,10 +590,21 @@ def process_cloud_action(req: CloudActionReq, token: str = Depends(verify_token)
             elif acc.type == "cpa" and getattr(cfg, 'CPA_API_URL', None):
                 if req.action == "check":
                     item = cpa_files_map.get(acc.id, {"name": acc.id, "disabled": False})
-                    is_success, _ = core_engine.test_cliproxy_auth_file(item, cfg.CPA_API_URL, cfg.CPA_API_TOKEN)
-                    if '_raw_usage' in item: details = parse_cpa_usage_to_details(item['_raw_usage'])
-                    if not is_success: core_engine.set_cpa_auth_file_status(cfg.CPA_API_URL, cfg.CPA_API_TOKEN, acc.id,
-                                                                            disabled=True)
+                    is_success, check_msg = core_engine.test_cliproxy_auth_file(
+                        item, cfg.CPA_API_URL, cfg.CPA_API_TOKEN
+                    )
+                    if core_engine._is_xai_like_token(item):
+                        details = {
+                            "platform": "xai",
+                            "type": item.get("type") or item.get("provider") or "xai",
+                            "check_msg": check_msg,
+                        }
+                    elif "_raw_usage" in item:
+                        details = parse_cpa_usage_to_details(item["_raw_usage"])
+                    if not is_success:
+                        core_engine.set_cpa_auth_file_status(
+                            cfg.CPA_API_URL, cfg.CPA_API_TOKEN, acc.id, disabled=True
+                        )
                 elif req.action in ["enable", "disable"]:
                     is_success = core_engine.set_cpa_auth_file_status(cfg.CPA_API_URL, cfg.CPA_API_TOKEN, acc.id,
                                                                       disabled=(req.action == "disable"))

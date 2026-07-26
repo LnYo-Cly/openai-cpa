@@ -602,6 +602,9 @@ async def start_task(token: str = Depends(verify_token)):
     except Exception as e:
         print(f"[{core_engine.ts()}] [警告] 启动重载提示: {e}")
 
+    reg_provider = str(getattr(core_engine.cfg, "REG_PROVIDER", "openai") or "openai").strip().lower()
+    print(f"[{core_engine.ts()}] [系统] 启动任务，注册平台={reg_provider}")
+
     default_proxy = getattr(core_engine.cfg, 'DEFAULT_PROXY', None)
     args = DummyArgs(proxy=default_proxy if default_proxy else None)
     core_engine.run_stats.update({"success": 0, "failed": 0, "retries": 0, "pwd_blocked": 0, "phone_verify": 0, "start_time": time.time(),"target": 0})

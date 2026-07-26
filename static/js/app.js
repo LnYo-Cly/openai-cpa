@@ -1477,6 +1477,16 @@ createApp({
                 if (!this.config.reg_mode) {
                         this.config.reg_mode = 'email';
                     }
+                if (!this.config.reg_provider) {
+                        this.config.reg_provider = 'openai';
+                    }
+                if (!this.config.grok || typeof this.config.grok !== 'object') {
+                        this.config.grok = {
+                            oauth_timeout: 180
+                        };
+                    } else {
+                        if (this.config.grok.oauth_timeout === undefined) this.config.grok.oauth_timeout = 180;
+                    }
                 if (!this.config.tg_bot.template_success) {
                     this.config.tg_bot.template_success = "🎉 <b>注册成功</b>\n⏰ 时间: <code>{time}</code>\n📧 账号: <code>{email}</code>\n🔑 密码: <code>{password}</code>";
                 }
@@ -2378,10 +2388,10 @@ createApp({
             const selectedObjs = this.accounts.filter(acc => this.selectedAccounts.includes(acc.email));
             const targetAccounts = selectedObjs.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('SUB2API'));
 
-            if (targetAccounts.length === 0) {
-                this.showToast("⚠️ 选中的账号都已推送过 Sub2API，无需重复推送！", "warning");
-                return;
-            }
+            // if (targetAccounts.length === 0) {
+            //     this.showToast("⚠️ 选中的账号都已推送过 Sub2API，无需重复推送！", "warning");
+            //     return;
+            // }
 
             const skippedCount = this.selectedAccounts.length - targetAccounts.length;
             const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
@@ -2415,10 +2425,10 @@ createApp({
             const selectedObjs = this.accounts.filter(acc => this.selectedAccounts.includes(acc.email));
             const targetAccounts = selectedObjs.filter(acc => !acc.push_platform || !acc.push_platform.toUpperCase().includes('IMAGE2API'));
 
-            if (targetAccounts.length === 0) {
-                this.showToast("⚠️ 选中的账号都已推送过 Image2API，无需重复推送！", "warning");
-                return;
-            }
+            // if (targetAccounts.length === 0) {
+            //     this.showToast("⚠️ 选中的账号都已推送过 Image2API，无需重复推送！", "warning");
+            //     return;
+            // }
 
             const skippedCount = this.selectedAccounts.length - targetAccounts.length;
             const extraMsg = skippedCount > 0 ? `\n(已自动帮您过滤跳过 ${skippedCount} 个重复账号)` : '';
@@ -2492,25 +2502,25 @@ createApp({
                 if (!this.config.cpa_mode.enable) {
                     this.showToast("🚫 无法推送：请先配置 CPA 参数！", "warning"); return;
                 }
-                if (account.push_platform && account.push_platform.toUpperCase().includes('CPA')) {
-                    this.showToast("⚠️ 该账号已在 CPA 平台，无需重复推送！", "warning"); return;
-                }
+                // if (account.push_platform && account.push_platform.toUpperCase().includes('CPA')) {
+                //     this.showToast("⚠️ 该账号已在 CPA 平台，无需重复推送！", "warning"); return;
+                // }
             }
             if (action === 'push_sub2api') {
                 if (!this.config.sub2api_mode.enable) {
                     this.showToast("🚫 无法推送：请先配置 Sub2API 参数！", "warning"); return;
                 }
-                if (account.push_platform && account.push_platform.toUpperCase().includes('SUB2API')) {
-                    this.showToast("⚠️ 该账号已在 Sub2API 平台，无需重复推送！", "warning"); return;
-                }
+                // if (account.push_platform && account.push_platform.toUpperCase().includes('SUB2API')) {
+                //     this.showToast("⚠️ 该账号已在 Sub2API 平台，无需重复推送！", "warning"); return;
+                // }
             }
             if (action === 'push_image2api') {
                 if (!this.config.image2api_mode || !this.config.image2api_mode.enable) {
                     this.showToast("🚫 无法推送：请先配置 Image2API 参数！", "warning"); return;
                 }
-                if (account.push_platform && account.push_platform.toUpperCase().includes('IMAGE2API')) {
-                    this.showToast("⚠️ 该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
-                }
+                // if (account.push_platform && account.push_platform.toUpperCase().includes('IMAGE2API')) {
+                //     this.showToast("⚠️ 该账号已在 Image2API 平台，无需重复推送！", "warning"); return;
+                // }
             }
             this.currentTab = 'console';
             try {
@@ -2987,12 +2997,42 @@ createApp({
                     if (Array.isArray(raw)) groups = raw;
                     else if (raw && Array.isArray(raw.list)) groups = raw.list;
                     else if (raw && Array.isArray(raw.data)) groups = raw.data;
+                    else if (raw && Array.isArray(raw.items)) groups = raw.items;
 
                     this.sub2apiGroups = groups;
+
+                    // 清理配置里已在线上删除的分组 ID，避免推送失败
+                    const validIds = new Set(
+                        groups
+                            .map(g => String((g && (g.id ?? g.group_id ?? g.groupId ?? g.ID)) ?? '').trim())
+                            .filter(Boolean)
+                    );
+                    const selected = String(this.config.sub2api_mode.account_group_ids || '')
+                        .split(',')
+                        .map(s => s.trim())
+                        .filter(Boolean);
+                    const kept = selected.filter(id => validIds.has(id));
+                    const dropped = selected.filter(id => !validIds.has(id));
+                    if (dropped.length) {
+                        this.config.sub2api_mode.account_group_ids = kept.join(',');
+                        try {
+                            await this.saveConfig();
+                            this.showToast(
+                                `已清除失效分组 ID: ${dropped.join(', ')}，并已自动保存配置`,
+                                'warning'
+                            );
+                        } catch (e) {
+                            this.showToast(
+                                `已清除失效分组 ID: ${dropped.join(', ')}。自动保存失败，请手动点击保存配置`,
+                                'warning'
+                            );
+                        }
+                    }
+
                     if (groups.length === 0) {
-                        this.showToast('No Sub2API groups found. Create one in Sub2API first.', 'warning');
-                    } else {
-                        this.showToast(`Fetched ${groups.length} Sub2API groups.`, 'success');
+                        this.showToast('未找到 Sub2API 分组，请先在 Sub2API 创建。', 'warning');
+                    } else if (!dropped.length) {
+                        this.showToast(`已获取 ${groups.length} 个 Sub2API 分组`, 'success');
                     }
                 } else {
                     this.showToast(data.message || 'Failed to fetch Sub2API groups.', 'error');
@@ -3356,7 +3396,7 @@ async exportSub2Api() {
             try {
                 const res = await this.authFetch('/api/cloud/action', {
                     method: 'POST',
-                    body: JSON.stringify({ accounts: [{id: String(acc.id), type: acc.account_type}], action: action })
+                    body: JSON.stringify({ accounts: [{id: String(acc.id), type: acc.account_type, platform: (acc.details && (acc.details.platform || acc.details.type)) || ''}], action: action })
                 });
                 const result = await res.json();
                 if (result.updated_details && result.updated_details[acc.id]) {
@@ -3414,9 +3454,11 @@ async exportSub2Api() {
                 return this.showToast('请先勾选需要操作的账号', 'warning');
             }
             if (action === 'delete' && !confirm(`⚠️ 危险操作：确认删除选中的 ${this.selectedCloud.length} 个账号吗？`)) return;
-            const actionAccounts = this.selectedCloud.map(key => {
-                const [id, type] = key.split('|');
-                return { id: String(id), type: type };
+            const actionAccounts = this.selectedCloud.map(k => {
+                const [id, type] = String(k).split('|');
+                const row = this.cloudAccounts.find(a => String(a.id) === String(id) && a.account_type === type);
+                const platform = (row && row.details && (row.details.platform || row.details.type)) || '';
+                return { id: String(id), type: type, platform };
             });
             const actionName = action === 'check' ? '测活' : (action === 'enable' ? '启用' : (action === 'disable' ? '禁用' : (action === 'refresh' ? '刷新凭证' : '删除')));
             this.showToast(`正在批量 ${actionName} ${this.selectedCloud.length} 个账号，耗时较长请耐心等待...`, 'info');
@@ -3847,6 +3889,20 @@ async exportSub2Api() {
                     this._extDetectionTimer = null;
                 }
             }, 2000);
+        },
+        async changeRegProvider(provider) {
+            if (!this.config) return;
+            const next = (provider === 'grok') ? 'grok' : 'openai';
+            this.config.reg_provider = next;
+            if (!this.config.grok || typeof this.config.grok !== 'object') {
+                this.config.grok = {
+                            oauth_timeout: 180
+                        };
+            } else {
+                if (this.config.grok.oauth_timeout === undefined) this.config.grok.oauth_timeout = 180;
+            }
+            await this.saveConfig();
+            this.showToast(`注册平台已切换为: ${next === 'grok' ? 'Grok/xAI' : 'OpenAI(默认)'}`, 'info');
         },
         async changeRegMode(mode) {
             if (!this.config) return;

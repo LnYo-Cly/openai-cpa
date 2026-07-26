@@ -18,3 +18,7 @@ cachetools
 dnspython
 psutil
 PyNaCl
+quart>=0.19
+camoufox>=0.4
+patchright>=1.50
+rich>=13

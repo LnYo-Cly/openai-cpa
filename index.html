@@ -250,7 +250,7 @@
             </aside>
 
             <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-                <header class="bg-white/70 backdrop-blur-2xl border-b border-slate-200/60 text-slate-800 p-3 md:p-4 shrink-0 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-30 relative">
+                <header class="bg-white/70 backdrop-blur-2xl border-b border-slate-200/60 text-slate-800 px-3 py-2.5 md:px-4 md:py-3 shrink-0 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-30 relative">
                     <div class="w-full xl:max-w-[85%] mx-auto console-topbar">
                         <div class="console-topbar-primary">
                             <button @click="toggleMobileNav()" class="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 hover:text-indigo-600 active:scale-95 transition-all shrink-0">
@@ -283,24 +283,30 @@
                         </div>
 
                         <div class="console-topbar-actions">
-                            <div v-if="config" class="console-mode-switch shrink-0">
-                                <div class="flex items-center w-full">
-                                    <div class="console-mode-switch-inner bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200 shrink-0">
-                                        <button @click="changeRegMode('email')"
-                                                :class="['flex-1 py-1.5 md:py-2 px-2 md:px-3 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap',
-                                                         config.reg_mode === 'email' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
-                                            邮箱
-                                        </button>
-                                        <button @click="changeRegMode('phone')"
-                                                :class="['flex-1 py-1.5 md:py-2 px-2 md:px-3 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap',
-                                                         config.reg_mode === 'phone' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700']">
-                                            手机
-                                        </button>
-                                    </div>
+                            <div v-if="config" class="console-switches">
+                                <div class="console-seg">
+                                    <button type="button" @click="changeRegProvider('openai')"
+                                            :class="(config.reg_provider || 'openai') === 'openai' ? 'is-active-openai' : ''">
+                                        OpenAI
+                                    </button>
+                                    <button type="button" @click="changeRegProvider('grok')"
+                                            :class="config.reg_provider === 'grok' ? 'is-active-grok' : ''">
+                                        Grok
+                                    </button>
+                                </div>
+                                <div v-show="(config.reg_provider || 'openai') === 'openai'" class="console-seg">
+                                    <button type="button" @click="changeRegMode('email')"
+                                            :class="config.reg_mode === 'email' ? 'is-active-email' : ''">
+                                        邮箱
+                                    </button>
+                                    <button type="button" @click="changeRegMode('phone')"
+                                            :class="config.reg_mode === 'phone' ? 'is-active-phone' : ''">
+                                        手机
+                                    </button>
                                 </div>
                             </div>
 
-                            <div class="console-topbar-actions">
+                            <div class="console-topbar-tools">
                                 <button @click="toggleTheme" class="console-toolbar-btn font-bold border transition-all active:scale-95 shrink-0 bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm flex items-center justify-center">
                                     <span v-if="isDarkMode" class="flex items-center gap-1.5">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
@@ -334,7 +340,7 @@
                         </div>
                     </div>
 
-                    <div class="w-full xl:max-w-[85%] mx-auto mt-4 md:mt-5 font-mono tracking-wide console-meta-strip">
+                    <div class="w-full xl:max-w-[85%] mx-auto mt-2 md:mt-3 font-mono tracking-wide console-meta-strip">
                         <span class="text-slate-500 font-bold whitespace-nowrap">成功率 <span class="text-sky-500 font-black ml-0.5">{{stats.success_rate}}</span></span>
                         <span class="text-slate-300 hidden sm:inline">•</span>
                         <span class="text-slate-500 font-bold whitespace-nowrap">成功 <span class="text-emerald-500 font-black ml-0.5">{{stats.success}}/{{stats.target}}</span></span>
@@ -1352,7 +1358,6 @@
                                 </div>
                             </div>
                         </div>
-
                         <div v-show="currentTab === 'email'" v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60">
                                 <h3 class="text-lg md:text-xl font-black text-blue-600 mb-5 flex items-center gap-2 tracking-tight"><span><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7l9 6 9-6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"></path></svg></span> 基础发信设置</h3>
@@ -5298,7 +5303,18 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 设置过大(>1000)可能导致浏览器严重卡顿
                                         </p>
                                     </div>
-
+                                    <div class="bg-indigo-50/40 p-5 md:p-6 rounded-2xl border border-indigo-100 shadow-inner mt-6">
+                                        <label class="block text-indigo-800 text-xs font-black uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                            Codex 身份全局获取 (Agent Identity)
+                                        </label>
+                                        <label class="relative inline-flex items-center cursor-pointer group">
+                                            <input type="checkbox" v-model="config.enable_codex_agent_identity" @change="saveConfig" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 shadow-inner group-hover:shadow-md"></div>
+                                            <span class="ml-3 text-sm font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">自动注册并使用 Agent Identity 格式</span>
+                                        </label>
+                                        <p class="text-[11px] text-slate-500 mt-2 font-medium">开启后，将使用新Agent Identity注册。</p>
+                                    </div>
                                     <div class="bg-slate-50 p-5 md:p-6 rounded-2xl border border-slate-200 shadow-inner">
                                         <label class="block text-slate-600 text-xs font-black uppercase tracking-wider mb-3 flex items-center">
                                             <span>集群账号上传超时（秒）</span>

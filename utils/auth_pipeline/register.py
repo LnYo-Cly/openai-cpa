@@ -748,6 +748,18 @@ def run(
                 else:
                     data = image2api_data(s_reg, target_continue_url, proxies)
 
+                codex_auth_data = None
+                is_codex_enabled = getattr(cfg, 'ENABLE_CODEX_AGENT_IDENTITY', False)
+                if is_codex_enabled and data:
+                    try:
+                        print(f"[{cfg.ts()}] [INFO] 正在为该账号静默生成 Codex Agent Identity...")
+                        codex_auth_data = _generate_codex_auth(access_token=data, proxies=proxies)
+                        print(f"[{cfg.ts()}] [SUCCESS] （{masked_login}）Codex 身份升级成功！")
+                        if isinstance(codex_auth_data, dict):
+                            codex_auth_data["email"] = login_username
+                        return json.dumps(codex_auth_data, ensure_ascii=False), password
+                    except Exception as e:
+                        return None, None
 
                 if mode_label == "常规模式":
                     if getattr(cfg, "ENABLE_IMAGE2API_MODE", False):

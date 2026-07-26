@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v17.1.4"
+APP_VERSION = "v18.1.0"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -384,6 +384,9 @@ TEMPORAM_COOKIE: str = ""
 FVIA_TOKEN: str = ""
 TMAILOR_CURRENT_TOKEN: str = ""
 REG_MODE: str = "email"
+REG_PROVIDER: str = "openai"
+# Grok
+GROK_OAUTH_TIMEOUT: float = 180.0
 DB_TYPE: str = "sqlite"
 MYSQL_CFG: dict = {}
 _sub2api_proxy_rotation_lock = threading.Lock()
@@ -408,6 +411,7 @@ TEAM_INVITE_SEAT_TYPE: str = "chatgpt"
 TEAM_INVITE_KICK_DELAY: int = 0
 TEAM_INVITE_MANAGER_EMAIL: str = ""
 TEAM_INVITE_WORKSPACE_ID: str = ""
+ENABLE_CODEX_AGENT_IDENTITY: bool = False
 def reset_sub2api_proxy_rotation():
     global _sub2api_proxy_rotation_index
     with _sub2api_proxy_rotation_lock:
@@ -493,6 +497,9 @@ def reload_all_configs(new_config_dict=None):
     global CLUSTER_SYNC_SHARED_DIR, CLUSTER_SYNC_IMPORT_POLL_SEC, CLUSTER_SYNC_MAX_RETRIES, CLUSTER_SYNC_PROGRESS_FLUSH_EVERY
     global CLUSTER_SYNC_STALE_FILE_MAX_AGE_HOURS, CLUSTER_SYNC_MAX_FILE_SIZE_MB, CLUSTER_SYNC_MAX_RECORDS, CLUSTER_SYNC_REQUIRE_CUSTOM_SECRET
     global REG_MODE
+    global REG_PROVIDER
+    # Grok 仅加载可配置项；其余固定常量不在此处改写
+    global GROK_OAUTH_TIMEOUT
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
     global DB_TYPE, MYSQL_CFG
@@ -515,6 +522,7 @@ def reload_all_configs(new_config_dict=None):
     global TEAM_MODE_ENABLE, TEAM_MODE_OVERSPEED
     global TEAM_INVITE_ENABLE, TEAM_INVITE_AUTO_KICK, TEAM_INVITE_SEAT_TYPE, TEAM_INVITE_KICK_DELAY
     global TEAM_INVITE_MANAGER_EMAIL, TEAM_INVITE_WORKSPACE_ID
+    global ENABLE_CODEX_AGENT_IDENTITY
     base_yaml_config = init_config()
 
     _db_conf = base_yaml_config.get("database", {})
@@ -632,6 +640,7 @@ def reload_all_configs(new_config_dict=None):
 
     WEB_PASSWORD = str(_c.get("web_password", "admin")).strip()
     RETAIN_REG_ONLY = safe_bool(_c.get("retain_reg_only", False))
+    ENABLE_CODEX_AGENT_IDENTITY = safe_bool(_c.get("enable_codex_agent_identity", False))
 
     EMAIL_API_MODE = _c.get("email_api_mode", "cloudflare_temp_email")
     MAIL_DOMAINS = _c.get("mail_domains", "")
@@ -970,6 +979,19 @@ def reload_all_configs(new_config_dict=None):
     CLUSTER_SYNC_REQUIRE_CUSTOM_SECRET = safe_bool(_c.get("cluster_sync_require_custom_secret", True), default=True)
 
     REG_MODE = str(_c.get("reg_mode", "email")).strip().lower()
+
+    REG_PROVIDER = str(_c.get("reg_provider", "openai")).strip().lower()
+    if REG_PROVIDER not in {"openai", "grok"}:
+        REG_PROVIDER = "openai"
+
+    # Grok
+    _grok = _c.get("grok", {}) if isinstance(_c.get("grok"), dict) else {}
+    try:
+        GROK_OAUTH_TIMEOUT = float(_grok.get("oauth_timeout", 180.0) or 180.0)
+    except Exception:
+        GROK_OAUTH_TIMEOUT = 180.0
+    if GROK_OAUTH_TIMEOUT <= 0:
+        GROK_OAUTH_TIMEOUT = 180.0
 
     _temporam = _c.get("temporam", {})
     TEMPORAM_COOKIE = str(_temporam.get("cookie") or "").strip()

@@ -46,7 +46,7 @@ It also supports **random multi-level subdomain generation**, designed to work t
 Install Python Dependencies Install the required base libraries using the requirements.txt file in the root directory:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt  python -m camoufox fetch
 ```
 
 ## ☕ Buy me a coffee
