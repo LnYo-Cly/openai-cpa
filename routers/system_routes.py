@@ -27,6 +27,7 @@ from utils.integrations.tg_notifier import send_tg_msg_async
 from utils.memory_predictor import build_memory_report
 from utils.system_maintenance import get_cleanup_status
 import utils.config as cfg
+import utils.integrations.clash_manager as clash_manager
 
 router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""用 Camoufox 在 accounts.x.ai 完成注册并拿 SSO。"""
 from __future__ import annotations
 
 import os
@@ -251,7 +250,7 @@ def _click_email_signup(page, timeout: float = 12.0) -> bool:
 def _read_turnstile_token(page) -> str:
     try:
         tok = page.evaluate(
-            '''() => {
+            """() => {
   const names = ["cf-turnstile-response", "g-recaptcha-response"];
   for (const name of names) {
     const nodes = document.querySelectorAll(
@@ -263,14 +262,84 @@ def _read_turnstile_token(page) -> str:
     }
   }
   return "";
-}'''
+}"""
         )
         return str(tok or "").strip()
     except Exception:
         return ""
 
-def _click_turnstile_if_any(page, rounds: int = 3) -> bool:
-    for _ in range(max(1, int(rounds))):
+
+def _click_turnstile_if_any(page, rounds: int = 3, log=None) -> bool:
+    left_targets = [
+        (20, 0.50),
+        (24, 0.50),
+        (28, 0.52),
+        (18, 0.48),
+        (32, 0.50),
+        (26, 0.45),
+        (22, 0.55),
+        (14, 0.50),
+    ]
+
+    def _try_click_box(box) -> bool:
+        if not box:
+            return False
+        w = float(box.get("width") or 0)
+        h = float(box.get("height") or 0)
+        if w < 12 or h < 12:
+            return False
+        for dx, y_ratio in left_targets:
+            try:
+                x = float(box["x"]) + min(dx, max(8.0, w * 0.12))
+                y = float(box["y"]) + h * float(y_ratio)
+                try:
+                    page.mouse.move(x, y)
+                except Exception:
+                    pass
+                page.mouse.click(x, y)
+                time.sleep(0.35)
+                if _read_turnstile_token(page):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    for _round_i in range(max(1, int(rounds))):
+        try:
+            iframes = page.query_selector_all('iframe[src*="challenges.cloudflare.com"]') or []
+        except Exception:
+            iframes = []
+        if not iframes:
+            try:
+                one = page.query_selector(
+                    'iframe[src*="challenges.cloudflare.com"], .cf-turnstile iframe, .cf-turnstile'
+                )
+                iframes = [one] if one else []
+            except Exception:
+                iframes = []
+
+        for handle in iframes:
+            if not handle:
+                continue
+            try:
+                box = handle.bounding_box()
+            except Exception:
+                box = None
+            if _try_click_box(box):
+                return True
+
+        try:
+            for sel in (".cf-turnstile", "[data-sitekey]", 'div[id^="cf-turnstile"]'):
+                for node in page.query_selector_all(sel) or []:
+                    try:
+                        box = node.bounding_box()
+                    except Exception:
+                        box = None
+                    if _try_click_box(box):
+                        return True
+        except Exception:
+            pass
+
         try:
             frames = list(page.frames)
         except Exception:
@@ -282,28 +351,31 @@ def _click_turnstile_if_any(page, rounds: int = 3) -> bool:
                 url = ""
             if "challenges.cloudflare.com" not in url and "turnstile" not in url:
                 continue
-            for sel in ["input[type='checkbox']", "label", "body", "#content", ".ctp-checkbox-label"]:
+            for dx, dy in ((24, 28), (20, 30), (28, 26), (16, 32), (32, 30)):
                 try:
-                    el = frame.query_selector(sel)
-                    if not el:
-                        continue
-                    box = el.bounding_box()
-                    if box:
-                        frame.click(sel, force=True, timeout=1500)
+                    frame.click("body", position={"x": dx, "y": dy}, force=True, timeout=1500)
+                    time.sleep(0.35)
+                    if _read_turnstile_token(page):
                         return True
                 except Exception:
                     continue
-        try:
-            handle = page.query_selector('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, [data-sitekey]')
-            if handle:
-                box = handle.bounding_box()
-                if box:
-                    page.mouse.click(box["x"] + min(24, box["width"] / 3), box["y"] + min(24, box["height"] / 2))
-                    return True
-        except Exception:
-            pass
+            try:
+                el = frame.query_selector("input[type='checkbox']")
+                if el:
+                    box = el.bounding_box()
+                    if box:
+                        x = float(box["x"]) + min(10.0, float(box["width"]) * 0.4)
+                        y = float(box["y"]) + float(box["height"]) * 0.5
+                        page.mouse.click(x, y)
+                        time.sleep(0.35)
+                        if _read_turnstile_token(page):
+                            return True
+            except Exception:
+                pass
+
         time.sleep(0.4)
-    return False
+
+    return bool(_read_turnstile_token(page))
 
 
 def _wait_turnstile_token(
@@ -312,27 +384,32 @@ def _wait_turnstile_token(
     log=None,
     *,
     rounds: int = 3,
+    headless: bool = True,
+    proxy: str = "",
 ) -> bool:
     lg = _log_fn(log)
     total = max(1, int(rounds or 1))
     per_round = max(8.0, float(timeout) / total)
+    lg("CF人机校验进行中")
+
     for i in range(1, total + 1):
-        if i == 1:
-            lg("CF人机校验进行中")
         deadline = time.time() + per_round
         while time.time() < deadline:
             if _read_turnstile_token(page):
                 lg("CF人机校验已通过")
                 return True
-            _click_turnstile_if_any(page, rounds=2)
+            _click_turnstile_if_any(page, rounds=2, log=lg)
             time.sleep(1.0)
+
         if _read_turnstile_token(page):
             lg("CF人机校验已通过")
             return True
         if i < total:
             lg(f"CF人机校验失败，重试中 {i}/{total}")
+
     lg("CF人机校验失败")
     return False
+
 
 def _signup_on_page(
     page,
@@ -346,7 +423,6 @@ def _signup_on_page(
     timeout: float = 180.0,
     log: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    """在已有 page 上完成注册并取 SSO（不负责开关浏览器）。"""
     email = (email or "").strip()
     password = password or ""
     lg = _log_fn(log)
@@ -495,7 +571,13 @@ def _signup_on_page(
 
             ts_timeout = 90.0 if not headless else 60.0
             ts_rounds = 3
-            ts_ok = _wait_turnstile_token(page, timeout=ts_timeout, log=lg, rounds=ts_rounds)
+            ts_ok = _wait_turnstile_token(
+                page,
+                timeout=ts_timeout,
+                log=lg,
+                rounds=ts_rounds,
+                headless=bool(headless),
+            )
             if not ts_ok:
                 return {
                     "ok": False,
@@ -514,7 +596,7 @@ def _signup_on_page(
                 if "sign-up" not in url_l and any(k in url_l for k in ("account", "grok.com", "consent")):
                     break
                 if not _read_turnstile_token(page):
-                    _click_turnstile_if_any(page, rounds=3)
+                    _click_turnstile_if_any(page, rounds=3, log=lg)
 
         remain = max(15.0, deadline - time.time())
         cookies_partial = _wait_for_cookies(page, ["sso"], timeout=min(90.0, remain))
@@ -567,7 +649,6 @@ def _signup_with_browser(
     timeout: float = 180.0,
     log: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    """在池内 browser 上为当前账号新建独立 Context，用完即关。"""
     context = None
     try:
         ctx_opts: Dict[str, Any] = {}
@@ -610,7 +691,6 @@ def _signup_oneshot(
     timeout: float = 180.0,
     log: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    """池不可用时的单次启动兜底（仍一号一 Context）。"""
     try:
         from camoufox.sync_api import Camoufox
     except Exception as exc:
@@ -722,7 +802,6 @@ def _signup_sync(
     except Exception:
         pass
 
-    # 优先走浏览器池：注册结束后立刻释放 Context，OAuth 可与下一号注册错峰
     try:
         from .browser_pool import ensure_browser_pool, run_with_browser
         ensure_browser_pool(headless=bool(headless))
