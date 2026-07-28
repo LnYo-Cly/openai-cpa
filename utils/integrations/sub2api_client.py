@@ -1127,7 +1127,6 @@ class Sub2APIClient:
         )
 
     def _ensure_sub2api_proxy(self, proxy_obj: Optional[Dict[str, Any]]) -> Optional[int]:
-        """Resolve a local proxy definition to the numeric ID required by Codex import."""
         if not proxy_obj or not proxy_obj.get("proxy_key"):
             return None
 
@@ -1211,22 +1210,16 @@ class Sub2APIClient:
             return None
 
     def _import_grok_sso(self, token_data: Dict[str, Any], settings: Dict[str, Any]) -> Tuple[bool, str]:
-        """推送 Grok SSO 到 Sub2API（/api/v1/admin/grok/sso-to-oauth）。"""
-        url = f"{self.api_url}/api/v1/admin/grok/sso-to-oauth"
+        """直接推送 Grok OAuth 账号到 Sub2API"""
+        url = f"{self.api_url}/api/v1/admin/accounts"
 
-        sso = str(
-            token_data.get("sso")
-            or token_data.get("sso_token")
-            or (token_data.get("cookies") or {}).get("sso")
-            or ""
-        ).strip()
-        if sso.lower().startswith("sso="):
-            sso = sso.split("=", 1)[1].strip()
-        if not sso:
-            return False, "Grok 推送失败：缺少 sso"
+        access = str(token_data.get("access_token") or "").strip()
+        refresh = str(token_data.get("refresh_token") or "").strip()
+        if not access or not refresh:
+            return False, "Grok 推送失败：缺少 access_token/refresh_token"
 
-        email = str(token_data.get("email") or "unknown")
-        name = email[:64] if email else "grok-account"
+        email = str(token_data.get("email") or "unknown").strip() or "unknown"
+        name = email[:64]
 
         proxy_obj = token_data.get("sub2api_proxy")
         proxy_id = None
@@ -1235,24 +1228,67 @@ class Sub2APIClient:
             if proxy_id is None:
                 return False, "Grok 账号代理同步失败：无法获取 Sub2API proxy_id"
 
-        credentials: Dict[str, Any] = {}
-        for key in ("access_token", "refresh_token", "id_token", "password"):
-            val = token_data.get(key)
-            if val:
-                credentials[key] = val
+        expires_in = token_data.get("expires_in", 21600)
+        try:
+            expires_in = int(expires_in)
+        except (TypeError, ValueError):
+            expires_in = 21600
 
-        payload = {
-            "sso_tokens": [sso],
+        expires_at = token_data.get("expires_at")
+        if expires_at in (None, ""):
+            expires_at = int(time.time()) + expires_in
+        else:
+            try:
+                expires_at = int(expires_at)
+            except (TypeError, ValueError):
+                expires_at = int(time.time()) + expires_in
+
+        credentials: Dict[str, Any] = {
+            "access_token": access,
+            "refresh_token": refresh,
+            "token_type": str(token_data.get("token_type") or "Bearer"),
+            "email": email,
+            "expires_in": expires_in,
+            "expires_at": expires_at,
+        }
+        id_token = str(token_data.get("id_token") or "").strip()
+        if id_token:
+            credentials["id_token"] = id_token
+        base_url = str(token_data.get("base_url") or "").strip()
+        if base_url:
+            credentials["base_url"] = base_url
+        token_endpoint = str(token_data.get("token_endpoint") or "").strip()
+        if token_endpoint:
+            credentials["token_endpoint"] = token_endpoint
+        client_id = str(token_data.get("client_id") or "").strip()
+        if client_id:
+            credentials["client_id"] = client_id
+        scope = str(token_data.get("scope") or "").strip()
+        if scope:
+            credentials["scope"] = scope
+        sub = str(token_data.get("sub") or "").strip()
+        if sub:
+            credentials["sub"] = sub
+
+        payload: Dict[str, Any] = {
             "name": name,
-            "proxy_id": proxy_id,
-            "group_ids": settings.get("group_ids") or [],
+            "platform": "grok",
+            "type": "oauth",
             "credentials": credentials,
+            "extra": {
+                "email": email,
+                "source": "openai-cpa",
+            },
             "concurrency": settings["concurrency"],
             "priority": settings["priority"],
             "rate_multiplier": settings["rate_multiplier"],
-            "expires_at": None,
             "auto_pause_on_expired": True,
         }
+        group_ids = settings.get("group_ids") or []
+        if group_ids:
+            payload["group_ids"] = group_ids
+        if proxy_id is not None:
+            payload["proxy_id"] = proxy_id
 
         try:
             headers = self.headers.copy()
@@ -1261,49 +1297,14 @@ class Sub2APIClient:
                 url,
                 json=payload,
                 headers=headers,
-                timeout=60,
+                timeout=30,
                 impersonate="chrome110",
                 proxies=None,
             )
-            status_code = int(getattr(response, "status_code", 0) or 0)
-            raw_text = (getattr(response, "text", None) or "").strip()
-            http_ok, result = self._handle_response(response, success_codes=(200, 201))
-
-            data = result.get("data") if isinstance(result, dict) else None
-            if not isinstance(data, dict) and isinstance(result, dict):
-                data = result
-            created = []
-            failed = []
-            if isinstance(data, dict):
-                created = data.get("created") or data.get("success") or []
-                failed = data.get("failed") or data.get("errors") or []
-            if not isinstance(created, list):
-                created = [created] if created else []
-            if not isinstance(failed, list):
-                failed = [failed] if failed else []
-
-            if http_ok and created:
-                return True, f"Sub2API Grok 上传成功（{len(created)} 个）"
-
-            err_bits = []
-            for item in failed:
-                if isinstance(item, dict):
-                    err_bits.append(str(item.get("error") or item.get("message") or item))
-                else:
-                    err_bits.append(str(item))
-            if err_bits:
-                err_text = "; ".join([x for x in err_bits if x])
-            else:
-                try:
-                    if isinstance(result, (dict, list)):
-                        err_text = json.dumps(result, ensure_ascii=False)
-                    else:
-                        err_text = str(result if result is not None else raw_text)
-                except Exception:
-                    err_text = raw_text or str(result)
-            if len(err_text) > 300:
-                err_text = err_text[:300] + "..."
-            return False, f"Grok 推送失败 | HTTP {status_code} | {err_text}"
+            ok, result = self._handle_response(response, success_codes=(200, 201))
+            if ok:
+                return True, "Sub2API Grok 账号导入成功"
+            return False, f"Grok 推送失败: {result}"
         except Exception as exc:
             return False, f"Grok 网络上传请求失败: {exc}"
 
