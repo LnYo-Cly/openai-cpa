@@ -147,41 +147,98 @@ def _build_account_extra(settings: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_account_item(token_data: Dict[str, Any], settings: Dict[str, Any], proxy_obj: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    account_item = {
-        "name": str(token_data.get("email", "unknown"))[:64],
-        "platform": "openai",
-        "type": "oauth",
-        "credentials": {
-            "access_token": token_data.get("access_token", ""),
-            "chatgpt_account_id": token_data.get("account_id", ""),
-            "client_id": token_data.get("client_id", ""),
-            "expires_at": int(time.time() + 864000),
-            "expires_in": 863999,
-            "model_mapping": {
+    email = str(token_data.get("email") or "unknown").strip() or "unknown"
+    name = email[:64]
+    provider = str(token_data.get("provider") or token_data.get("type") or "").lower()
+    status = str(token_data.get("status") or "").lower()
 
-                "gpt-5.4": "gpt-5.4",
+    if provider in ("grok", "xai") or status.startswith("grok") or "grok_oauth" in status:
+        access = str(token_data.get("access_token") or "").strip()
+        refresh = str(token_data.get("refresh_token") or "").strip()
+        expires_in = token_data.get("expires_in", 21600)
+        try:
+            expires_in = int(expires_in)
+        except (TypeError, ValueError):
+            expires_in = 21600
+        expires_at = token_data.get("expires_at")
+        if expires_at in (None, ""):
+            expires_at = int(time.time()) + expires_in
+        else:
+            try:
+                expires_at = int(expires_at)
+            except (TypeError, ValueError):
+                expires_at = int(time.time()) + expires_in
 
-                "gpt-5.4-mini": "gpt-5.4-mini",
-
-                "gpt-5.5": "gpt-5.5",
-
-                "gpt-5.6-sol": "gpt-5.6-sol",
-
-                "gpt-5.6-terra": "gpt-5.6-terra",
-
-                "gpt-5.6-luna": "gpt-5.6-luna",
-
+        credentials: Dict[str, Any] = {
+            "access_token": access,
+            "refresh_token": refresh,
+            "token_type": str(token_data.get("token_type") or "Bearer"),
+            "email": email,
+            "expires_in": expires_in,
+            "expires_at": expires_at,
+        }
+        id_token = str(token_data.get("id_token") or "").strip()
+        if id_token:
+            credentials["id_token"] = id_token
+        base_url = str(token_data.get("base_url") or "").strip()
+        if base_url:
+            credentials["base_url"] = base_url
+        token_endpoint = str(token_data.get("token_endpoint") or "").strip()
+        if token_endpoint:
+            credentials["token_endpoint"] = token_endpoint
+        client_id = str(token_data.get("client_id") or "").strip()
+        if client_id:
+            credentials["client_id"] = client_id
+        scope = str(token_data.get("scope") or "").strip()
+        if scope:
+            credentials["scope"] = scope
+        sub = str(token_data.get("sub") or "").strip()
+        if sub:
+            credentials["sub"] = sub
+        account_item: Dict[str, Any] = {
+            "name": name,
+            "platform": "grok",
+            "type": "oauth",
+            "credentials": credentials,
+            "extra": {
+                "email": email,
+                "source": "openai-cpa",
             },
-            "organization_id": token_data.get("workspace_id", ""),
-            "refresh_token": token_data.get("refresh_token", ""),
-        },
-        "extra": _build_account_extra(settings),
-        "concurrency": settings["concurrency"],
-        "priority": settings["priority"],
-        "rate_multiplier": settings["rate_multiplier"],
-        "auto_pause_on_expired": True,
-    }
-    if settings["group_ids"]:
+            "concurrency": settings["concurrency"],
+            "priority": settings["priority"],
+            "rate_multiplier": settings["rate_multiplier"],
+            "auto_pause_on_expired": True,
+        }
+    else:
+        account_item = {
+            "name": name,
+            "platform": "openai",
+            "type": "oauth",
+            "credentials": {
+                "access_token": token_data.get("access_token", ""),
+                "chatgpt_account_id": token_data.get("account_id", ""),
+                "client_id": token_data.get("client_id", ""),
+                "expires_at": int(time.time() + 864000),
+                "expires_in": 863999,
+                "model_mapping": {
+                    "gpt-5.4": "gpt-5.4",
+                    "gpt-5.4-mini": "gpt-5.4-mini",
+                    "gpt-5.5": "gpt-5.5",
+                    "gpt-5.6-sol": "gpt-5.6-sol",
+                    "gpt-5.6-luna": "gpt-5.6-luna",
+                    "gpt-5.6-terra": "gpt-5.6-terra"
+                },
+                "organization_id": token_data.get("workspace_id", ""),
+                "refresh_token": token_data.get("refresh_token", ""),
+            },
+            "extra": _build_account_extra(settings),
+            "concurrency": settings["concurrency"],
+            "priority": settings["priority"],
+            "rate_multiplier": settings["rate_multiplier"],
+            "auto_pause_on_expired": True,
+        }
+
+    if settings.get("group_ids"):
         account_item["group_ids"] = settings["group_ids"]
     if proxy_obj and "proxy_key" in proxy_obj:
         account_item["proxy_key"] = proxy_obj["proxy_key"]

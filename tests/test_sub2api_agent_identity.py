@@ -120,6 +120,32 @@ class Sub2APIAgentIdentityTests(unittest.TestCase):
         self.assertTrue(settings["update_existing"])
         self.assertEqual(settings["group_ids"], [7])
 
+    def test_export_bundle_preserves_grok_oauth_credentials(self):
+        bundle = self.client_module.build_sub2api_export_bundle(
+            [{
+                "email": "grok@example.com",
+                "provider": "grok",
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "id_token": "id-token",
+                "expires_in": "3600",
+            }],
+            {
+                "concurrency": 2,
+                "priority": 1,
+                "rate_multiplier": 1.0,
+                "group_ids": [],
+                "load_factor": 1,
+                "enable_ws": False,
+            },
+        )
+
+        account = bundle["accounts"][0]
+        self.assertEqual(account["platform"], "grok")
+        self.assertEqual(account["credentials"]["refresh_token"], "refresh")
+        self.assertEqual(account["credentials"]["id_token"], "id-token")
+        self.assertNotIn("model_mapping", account["credentials"])
+
     def test_add_account_agent_identity_uses_codex_session_endpoint(self):
         captured = []
 
