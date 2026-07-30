@@ -80,6 +80,8 @@ def _build_proxy_config(proxy: Optional[str]) -> Optional[dict]:
         if not parsed.scheme or not parsed.hostname or not parsed.port:
             return {"server": proxy}
         cfg = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
+        if parsed.scheme.lower() in {"socks4", "socks4a", "socks5"}:
+            return cfg
         if parsed.username:
             cfg["username"] = parsed.username
         if parsed.password:
