@@ -148,6 +148,7 @@ def run(
 
         headless_raw = str(os.environ.get("GROK_BROWSER_SIGNUP_HEADLESS", "1") or "1").strip().lower()
         browser_headless = headless_raw not in {"0", "false", "no", "off"}
+        _blog("已进入浏览器注册队列")
         browser_res = signup_with_camoufox(
             email,
             password,

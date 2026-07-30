@@ -441,10 +441,20 @@ def _signup_on_page(
     try:
         page.set_default_timeout(20000)
 
+        # x.ai keeps long-lived requests open, so networkidle regularly burns two
+        # 60-second navigation attempts before the actual signup flow starts.
+        nav_timeout = min(30000, max(5000, int((deadline - time.time()) * 1000)))
+        lg("正在打开注册页")
         try:
-            page.goto(SIGNUP_URL, wait_until="networkidle", timeout=60000)
-        except Exception:
-            page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=60000)
+            page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=nav_timeout)
+        except Exception as exc:
+            _dump_debug(page, "signup_page_load_failed")
+            detail = str(exc).strip() or repr(exc)
+            short = detail.split(" at ")[0].split(" url=")[0]
+            if len(short) > 120:
+                short = short[:117] + "..."
+            return {"ok": False, "error": f"打开注册页失败: {short}", "url": page.url}
+        lg("注册页已加载")
         time.sleep(2.0)
 
         if not _click_email_signup(page, timeout=12.0):
@@ -462,6 +472,8 @@ def _signup_on_page(
                 _dump_debug(page, "email_input_missing")
                 return {"ok": False, "error": "未提交邮箱", "url": page.url}
 
+        lg("已进入邮箱注册页")
+
         if not _fill_selector(page, email_sel, email):
             _dump_debug(page, "email_fill_fail")
             return {"ok": False, "error": "邮箱提交失败", "url": page.url}
@@ -470,6 +482,7 @@ def _signup_on_page(
             for txt in ("Continue", "Next", "继续", "下一步", "Sign up"):
                 if _click_first(page, [f'button:has-text("{txt}")']):
                     break
+        lg("已提交邮箱，等待验证码页")
         time.sleep(2.0)
 
         code_sel = ", ".join(CODE_INPUT_SELECTORS)
