@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import queue
+import os
+import shutil
 import threading
 import time
 from concurrent.futures import Future
@@ -40,6 +42,30 @@ def _desired_size() -> int:
 
 
 def _launch_browser(headless: bool):
+    configured_engine = str(os.environ.get("GROK_BROWSER_ENGINE", "") or "").strip().lower()
+    engine = configured_engine or ("chromium" if shutil.which("chromium") else "camoufox")
+    if engine in {
+        "chromium",
+        "chrome",
+    }:
+        from playwright.sync_api import sync_playwright
+
+        manager = sync_playwright()
+        playwright = manager.start()
+        try:
+            executable = shutil.which("chromium") or shutil.which("chromium-browser")
+            if not executable:
+                raise RuntimeError("GROK_BROWSER_ENGINE=chromium but chromium is not installed")
+            browser = playwright.chromium.launch(
+                executable_path=executable,
+                headless=bool(headless),
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            return manager, browser
+        except Exception:
+            manager.stop()
+            raise
+
     from camoufox.sync_api import Camoufox
 
     # 代理放在 Context 上，浏览器进程本身长期复用
@@ -58,7 +84,10 @@ def _close_browser(cm, browser) -> None:
     finally:
         if cm is not None:
             try:
-                cm.__exit__(None, None, None)
+                if hasattr(cm, "stop"):
+                    cm.stop()
+                else:
+                    cm.__exit__(None, None, None)
             except Exception:
                 pass
 

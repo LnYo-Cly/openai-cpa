@@ -5,6 +5,7 @@ WORKDIR /app
 # System deps (rarely changes, cached as a single layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    chromium \
     curl \
     fonts-liberation \
     libasound2 \
