@@ -28,7 +28,36 @@ class _Chromium:
         return object()
 
 
+class _Camoufox:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.closed = False
+
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *_args):
+        self.closed = True
+
+
 class GrokBrowserEngineTests(unittest.TestCase):
+    def test_default_engine_keeps_camoufox_when_chromium_is_installed(self):
+        manager = _Camoufox(headless=True)
+        fake_api = types.SimpleNamespace(Camoufox=lambda **kwargs: manager)
+        with patch.dict(
+            os.environ,
+            {"GROK_BROWSER_ENGINE": ""},
+            clear=False,
+        ), patch.dict(sys.modules, {"camoufox.sync_api": fake_api}), patch.object(
+            browser_pool.shutil, "which", return_value="/usr/bin/chromium"
+        ):
+            actual_manager, browser = browser_pool._launch_browser(True)
+            browser_pool._close_browser(actual_manager, browser)
+
+        self.assertIs(actual_manager, manager)
+        self.assertTrue(manager.closed)
+        self.assertTrue(manager.kwargs["headless"])
+
     def test_chromium_engine_uses_system_browser_and_is_closable(self):
         chromium = _Chromium()
         manager = _Manager(types.SimpleNamespace(chromium=chromium))

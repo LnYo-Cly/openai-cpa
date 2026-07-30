@@ -43,7 +43,9 @@ def _desired_size() -> int:
 
 def _launch_browser(headless: bool):
     configured_engine = str(os.environ.get("GROK_BROWSER_ENGINE", "") or "").strip().lower()
-    engine = configured_engine or ("chromium" if shutil.which("chromium") else "camoufox")
+    # Keep Camoufox as the default; Chromium is opt-in because its default
+    # headless fingerprint is commonly challenged before the signup form.
+    engine = configured_engine or "camoufox"
     if engine in {
         "chromium",
         "chrome",
