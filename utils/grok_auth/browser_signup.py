@@ -453,7 +453,9 @@ def _signup_on_page(
             short = detail.split(" at ")[0].split(" url=")[0]
             if len(short) > 120:
                 short = short[:117] + "..."
-            return {"ok": False, "error": f"打开注册页失败: {short}", "url": page.url}
+            # A loaded DOM can coexist with slow long-polling resources. Let
+            # the form check decide whether the page is actually unusable.
+            lg(f"注册页导航未完全结束，继续检查当前页面: {short}")
         lg("注册页已加载")
         time.sleep(2.0)
 
