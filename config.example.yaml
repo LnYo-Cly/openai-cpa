@@ -313,6 +313,17 @@ sub2api_mode:
   agent_identity_recovery_cross_account: true
   update_existing: true
 
+# Grok2API 中转管仓。Grok 注册成功取得 SSO 后立即上传，不依赖 OAuth 是否随后成功。
+grok2api_mode:
+  enable: false
+  api_url: ""
+  username: ""
+  password: ""
+  target: "grok_console" # grok_console 或 grok_web
+  push_use_proxy: false
+  push_proxy: ""
+  timeout: 180
+
 image2api_mode:
   enable: false
   api_url: ""

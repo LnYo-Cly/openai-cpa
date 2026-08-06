@@ -281,6 +281,15 @@ SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY: bool = True
 SUB2API_AGENT_IDENTITY_RECOVERY_CROSS_ACCOUNT: bool = True
 SUB2API_UPDATE_EXISTING: bool = True
 
+GROK2API_ENABLE: bool = False
+GROK2API_URL: str = ""
+GROK2API_USERNAME: str = ""
+GROK2API_PASSWORD: str = ""
+GROK2API_TARGET: str = "grok_console"
+GROK2API_PUSH_USE_PROXY: bool = False
+GROK2API_PUSH_PROXY: str = ""
+GROK2API_TIMEOUT: int = 180
+
 ENABLE_IMAGE2API_MODE: bool = False
 IMAGE2API_URL: str = ""
 IMAGE2API_KEY: str = ""
@@ -798,6 +807,18 @@ def reload_all_configs(new_config_dict=None):
         _sub2api.get("agent_identity_recovery_cross_account", True), default=True
     )
     SUB2API_UPDATE_EXISTING = safe_bool(_sub2api.get("update_existing", True), default=True)
+
+    _grok2api = _c.get("grok2api_mode", {})
+    GROK2API_ENABLE = safe_bool(_grok2api.get("enable", False), default=False)
+    GROK2API_URL = format_docker_url(str(_grok2api.get("api_url", "")).strip()).rstrip("/")
+    GROK2API_USERNAME = str(_grok2api.get("username", "") or "").strip()
+    GROK2API_PASSWORD = str(_grok2api.get("password", "") or "")
+    GROK2API_TARGET = str(_grok2api.get("target", "grok_console") or "grok_console").strip().lower()
+    if GROK2API_TARGET not in {"grok_console", "grok_web"}:
+        GROK2API_TARGET = "grok_console"
+    GROK2API_PUSH_USE_PROXY = safe_bool(_grok2api.get("push_use_proxy", False), default=False)
+    GROK2API_PUSH_PROXY = format_docker_url(str(_grok2api.get("push_proxy", "") or "").strip())
+    GROK2API_TIMEOUT = safe_int(_grok2api.get("timeout", 180), 180, minimum=15)
 
     raw_sub2api_default_proxy = _sub2api.get("default_proxy", "")
 

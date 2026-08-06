@@ -181,6 +181,19 @@ def run(
         session_cookies.setdefault("sso-rw", sso)
         _log("SSO 提取成功", email)
 
+        if bool(getattr(cfg, "GROK2API_ENABLE", False)):
+            try:
+                from utils.integrations.grok2api_client import push_grok_sso
+
+                pushed, push_message = push_grok_sso(sso)
+                target_label = "Grok Console" if getattr(cfg, "GROK2API_TARGET", "grok_console") == "grok_console" else "Grok Web"
+                if pushed:
+                    _log(f"Grok2API [{target_label}] 推送成功: {push_message}", email)
+                else:
+                    _log(f"Grok2API [{target_label}] 推送失败（继续现有 OAuth）: {_short_err(push_message)}", email)
+            except Exception as push_exc:
+                _log(f"Grok2API 推送异常（继续现有 OAuth）: {_short_err(str(push_exc))}", email)
+
         try:
             oauth = complete_build_oauth(
                 email,

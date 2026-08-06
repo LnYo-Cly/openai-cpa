@@ -1508,6 +1508,31 @@ createApp({
                 if (!this.config.sub2api_mode) {
                     this.config.sub2api_mode = {};
                 }
+                if (!this.config.grok2api_mode) {
+                    this.config.grok2api_mode = {
+                        enable: false,
+                        api_url: '',
+                        username: '',
+                        password: '',
+                        target: 'grok_console',
+                        push_use_proxy: false,
+                        push_proxy: '',
+                        timeout: 180
+                    };
+                } else {
+                    if (this.config.grok2api_mode.target !== 'grok_web') {
+                        this.config.grok2api_mode.target = 'grok_console';
+                    }
+                    if (this.config.grok2api_mode.push_use_proxy === undefined) {
+                        this.config.grok2api_mode.push_use_proxy = false;
+                    }
+                    if (this.config.grok2api_mode.push_proxy === undefined) {
+                        this.config.grok2api_mode.push_proxy = '';
+                    }
+                    if (this.config.grok2api_mode.timeout === undefined) {
+                        this.config.grok2api_mode.timeout = 180;
+                    }
+                }
                 if (this.config.sub2api_mode.account_concurrency === undefined) {
                     this.config.sub2api_mode.account_concurrency = 10;
                 }

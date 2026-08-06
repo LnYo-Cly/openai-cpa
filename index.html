@@ -192,7 +192,7 @@
             </div>
         </div>
 
-        <div v-else class="flex flex-col md:flex-row flex-1 overflow-hidden bg-slate-50">
+        <div v-else class="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden bg-slate-50">
             <div v-if="mobileNavOpen" @click="toggleMobileNav(false)" class="md:hidden fixed inset-0 z-30 mobile-nav-mask"></div>
             <!-- Mac Glass 左侧边栏重构 -->
             <aside :class="mobileNavOpen ? 'is-open' : ''" class="mobile-nav-drawer fixed inset-y-0 left-0 z-40 md:static md:inset-auto md:translate-x-0 md:shadow-[inset_-1px_0_0_rgba(0,0,0,0.06)] w-64 h-full md:h-full bg-slate-100/92 md:bg-slate-100/70 backdrop-blur-3xl text-slate-600 flex flex-col shrink-0 border-r border-slate-200/50">
@@ -249,7 +249,7 @@
                 </div>
             </aside>
 
-            <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+            <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
                 <header class="bg-white/70 backdrop-blur-2xl border-b border-slate-200/60 text-slate-800 px-3 py-2.5 md:px-4 md:py-3 shrink-0 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-30 relative">
                     <div class="w-full xl:max-w-[85%] mx-auto console-topbar">
                         <div class="console-topbar-primary">
@@ -4700,6 +4700,70 @@
                                                 <div class="relative w-9 h-5 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-cyan-600 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
                                                 <span class="text-sm font-black text-cyan-900 ml-3 tracking-wide">补货前自动巡检测活</span>
                                             </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-orange-500 bg-gradient-to-br from-orange-50/20 to-white" v-if="config.grok2api_mode">
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-5 gap-4">
+                                    <div>
+                                        <h3 class="text-xl md:text-2xl font-black text-orange-700 tracking-tight flex items-center gap-2">
+                                            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm2.07-7.25l-.9.92C13.45 11.4 13 12 13 13h-2v-.5c0-.8.45-1.55 1.17-2.27l1.24-1.26A2 2 0 0012 5.5a2 2 0 00-1.92 1.42l-1.9-.63A4 4 0 0115.07 9.75z"/></svg>
+                                            Grok2API 中转管仓
+                                        </h3>
+                                        <p class="text-xs text-slate-500 mt-2 font-medium">Grok 注册成功拿到 SSO 后立即导入；推送失败不会阻断现有 OAuth 流程。</p>
+                                    </div>
+                                    <label class="relative inline-flex bg-white px-4 py-2.5 md:px-5 md:py-3 rounded-xl cursor-pointer hover:bg-orange-50 transition-colors shadow-sm border border-orange-200 w-full sm:w-auto items-center justify-center group">
+                                        <input type="checkbox" v-model="config.grok2api_mode.enable" class="sr-only peer">
+                                        <div class="relative w-11 h-6 shrink-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-orange-500 shadow-inner transition-colors duration-300 group-hover:shadow-md"></div>
+                                        <span class="font-black text-orange-900 text-sm md:text-base ml-3 tracking-wide">开启 Grok2API 推送</span>
+                                    </label>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6" :class="{'opacity-50 pointer-events-none grayscale-[50%] transition-opacity duration-300': !config.grok2api_mode.enable}">
+                                    <div class="bg-orange-50/50 p-5 rounded-2xl border border-orange-100 shadow-inner space-y-4">
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">Grok2API 地址</label>
+                                            <input type="text" v-model="config.grok2api_mode.api_url" autocomplete="off" placeholder="http://127.0.0.1:8000"
+                                                   class="w-full appearance-none bg-white border border-orange-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm font-mono text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">管理员用户名</label>
+                                            <input type="text" v-model="config.grok2api_mode.username" autocomplete="username"
+                                                   class="w-full appearance-none bg-white border border-orange-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">管理员密码</label>
+                                            <div class="relative">
+                                                <input :type="showPwd.grok2api ? 'text' : 'password'" v-model="config.grok2api_mode.password" autocomplete="current-password"
+                                                       class="w-full appearance-none bg-white border border-orange-200 text-slate-700 rounded-xl py-3 px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm font-mono text-sm">
+                                                <button @click="showPwd.grok2api = !showPwd.grok2api" type="button" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-600 focus:outline-none">
+                                                    <svg v-if="showPwd.grok2api" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7z"/></svg>
+                                                    <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M10.58 10.58A2 2 0 0012 15a3 3 0 003-3c0-.5-.12-.96-.34-1.37M9.88 5.09A10 10 0 0112 5c4.48 0 8.27 2.94 9.54 7a10.05 10.05 0 01-2.18 3.64M6.61 6.61A9.97 9.97 0 002.46 12c1.27 4.06 5.06 7 9.54 7 1.17 0 2.29-.21 3.33-.6"/></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-inner space-y-5">
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">推送目标</label>
+                                            <select v-model="config.grok2api_mode.target" class="w-full appearance-none bg-slate-50 border border-orange-200 text-slate-700 font-bold rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm cursor-pointer">
+                                                <option value="grok_console">Grok Console（默认）</option>
+                                                <option value="grok_web">Grok Web</option>
+                                            </select>
+                                        </div>
+                                        <label class="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                                            <input type="checkbox" v-model="config.grok2api_mode.push_use_proxy" class="mt-0.5 rounded border-orange-300 text-orange-500 focus:ring-orange-500">
+                                            <span>
+                                                <span class="block text-sm font-black text-slate-800">推送请求使用代理</span>
+                                                <span class="block text-[11px] text-slate-500 mt-1">默认直连，避免占用注册代理；仅在 Grok2API 服务器不能直连时开启。</span>
+                                            </span>
+                                        </label>
+                                        <div>
+                                            <label class="block text-slate-700 text-xs font-extrabold mb-2 uppercase tracking-wider">推送代理（可选）</label>
+                                            <input type="text" v-model="config.grok2api_mode.push_proxy" placeholder="留空则使用全局默认代理"
+                                                   class="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors shadow-sm font-mono text-sm">
                                         </div>
                                     </div>
                                 </div>
