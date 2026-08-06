@@ -1266,14 +1266,14 @@ class Sub2APIClient:
             logger.warning("Failed to create Sub2API proxy %s: %s", proxy_key, exc)
             return None
 
-    def _import_grok_sso(self, token_data: Dict[str, Any], settings: Dict[str, Any]) -> Tuple[bool, str]:
-        """直接推送 Grok OAuth 账号到 Sub2API"""
+    def _import_grok_oauth(self, token_data: Dict[str, Any], settings: Dict[str, Any]) -> Tuple[bool, str]:
+        """Push the OAuth result to Sub2API; raw SSO is handled by Grok2API."""
         url = f"{self.api_url}/api/v1/admin/accounts"
 
         access = str(token_data.get("access_token") or "").strip()
         refresh = str(token_data.get("refresh_token") or "").strip()
         if not access or not refresh:
-            return False, "Grok 推送失败：缺少 access_token/refresh_token"
+            return False, "Grok OAuth 推送失败：缺少 access_token/refresh_token"
 
         email = str(token_data.get("email") or "unknown").strip() or "unknown"
         name = email[:64]
@@ -1373,7 +1373,7 @@ class Sub2APIClient:
             group_ids = settings.get("group_ids") or []
             push_format = settings.get("push_format") or "oauth"
 
-            # Grok/xAI path: SSO -> Sub2API /admin/grok/sso-to-oauth
+            # Grok/xAI path: SSO -> optional Grok2API, then OAuth -> Sub2API.
             is_grok = (
                 "sso" in working_token_data
                 or str(working_token_data.get("provider", "") or "").lower() == "grok"
@@ -1385,7 +1385,7 @@ class Sub2APIClient:
                 )
             )
             if is_grok:
-                ok, msg = self._import_grok_sso(working_token_data, settings)
+                ok, msg = self._import_grok_oauth(working_token_data, settings)
                 if ok:
                     self._force_bind_groups(account_name, group_ids)
                 return ok, msg

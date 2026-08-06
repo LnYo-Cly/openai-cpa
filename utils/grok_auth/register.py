@@ -185,6 +185,7 @@ def run(
             try:
                 from utils.integrations.grok2api_client import push_grok_sso
 
+                _log("Grok2API SSO 推送开始（不替代后续 OAuth）", email)
                 pushed, push_message = push_grok_sso(sso)
                 target_label = "Grok Console" if getattr(cfg, "GROK2API_TARGET", "grok_console") == "grok_console" else "Grok Web"
                 if pushed:
@@ -194,6 +195,7 @@ def run(
             except Exception as push_exc:
                 _log(f"Grok2API 推送异常（继续现有 OAuth）: {_short_err(str(push_exc))}", email)
 
+        _log("开始执行原有 OAuth 换取 access_token（SSO 阶段完成后）", email)
         try:
             oauth = complete_build_oauth(
                 email,
@@ -215,6 +217,7 @@ def run(
             _log("OAuth失败: 未拿到 access_token", email)
             return None, None
 
+        _log("OAuth access_token 获取成功，生成 Sub2API OAuth 凭证", email)
         record = build_cliproxyapi_auth_record(
             token,
             userinfo=userinfo,
