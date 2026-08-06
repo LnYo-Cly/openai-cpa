@@ -457,7 +457,6 @@ def _signup_on_page(
             # the form check decide whether the page is actually unusable.
             lg(f"注册页导航未完全结束，继续检查当前页面: {short}")
         lg("注册页已加载")
-        time.sleep(2.0)
 
         if not _click_email_signup(page, timeout=12.0):
             _dump_debug(page, "no_email_entry")
@@ -485,18 +484,24 @@ def _signup_on_page(
                 if _click_first(page, [f'button:has-text("{txt}")']):
                     break
         lg("已提交邮箱，等待验证码页")
-        time.sleep(2.0)
 
         code_sel = ", ".join(CODE_INPUT_SELECTORS)
         code_ready = False
-        for _ in range(20):
-            if time.time() > deadline:
-                break
-            if page.query_selector(code_sel):
-                code_ready = True
-                break
+        try:
+            page.wait_for_selector(
+                code_sel,
+                timeout=min(20000, max(1000, int((deadline - time.time()) * 1000))),
+            )
+            code_ready = True
+        except Exception:
+            # A slow transition can leave the submit button active. Retry it
+            # once, then use a short event-driven wait instead of 1s polling.
             _click_first(page, SUBMIT_SELECTORS)
-            time.sleep(1.0)
+            try:
+                page.wait_for_selector(code_sel, timeout=3000)
+                code_ready = True
+            except Exception:
+                pass
 
         if not code_ready:
             _dump_debug(page, "code_page_missing")
@@ -538,16 +543,18 @@ def _signup_on_page(
         ] + SUBMIT_SELECTORS:
             if _click_first(page, [sel]):
                 break
-        time.sleep(2.0)
 
         profile_sel = (
             'input[name="given_name"], input[name="givenName"], input[placeholder*="First"], '
             'input[name="password"], input[type="password"], input[data-testid="password"]'
         )
-        for _ in range(20):
-            if page.query_selector(profile_sel):
-                break
-            time.sleep(1.0)
+        try:
+            page.wait_for_selector(
+                profile_sel,
+                timeout=min(20000, max(1000, int((deadline - time.time()) * 1000))),
+            )
+        except Exception:
+            pass
 
         fname_sel = (
             'input[name="given_name"], input[name="givenName"], '
@@ -567,12 +574,11 @@ def _signup_on_page(
         pass_sel = 'input[name="password"], input[type="password"], input[data-testid="password"]'
         if page.query_selector(fname_sel) and not page.query_selector(pass_sel):
             _click_first(page, SUBMIT_SELECTORS)
-            time.sleep(1.5)
 
-        for _ in range(12):
-            if page.query_selector(pass_sel):
-                break
-            time.sleep(1.0)
+        try:
+            page.wait_for_selector(pass_sel, timeout=12000)
+        except Exception:
+            pass
 
         if page.query_selector(pass_sel):
             _fill_selector(page, pass_sel, password)
@@ -605,7 +611,7 @@ def _signup_on_page(
             for attempt in range(1, 8):
                 if _read_turnstile_token(page) or attempt >= 2:
                     _click_first(page, COMPLETE_SELECTORS, force=True)
-                time.sleep(2.0)
+                time.sleep(0.5)
                 sso_now = _get_cookies(page, ["sso", "sso-rw"])
                 if sso_now.get("sso") or sso_now.get("sso-rw"):
                     break

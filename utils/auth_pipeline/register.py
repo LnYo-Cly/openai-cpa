@@ -2,8 +2,12 @@ import random
 import re
 import time
 import uuid
+import os
 from typing import Optional
 import json
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from curl_cffi import requests
 from utils import config as cfg
 from utils.email_providers.mail_service import get_email_and_token, get_oai_code, mask_email,_extract_otp_code
@@ -30,6 +34,136 @@ from .session_bootstrap import (
     pick_session_access_token,
 )
 from .user_utils import _generate_password
+
+
+def _diag_enabled() -> bool:
+    return str(os.getenv("AUTH_FAILURE_DIAG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_proxy(proxy: Optional[str]) -> str:
+    if not proxy:
+        return ""
+    try:
+        u = urlsplit(proxy)
+        host = u.hostname or ""
+        netloc = f"{host}:{u.port}" if u.port else host
+        if u.username:
+            netloc = f"{u.username}:***@{netloc}"
+        return urlunsplit((u.scheme, netloc, "", "", ""))
+    except Exception:
+        return "***"
+
+
+def _safe_text(text: str, limit: int = 1200) -> str:
+    text = re.sub(r"[\w.+-]+@[\w.-]+", "***@***", str(text or ""))
+    return re.sub(
+        r'''("?(?:token|jwt|password|access_token|refresh_token)"?\s*[:=]\s*)(["']?)([^,\s"'}]+)\2''',
+        r"\1\2***\2",
+        text,
+        flags=re.I,
+    )[:limit]
+
+
+def _dump_auth_failure(stage: str, resp, *, email: str = "", proxy: Optional[str] = None, extra: dict = None) -> None:
+    if not _diag_enabled():
+        return
+    try:
+        headers = {
+            k.lower(): v for k, v in dict(getattr(resp, "headers", {}) or {}).items()
+            if k.lower() in {"content-type", "cf-ray", "cf-mitigated", "retry-after", "server", "location", "set-cookie"}
+        }
+        if "set-cookie" in headers:
+            headers["set-cookie"] = "***"
+        row = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "stage": stage,
+            "status": getattr(resp, "status_code", None),
+            "email": mask_email(email) if email else "",
+            "proxy": _safe_proxy(proxy),
+            "headers": headers,
+            "body": _safe_text(getattr(resp, "text", "")),
+            "extra": extra or {},
+        }
+        path = Path(os.getenv("AUTH_FAILURE_DIAG_PATH", "/app/data/auth_failures.jsonl"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _dump_auth_event(stage: str, *, email: str = "", proxy: Optional[str] = None, extra: dict = None) -> None:
+    if not _diag_enabled():
+        return
+    try:
+        row = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "stage": stage,
+            "status": None,
+            "email": mask_email(email) if email else "",
+            "proxy": _safe_proxy(proxy),
+            "headers": {},
+            "body": "",
+            "extra": extra or {},
+        }
+        path = Path(os.getenv("AUTH_FAILURE_DIAG_PATH", "/app/data/auth_failures.jsonl"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _install_auth_trace(session, *, email: str, proxy: Optional[str], scope: str):
+    if not _diag_enabled() or getattr(session, "_auth_trace_installed", False):
+        return lambda stage, reason="": None
+    original_request = session.request
+    trace = []
+
+    def record(resp, method, url):
+        if "auth.openai.com" not in str(url):
+            return
+        item = {
+            "method": str(method).upper(),
+            "url": urlunsplit((*urlsplit(str(url))[:3], "", "")),
+            "status": getattr(resp, "status_code", None),
+            "headers": {
+                k.lower(): v for k, v in dict(getattr(resp, "headers", {}) or {}).items()
+                if k.lower() in {"content-type", "cf-ray", "cf-mitigated", "retry-after", "server", "location"}
+            },
+            "body": _safe_text(getattr(resp, "text", ""), 600),
+        }
+        trace.append(item)
+        del trace[:-8]
+        if (item["status"] or 0) >= 400:
+            _dump_auth_failure(f"{scope}_http", resp, email=email, proxy=proxy, extra={
+                "method": item["method"],
+                "url": item["url"],
+            })
+
+    def traced_request(method, url, *args, **kwargs):
+        try:
+            response = original_request(method, url, *args, **kwargs)
+            record(response, method, url)
+            return response
+        except Exception as exc:
+            if "auth.openai.com" in str(url):
+                _dump_auth_event(f"{scope}_http_exception", email=email, proxy=proxy, extra={
+                    "method": str(method).upper(),
+                    "url": urlunsplit((*urlsplit(str(url))[:3], "", "")),
+                    "error": _safe_text(repr(exc), 600),
+                })
+            raise
+
+    session.request = traced_request
+    session._auth_trace_installed = True
+
+    def dump(stage, reason=""):
+        _dump_auth_event(stage, email=email, proxy=proxy, extra={
+            "reason": reason,
+            "recent_auth_requests": trace[-8:],
+        })
+    return dump
 
 
 def run(
@@ -160,6 +294,7 @@ def run(
                     login_kind = "email"
                     masked_login = mask_email(email)
 
+                auth_trace_dump = _install_auth_trace(s_reg, email=login_username, proxy=proxy, scope="register")
                 did, current_ua = init_auth(
                     session=s_reg,
                     email=login_username,
@@ -169,6 +304,7 @@ def run(
                 )
 
                 if not did or not current_ua:
+                    auth_trace_dump("init_auth_missing_did", f"did={bool(did)} ua={bool(current_ua)}")
                     print(f"[{cfg.ts()}] [WARNING] 未获取到 oai-did，节点环境可能被关注，正在为你生成did。")
                     did = str(uuid.uuid4())
 
@@ -220,9 +356,17 @@ def run(
                 )
 
                 if signup_resp.status_code == 403:
+                    _dump_auth_failure("signup_authorize_continue", signup_resp, email=login_username, proxy=proxy, extra={
+                        "did": bool(did), "sentinel": bool(sentinel_signup),
+                        "screen_hint": screen_hint_val, "login_kind": login_kind,
+                    })
                     print(f"[{cfg.ts()}] [WARNING] （{masked_login}）注册请求触发 403 拦截，稍作等待后重试...")
                     return "retry_403", None
                 if signup_resp.status_code != 200:
+                    _dump_auth_failure("signup_authorize_continue", signup_resp, email=login_username, proxy=proxy, extra={
+                        "did": bool(did), "sentinel": bool(sentinel_signup),
+                        "screen_hint": screen_hint_val, "login_kind": login_kind,
+                    })
                     print(f"[{cfg.ts()}] [ERROR] （{masked_login}）提交账号环节异常, 返回: {signup_resp.status_code}")
                     return None, None
 
@@ -241,6 +385,9 @@ def run(
                             proxies=proxies,
                         )
                         if pwd_resp.status_code != 200:
+                            _dump_auth_failure("signup_user_register_phone", pwd_resp, email=login_username, proxy=proxy, extra={
+                                "did": bool(did), "sentinel": bool(sentinel_pwd), "login_kind": login_kind,
+                            })
                             try:
                                 err_json = pwd_resp.json()
                                 err_code = str(err_json.get("error", {}).get("code", ""))
@@ -502,6 +649,9 @@ def run(
                     )
 
                     if pwd_resp.status_code != 200:
+                        _dump_auth_failure("signup_user_register_email", pwd_resp, email=email, proxy=proxy, extra={
+                            "did": bool(did), "sentinel": bool(sentinel_pwd),
+                        })
                         err_json = pwd_resp.json()
                         err_code = err_json.get("error", {}).get("code")
                         err_msg = err_json.get("error", {}).get("message", "")
