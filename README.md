@@ -1,33 +1,40 @@
-﻿# Wenfxl Codex Manager Web Console
+# Wenfxl Codex Manager Web Console
+
 [![Telegram Group](https://img.shields.io/badge/Telegram-Community_Chat-0088cc?style=for-the-badge&logo=telegram)](https://t.me/+srBiKuPvn4A3YmNl)
 [![License](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/legalcode)
 
 > ⚠️ **CRITICAL UPDATE (April 29, 2026) 20:29**
-> 
+>
 > The official Telegram community has been fully migrated! The original group is no longer active.
-> 
+>
 > **ATTENTION:** The authentication system of Wenfxl Codex Manager is strictly bound to our official group. All users MUST **join the new group immediately**. Failure to do so will result in an HTTP 403 error and automatic service suspension during the next silent authorization check.
-> 
+>
 > 👉 **[Click Here to Join the NEW Official Group](https://t.me/+srBiKuPvn4A3YmNl)**
 
 An advanced Distributed Automation Platform for high-concurrency account registration and full-lifecycle inventory management. It serves as a centralized Web Orchestration Hub that seamlessly synchronizes distributed browser extension workers (Classic Mode), multi-backend mailbox engines, and enterprise-grade cloud warehouses (CPA/Sub2API) into a unified master-worker ecosystem.
 
-It combines:
-- multi-backend mailbox OTP retrieval
-- registration task orchestration
-- proxy / Clash / Mihomo switching
-- CPA warehouse maintenance
-- Sub2API warehouse maintenance
-- AI-powered profile & subdomain generation (Codex)
-- local account inventory, export, deletion, and real-time log streaming
+It coordinates:
 
-It also supports **random multi-level subdomain generation**, designed to work together with customized mailbox backends such as:
+- multi-node / multi-worker task distribution
+- multi-backend mailbox and OTP retrieval
+- browser-assisted workflows and local challenge handling
+- proxy / Clash / Mihomo routing
+- cloud warehouse synchronization (CPA / Sub2API)
+- local inventory, export, archival, and real-time log streaming
+- AI-assisted profile and subdomain generation
+
+The console supports multiple **runtime providers / business modes** under the same control plane, so different task pipelines can share mailbox, proxy, warehouse, and inventory infrastructure without changing the overall architecture.
+
+It also supports **random multi-level subdomain generation**, designed to work with customized mailbox backends such as:
+
 - <https://github.com/wenfxl/freemail>
 - <https://github.com/wenfxl/cloud-mail>
 - <https://github.com/wenfxl/cloudflare_temp_email_worker>
 
-> Use only in systems and environments you own or are explicitly authorized to test.
+> Use only in systems and environments you own or are explicitly authorized to operate.
 > Make sure your use complies with applicable laws, platform rules, and service terms.
+
+---
 
 ## 🚀 Supported Environments
 * **Windows**: Native Support (**Python 3.12.6 or Python 3.12** recommended).
@@ -41,20 +48,54 @@ It also supports **random multi-level subdomain generation**, designed to work t
 * **Native Windows**: Please use **Python 3.12.6 or Python 3.12** to match the core engine requirements.
 * **Docker Deployment**: This is the **preferred method**. The image comes pre-configured with the optimized environment, offering a true "out-of-the-box" experience without worrying about Python versions.
 
-## Environment Setup
+---
 
-Install Python Dependencies Install the required base libraries using the requirements.txt file in the root directory:
+## Quick Start
+
+### 1. Install dependencies
 
 ```bash
-pip install -r requirements.txt  python -m camoufox fetch
+pip install -r requirements.txt
+python -m camoufox fetch
 ```
 
-## ☕ Buy me a coffee
+### 2. Start the Web Console
 
-If you find this tool helpful or if it has saved you time, consider buying me a coffee! Your support is a great motivation for continuous maintenance and updates.
+```bash
+python wfxl_openai_regst.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+Default password:
+
+```text
+admin
+```
+
+### 3. Recommended first-run workflow
+
+1. Log in to the Web Console
+2. Select the active **runtime provider / business mode**
+3. Configure mailbox, proxy, and warehouse settings
+4. Start or stop tasks from the dashboard
+5. Monitor logs, progress, and inventory in real time
+
+---
+
+## Buy me a coffee
+
+If this platform helps your workflow, consider supporting continued maintenance:
+
 - **Afdian:** [https://ifdian.net/a/wenfxl](https://ifdian.net/a/wenfxl)
-- **USDT (TRX/Tron/TRC20):** `TLMNmyfUajfGSBhUfJ1orqxpvv7BWFnDqN`
-- **USDT (BSC/BNB Smart Chain/BEP20):** `0x2da26c472097f269217390e44ff00c7d087699a6`
+- **USDT (TRX / Tron / TRC20):** `TLMNmyfUajfGSBhUfJ1orqxpvv7BWFnDqN`
+- **USDT (BSC / BNB Smart Chain / BEP20):** `0x2da26c472097f269217390e44ff00c7d087699a6`
+
+---
 
 ## Web Console Preview
 
@@ -111,11 +152,16 @@ If you find this tool helpful or if it has saved you time, consider buying me a 
 
 </details>
 
+---
+
+
 ## Features
 
 ### Web console and runtime control
+
 - **Web visual console**: The current version is managed mainly through a browser-based control panel instead of a config-only workflow.
 - **Seamless Config Upgrades**: The backend automatically detects missing configuration keys and merges defaults from `config.example.yaml`, ensuring zero downtime or white-screens during system updates.
+- **Runtime provider switch**: Switch active business mode from the console (`reg_provider`).
 - **Distributed Cluster Control**: Supports a true multi-node architecture. When deployed across multiple machines, any node can serve as the master control center. You can remotely orchestrate start/stop commands, stream cross-machine logs, and extract accounts from the entire cluster directly through a single **Cluster Control** panel.
 - **Password login + Bearer session**: The console uses password login and token-based authenticated API operations.
 - **Real-time log streaming**: Backend logs are pushed to the page through SSE for live monitoring.
@@ -123,14 +169,35 @@ If you find this tool helpful or if it has saved you time, consider buying me a 
 - **Live statistics dashboard**: Shows success, failure, retries, elapsed time, progress, and current mode in real time.
 - **Multi-channel notifications**: Supports real-time task completion reports, stock alerts, and system exceptions via Webhooks or Telegram bots, configured in the **Notifications** panel.
 
+### Runtime providers / business modes
+
+The platform keeps a shared control plane for mailbox, proxy, warehouse, and inventory, while different providers plug into different execution pipelines.
+
+#### Mode A
+
+- Protocol-oriented task pipeline and optional distributed browser extension workers
+- Credential packaging and warehouse push for CPA / Sub2API
+- AI-assisted profile and subdomain keyword generation
+
+#### Mode B
+
+- Local challenge handling integrated
+- Device-flow style token acquisition for complete credential sets
+- Local SQLite archival
+- Direct Sub2API OAuth-style account import
+- Sub2API export auto-recognizes this mode's credential shape
+- Cloud inventory / warehouse sync where enabled
+
 ### Distributed Browser Extension Mode ("Classic" Plugin Architecture)
+
 - **Centralized Master, Decentralized Workers**: Deploy the core manager just once. By installing our custom browser extension on multiple browsers (even across different physical machines), they automatically connect back to the master console.
 - **True Browser Fingerprints**: Bypasses the strict bot detection often triggered by headless automation frameworks (like Playwright or Puppeteer). Tasks are executed in genuine browser environments.
 - **Plug-and-Play Worker Nodes**: Any browser with the extension installed instantly becomes a distributed worker node. The Web Console orchestrates task distribution, collects execution logs, and extracts generated accounts centrally.
 
-### AI Profile & Subdomain Enhancement (Codex)
-  - **Realistic Profile Generation**: Automatically calls AI models (e.g., `gpt-5.1-codex`) to generate realistic European/American names (`firstname.lastname`) for registration.
-  - **Smart Tech Subdomains**: Generates trending tech/AI keywords (e.g., `vector-database`, `neural`) to be seamlessly injected into the multi-level subdomain generator, significantly increasing account credibility.
+### AI profile & subdomain enhancement
+
+- **Realistic profile generation**: AI-assisted name / profile fields for task payloads.
+- **Smart tech subdomains**: Generates tech-style keywords for multi-level subdomain construction.
 
 ### Mailbox and OTP workflow
 - **Multi-backend mailbox support**: Supports `cloudflare_temp_email`, `freemail`, `imap`, `cloudmail`, `mail_curl`, `luckmail`, `TempMail.org`, `Tempmail.lol`, `Duckmail`, `Generator`, `hotmail/outlook` and `GmailOauth`.
@@ -143,18 +210,20 @@ If you find this tool helpful or if it has saved you time, consider buying me a 
 - **Microsoft Asset Isolation**: A dedicated **Microsoft Mail Lib** module for storing, categorizing, and managing Microsoft-specific accounts separate from the standard local inventory.
 
 ### Proxy management and network resilience
-- **Clash / Mihomo node rotation**: Can switch outbound nodes through the Clash API before registration tasks.
-- **Fastest-node preferred mode**: Supports `fastest_mode: true` for latency-based preferred selection.
-- **Multi-threaded Clash proxy-pool mode**: Supports a multi-container / multi-port proxy pool via `clash_proxy_pool.pool_mode` + `warp_proxy_list`.
-- **Docker-aware proxy adaptation**: Automatically rewrites `127.0.0.1` / `localhost` to `host.docker.internal` inside containers when needed.
-- **Region-aware liveness checks**: Verifies outbound connectivity and rejects blocked or unsuitable regions such as `CN` / `HK`.
-- **Retry handling**: Includes retry and cooling logic for unstable networks, OTP polling, and temporary request failures.
+
+- **Clash / Mihomo node rotation**: Switch outbound nodes through the Clash API before task runs.
+- **Fastest-node preferred mode**: Latency-based preferred selection (`fastest_mode: true`).
+- **Multi-threaded Clash proxy-pool mode**: Multi-container / multi-port pool via `clash_proxy_pool.pool_mode` + `warp_proxy_list`.
+- **Docker-aware proxy adaptation**: Rewrites `127.0.0.1` / `localhost` to `host.docker.internal` inside containers when needed.
+- **Region-aware liveness checks**: Verifies outbound connectivity and rejects blocked / unsuitable regions such as `CN` / `HK`.
+- **Retry handling**: Retry and cooling logic for unstable networks, OTP polling, and temporary request failures.
 
 ### Inventory maintenance and warehouse operations
+
 - **Cloud inventory monitoring**: Real-time tracking of remote API balances, stock levels, and account statuses through the **Cloud Inventory** dashboard.
 - **Standalone Liveness Check**: A dedicated "Manual Check" button in the Web Console exclusively scans and cleans up dead accounts in your CPA/Sub2API warehouse without triggering the main registration loop.
 - **Fast Replenish Toggle**: An `auto_check` toggle to skip full inventory inspections before replenishing, drastically speeding up the loop based purely on cloud API total counts.
-- **Local SQLite inventory**: Stores accounts locally and provides paginated inventory browsing in the panel.
+- **Local SQLite inventory**: Paginated local browsing and centralized storage.
 - **Batch export / delete**: Supports exporting selected accounts as JSON or TXT and deleting selected accounts in bulk.
 - **Optional CPA maintenance mode**: Can periodically inspect CPA inventory and replenish stock automatically when valid account count is low.
 - **Multi-threaded CPA inspection**: CPA health checks are processed concurrently, and worker count is controlled by `cpa_mode.threads`.
@@ -166,62 +235,68 @@ If you find this tool helpful or if it has saved you time, consider buying me a 
 - **Credential refresh rescue**: When stored credentials become invalid, the script can attempt refresh-token recovery and update CPA / Sub2API storage.
 
 ### Archival output and privacy protection
-- **Local SQLite Database**: Generated tokens and account credentials are now securely stored in a centralized local database rather than individual JSON files, providing a much cleaner file system.
-- **Optional local retention in CPA / Sub2API mode**: Upload workflows can still retain a local database copy of the accounts when enabled, even after successfully pushing them to the cloud warehouse.
-- **Console Export Support**: Accounts stored in the database can be seamlessly selected and exported directly from the Web Console as structured JSON or `email----password` TXT files.
-- **Log masking**: Supports masking mailbox domains in console output to protect sensitive domain configurations.
+
+- **Local SQLite database**: Credentials and tokens are stored centrally instead of scattered files.
+- **Optional local retention in CPA / Sub2API mode**: Keep a local DB copy after cloud push when enabled.
+- **Console export support**: Structured JSON or `email----password` TXT export.
+- **Log masking**: Masks mailbox domains / emails in console output.
+
+---
 
 ## Project Structure
-
-An overview of the core directories and files in this repository:
 
 ```text
 .
 ├── wfxl_openai_regst.py     # Main Web Console entry point
-├── global_state.py          # Global state management (tokens, nodes, and cluster locks)
+├── global_state.py          # Global state (tokens, nodes, cluster locks)
 ├── routers/                 # API routing endpoints
-├── utils/                   # Core engine and configuration management
+├── utils/                   # Core engine and configuration
 │   ├── email_providers/     # Mailbox backend implementations
-│   └── integrations/        # 3rd-party API integrations (Sub2API, TG Bot, HeroSMS)
-├── luckmail/                # Advanced LuckMail service integration
-├── static/                  # Web Console frontend assets (Vue.js, CSS)
-├── assets/                  # README screenshot resources
-├── public/                  # Distributed Browser Extension files ("Classic" mode)
-├── data/                    # Runtime data, SQLite DB, local config, and exports
-├── index.html               # Frontend UI entry point
+│   ├── grok_auth/           # assisted provider pipeline
+│   └── integrations/        # Sub2API, TG Bot, HeroSMS, Clash, etc.
+├── turnstile-solver/        # Local challenge helper components
+├── luckmail/                # LuckMail service integration
+├── static/                  # Web Console frontend assets
+├── assets/                  # README screenshots
+├── plugin/ / public/        # Distributed browser extension files
+├── data/                    # Runtime data, SQLite DB, local config, exports
+├── index.html               # Frontend UI entry
 ├── Dockerfile               # Container image definition
-├── docker-compose.yml       # Docker compose deployment example
+├── docker-compose.yml       # Docker compose example
+├── docker-compose2.yml      # Cloud MySQL compose example
 ├── config.example.yaml      # Configuration fallback template
-├── requirements.txt         # Python dependency list
+├── requirements.txt         # Python dependencies
 └── README.md                # Project documentation
 ```
 
-## Usage
+---
 
-Start the Web Console service locally:
+## Configuration Notes
 
-```bash
-python wfxl_openai_regst.py
+Provider / business-mode switch:
+
+```yaml
+# runtime provider switch (console also supports this)
+reg_provider: "openai"
+
+# browser-assisted mode options
+grok:
+  oauth_timeout: 180
 ```
 
-After startup, open the Web Console in your browser:
+Other major areas are configured from the Web Console and `config.example.yaml`:
 
-```text
-http://127.0.0.1:8000
-```
+- mailbox backends / domains / subdomains
+- proxy and Clash pool
+- CPA mode
+- Sub2API mode
+- notifications
+- concurrency / system settings
 
-Default Web Console password:
+Missing keys are auto-merged from `config.example.yaml` on upgrade.
 
-```text
-admin
-```
+---
 
-Recommended workflow:
-The repository includes a ready-to-use `docker-compose.yml` for starting the **Wenfxl Codex Manager Web Console** with persistent config and data mounts.
-- log in to the Web Console
-- configure mailbox / proxy / warehouse settings in the UI
-- start or stop tasks from the dashboard
-- monitor logs, task status, and account inventory in real time
 
 ## Running with Docker Compose
 
@@ -299,39 +374,43 @@ services:
 ### Docker deployment steps
 
 1. Place `docker-compose.yml` and `config.yaml` in the same directory.
-2. Start the Web Console container:
+2. Start:
 
 ```bash
 docker compose up -d
 ```
 
-3. View logs if needed:
+3. Logs:
 
 ```bash
 docker compose logs -f
 ```
 
-4. Stop the container:
+4. Stop:
 
 ```bash
 docker compose down
 ```
 
-5. update:
+5. Update image:
 
 ```bash
-docker-compose pull wenfxl/wenfxl-codex-manager:latest
+docker compose pull
+docker compose up -d
 ```
-config directly
+
 Notes:
-- `./data:/app/data` is used to persist runtime data, local database content, and exports.
-- The Docker Web Console is exposed on port `8000` by default.
-- Default Web Console password: `admin`
-- The current compose file uses image tag `wenfxl/wenfxl-codex-manager:latest`.
+
+- `./data:/app/data` persists runtime data, local DB, and exports
+- Web Console default port: `8000`
+- Default password: `admin`
+- Image: `wenfxl/wenfxl-codex-manager:latest`
+
+---
 
 ## Running Mihomo / Clash on a server
 
-If you want to use Clash-based node rotation on a server, you can run Mihomo (Clash Meta compatible core) in the background and expose both a local mixed proxy port and the Clash API.
+To use Clash-based node rotation on a server, run Mihomo (Clash Meta compatible core) in the background and expose both a local mixed proxy port and the Clash API.
 
 ### 1. Prepare a working directory
 
@@ -358,7 +437,6 @@ wget -U "Clash-meta" -O /opt/clash/config.yaml 'YOUR_SUBSCRIPTION_CONVERTER_URL'
 
 ### 4. Check important fields in `config.yaml`
 
-Inspect these fields in your Mihomo config:
 - `mixed-port`
 - `external-controller`
 - `secret`
@@ -398,13 +476,15 @@ pkill mihomo
 
 ### 7. Multi-container proxy-pool idea
 
-If you use server-side concurrent registration and want each worker to use an independent Clash instance, you can expose multiple local proxy ports such as:
+For concurrent workers with independent Clash instances, expose multiple local proxy ports under `warp_proxy_list`, then enable:
 
-- `41001`
-- `41002`
-- `41003`
+```yaml
+enable_multi_thread_reg: true
 
-and pair them with corresponding controller APIs. Then fill `warp_proxy_list` and enable `pool_mode: true`.
+clash_proxy_pool:
+  enable: true
+  pool_mode: true
+```
 
 ### 8. Deploy a Clash Proxy Cluster via Web Console (Recommended)
 
@@ -423,84 +503,82 @@ In the **Subscription Update** section, paste your proxy subscription URL and cl
 #### Step 4: One-Click Pool Sync
 Click the purple **[🔗 Sync to Exclusive Pool]** button at the top of the panel. This will automatically calculate the internal routing addresses of your new cluster and link them directly to the smart proxy pool for load balancing.
 
-## Output Files
-
-Typical output files include:
-
-### JSON files
-
-Example:
-
-```text
-token_user_example.com_1711111111.json
-```
-
-These store structured token / credential output data.
-
-### `accounts.txt`
-
-Example:
-
-```text
-example@gmail.com----password123
-```
-
-This stores local account-password pairs when applicable.
+---
 
 ## Troubleshooting
 
-### Clash node switching fails
-Check the following:
-- Clash API is enabled
-- `clash_proxy_pool.api_url` is correct
-- the controller `secret` is correct if authentication is enabled
-- `group_name` matches a real selectable proxy group
+### Console returns 403 / auth fails
+
+- Join the official Telegram group bound to this project
+- Confirm you are using the current official group invite link
+
+### challenge fails
+
+- Run `python -m camoufox fetch` on native installs
+- Confirm outbound network / soft-router path can reach the target sites
+- Prefer stable proxy quality; slow or blocked exits often cause challenge timeouts
+
+### Warehouse push succeeds but later token refresh fails
+
+- Ensure the stored credential set includes both access and refresh material
+- revoked refresh usually means the refresh token is already dead; regenerate credentials and push again
+- Export and push share the same credential packaging path for browser-assisted mode
+
+### Clash node switching does not work
+
+- `mixed-port` / `external-controller` / `secret` match project config
+- `api_url` can reach the controller
+- selected proxy group is valid
 - `test_proxy_url` points to a working local proxy port
-- the blacklist is not too strict
+- blacklist is not too strict
 
 ### Multi-threaded proxy pool does not work as expected
-Check the following:
+
 - `enable_multi_thread_reg: true`
 - `clash_proxy_pool.enable: true`
 - `clash_proxy_pool.pool_mode: true`
 - `warp_proxy_list` is not empty
-- each listed local proxy endpoint is actually reachable
-- each proxy/container has a matching controller API
+- each listed local proxy endpoint is reachable
+- each proxy / container has a matching controller API
 
 ### Gmail IMAP login fails
-Check the following:
-- IMAP is enabled
-- 2-Step Verification is enabled if App Passwords are required
-- you are using an App Password, not the normal mailbox password
+
+- IMAP enabled
+- 2-Step Verification enabled if App Passwords are required
+- using an App Password, not the normal mailbox password
 
 ### No email arrives
-Possible causes:
-- the email landed in spam
+
+- spam folder
 - proxy routing breaks mailbox connectivity
-- mailbox backend credentials are invalid
-- domain configuration is wrong
-- the backend API is not returning the expected message list
+- mailbox backend credentials invalid
+- domain configuration wrong
+- backend API not returning the expected message list
 
 ### OTP is not extracted
-Possible causes:
-- the email body encoding is unusual
-- the verification code is not a 6-digit number
-- the message format does not match the extraction patterns
-- the code exists only in the detail endpoint, not in the list view
+
+- unusual email body encoding
+- code is not a 6-digit number
+- message format does not match extraction patterns
+- code exists only in detail endpoint, not list view
 
 ### CPA inspection or replenishment behaves unexpectedly
-Check the following:
-- `cpa_mode.enable` is set correctly
+
+- `cpa_mode.enable` is correct
 - `cpa_mode.api_url` and `api_token` are correct
-- `cpa_mode.threads` is not set too high for your server/API capacity
-- `remove_on_limit_reached` / `remove_dead_accounts` match your intended policy
+- `cpa_mode.threads` is not too high for your server / API capacity
+- `remove_on_limit_reached` / `remove_dead_accounts` match your policy
+
+---
 
 ## Security Notes
 
-- Do not expose `db` or token JSON outputs publicly.
-- Prefer stronger secret handling for mailbox admin credentials, CPA tokens, and Clash controller secrets.
-- Restrict access to the output directory.
-- If used in a team environment, add audit logging and permission boundaries.
+- Do not expose databases or token outputs publicly.
+- Prefer stronger secret handling for mailbox credentials, CPA tokens, Sub2API keys, and Clash controller secrets.
+- Restrict access to the data directory.
+- In team environments, add audit logging and permission boundaries.
+
+---
 
 ## Contributors
 
@@ -511,6 +589,8 @@ Thanks to all the developers who have contributed to this project:
 <a href="https://github.com/SYFATP"><img src="https://wsrv.nl/?url=github.com/SYFATP.png&mask=circle" width="80" title="SYFATP" alt="SYFATP"></a>
 <a href="https://github.com/YuHaiA"><img src="https://wsrv.nl/?url=github.com/YuHaiA.png&mask=circle" width="80" title="YuHaiA" alt="YuHaiA"></a>
 <a href="https://github.com/haocenchen-debug"><img src="https://wsrv.nl/?url=github.com/haocenchen-debug.png&mask=circle" width="80" title="haocenchen-debug" alt="haocenchen-debug"></a>
+
+---
 
 ## Terms of Use & License
 
