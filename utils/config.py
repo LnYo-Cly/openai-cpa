@@ -178,7 +178,7 @@ def init_config():
                 print(f"[{ts()}] [WARNING] 自动补全配置文件写入失败: {e}")
 
     return user_config
-APP_VERSION = "v18.1.7"
+APP_VERSION = "v18.1.8"
 _c: dict = {}
 WEB_PASSWORD: str = "admin"
 RETAIN_REG_ONLY: bool = False
@@ -509,6 +509,8 @@ def reload_all_configs(new_config_dict=None):
     global REG_PROVIDER
     # Grok 仅加载可配置项；其余固定常量不在此处改写
     global GROK_OAUTH_TIMEOUT
+    global GROK2API_ENABLE, GROK2API_URL, GROK2API_USERNAME, GROK2API_PASSWORD
+    global GROK2API_TARGET, GROK2API_PUSH_USE_PROXY, GROK2API_PUSH_PROXY, GROK2API_TIMEOUT
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
     global DB_TYPE, MYSQL_CFG
