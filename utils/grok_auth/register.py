@@ -185,15 +185,11 @@ def run(
             try:
                 from utils.integrations.grok2api_client import push_grok_sso
 
-                _log("Grok2API SSO 推送开始（不替代后续 OAuth）", email)
                 pushed, push_message = push_grok_sso(sso)
-                target_label = "Grok Console" if getattr(cfg, "GROK2API_TARGET", "grok_console") == "grok_console" else "Grok Web"
                 if pushed:
-                    _log(f"Grok2API [{target_label}] 推送成功: {push_message}", email)
-                else:
-                    _log(f"Grok2API [{target_label}] 推送失败（继续现有 OAuth）: {_short_err(push_message)}", email)
-            except Exception as push_exc:
-                _log(f"Grok2API 推送异常（继续现有 OAuth）: {_short_err(str(push_exc))}", email)
+                    _log_success(f"Grok2API 推送成功: {push_message}", email)
+            except Exception:
+                pass
 
         _log("开始执行原有 OAuth 换取 access_token（SSO 阶段完成后）", email)
         try:
