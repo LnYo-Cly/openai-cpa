@@ -589,7 +589,7 @@ Thanks to all the developers who have contributed to this project:
 <a href="https://github.com/SYFATP"><img src="https://wsrv.nl/?url=github.com/SYFATP.png&mask=circle" width="80" title="SYFATP" alt="SYFATP"></a>
 <a href="https://github.com/YuHaiA"><img src="https://wsrv.nl/?url=github.com/YuHaiA.png&mask=circle" width="80" title="YuHaiA" alt="YuHaiA"></a>
 <a href="https://github.com/haocenchen-debug"><img src="https://wsrv.nl/?url=github.com/haocenchen-debug.png&mask=circle" width="80" title="haocenchen-debug" alt="haocenchen-debug"></a>
-
+<a href="https://github.com/bohu-t"><img src="https://wsrv.nl/?url=github.com/bohu-t.png&mask=circle" width="80" title="bohu-t" alt="bohu-t"></a>
 ---
 
 ## Terms of Use & License

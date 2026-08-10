@@ -149,7 +149,7 @@ gmail_oauth_mode:
 default_proxy: ""
 
 # 是否开启注册多线程并发 (true/false)
-enable_multi_thread_reg: false    
+enable_multi_thread_reg: false
 # 注册时的最大并发线程数 (建议根据你的代理质量调整，不要设置过高)
 reg_threads: 10
 
@@ -264,7 +264,7 @@ cpa_mode:
   # 设为 80 代表额度剩余低于 80% 就当作死号剔除，设为 0 代表完全耗尽才剔除。
   min_remaining_weekly_percent: 80
   # 额度耗尽时是否删除 (false 则为不删除，恢复后自动唤醒)
-  remove_on_limit_reached: false 
+  remove_on_limit_reached: false
   # 账号彻底死亡(如封号、Token刷新失败)时是否删除 (false 则为不删除，只禁用)
   remove_dead_accounts: false
   # 是否开启刷新token功能
@@ -282,8 +282,8 @@ sub2api_mode:
   enable: false
   auto_check: true
   save_to_local: true
-  api_url: 
-  api_key: 
+  api_url:
+  api_key:
   min_accounts_threshold: 20
   batch_reg_count: 1
   remove_on_limit_reached: true
@@ -313,16 +313,48 @@ sub2api_mode:
   agent_identity_recovery_cross_account: true
   update_existing: true
 
-# Grok2API 中转管仓。Grok 注册成功取得 SSO 后立即上传，不依赖 OAuth 是否随后成功。
-grok2api_mode:
+# Grok2API 独立仓管。注册流程保持原始 OAuth，OAuth 成功后再导入 Grok2API。
+grok2api:
+  # 【开关】true 开启 Grok2API 独立仓管；false 不拉取/不巡检远端 Grok2API
   enable: false
-  api_url: ""
-  username: ""
-  password: ""
-  target: "grok_console" # grok_console 或 grok_web
-  push_use_proxy: false
-  push_proxy: ""
-  timeout: 180
+  auto_check: true
+  # 补货导入 Grok2API 时，是否同时将账号 Token 备份到本地
+  save_to_local: true
+  # Grok2API 管理端地址，例如 http://host.docker.internal:8000
+  api_url: "http://host.docker.internal:8000"
+  # Grok2API 管理员密码
+  admin_password: ""
+  # 仓库存量低于此值时触发补货；设为 0 表示跳过库存判断，按批次数直接补货
+  min_accounts_threshold: 20
+  # 每次触发补货注册的数量
+  batch_reg_count: 1
+  # 额度剩余阈值 (0-100)。0 表示仅真实耗尽时处理；大于 0 时低于该百分比即视为不足
+  min_remaining_weekly_percent: 0
+  # 额度耗尽/不足时是否删除；false 则禁用保留
+  remove_on_limit_reached: true
+  # 账号彻底死亡时是否删除；false 则禁用保留
+  remove_dead_accounts: true
+  # 预留：Grok2API token 复活开关
+  enable_token_revive: false
+  # Grok2API 仓库巡检间隔，默认每 60 分钟
+  check_interval_minutes: 60
+  # Grok2API 测活并发线程数
+  threads: 5
+  account_concurrency: 10
+  account_load_factor: 10
+  account_priority: 1
+  account_rate_multiplier: 1.0
+  account_group_ids: ""
+  enable_ws_mode: true
+  test_model: "grok-4.5"
+  default_proxy: ""
+  # 是否保存仅注册账号，用于后续手动登录或者其他作用
+  retain_reg_only: false
+  auto_re_oauth: false
+  # 注册到 Grok/xAI 后是否自动导入 Grok2API；开启 grok2api.enable 后默认按仓管链路导入
+  auto_import_after_register: false
+  # 导入 Grok2API 时，若账号含 sso，同时导入为 Grok Web 账号
+  import_sso_as_grok_web: false
 
 image2api_mode:
   enable: false
@@ -333,7 +365,7 @@ image2api_mode:
 
 hero_sms:
   enabled: false
-  api_key: 
+  api_key:
   base_url: https://hero-sms.com/stubs/handler_api.php
   country: 50
   service: dr
@@ -426,7 +458,7 @@ team_invite:
 # WEB端密码
 web_password: admin
 #CF账号
-cf_api_email: 
+cf_api_email:
 #CF KEY
 cf_api_key:
 max_log_lines: "500"
@@ -469,3 +501,14 @@ plus_activation:
   shop_dujiao_product_id: 1                             # 商品 ID
   shop_dujiao_sku_id: 1                                 # SKU ID
 enable_codex_agent_identity: false
+
+# [可选插件] 仅当 plugin/*/manifest.json 存在时生效
+domain_register:
+  api_token: ""
+  invite_ref: ""
+  auto_invite_signup: true
+  domain_prefix: sub2api
+  domain_suffix: dpdns.org
+  domain_start: 27
+  domain_end: 127
+  domain_pad: 4

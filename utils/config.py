@@ -281,20 +281,38 @@ SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY: bool = True
 SUB2API_AGENT_IDENTITY_RECOVERY_CROSS_ACCOUNT: bool = True
 SUB2API_UPDATE_EXISTING: bool = True
 
-GROK2API_ENABLE: bool = False
-GROK2API_URL: str = ""
-GROK2API_USERNAME: str = ""
-GROK2API_PASSWORD: str = ""
-GROK2API_TARGET: str = "grok_console"
-GROK2API_PUSH_USE_PROXY: bool = False
-GROK2API_PUSH_PROXY: str = ""
-GROK2API_TIMEOUT: int = 180
-
 ENABLE_IMAGE2API_MODE: bool = False
 IMAGE2API_URL: str = ""
 IMAGE2API_KEY: str = ""
 IMAGE2API_RETAIN_REG_ONLY: bool = False
 IMAGE2API_IMG_ONLY_MODE: bool = False
+
+GROK2API_URL: str = ""
+GROK2API_ADMIN_PASSWORD: str = ""
+ENABLE_GROK2API_MODE: bool = False
+SAVE_TO_LOCAL_IN_GROK2API_MODE: bool = True
+GROK2API_MIN_THRESHOLD: int = 20
+GROK2API_BATCH_COUNT: int = 1
+GROK2API_MIN_REMAINING_WEEKLY_PERCENT: int = 0
+GROK2API_REMOVE_ON_LIMIT_REACHED: bool = True
+GROK2API_REMOVE_DEAD_ACCOUNTS: bool = True
+GROK2API_ENABLE_TOKEN_REVIVE: bool = False
+GROK2API_CHECK_INTERVAL: int = 60
+GROK2API_THREADS: int = 5
+GROK2API_AUTO_CHECK: bool = True
+GROK2API_RETAIN_REG_ONLY: bool = False
+GROK2API_AUTO_RE_OAUTH: bool = False
+GROK2API_ACCOUNT_CONCURRENCY: int = 10
+GROK2API_ACCOUNT_LOAD_FACTOR: int = 10
+GROK2API_ACCOUNT_PRIORITY: int = 1
+GROK2API_ACCOUNT_RATE_MULTIPLIER: float = 1.0
+GROK2API_ACCOUNT_GROUP_IDS: list = []
+GROK2API_ENABLE_WS_MODE: bool = True
+GROK2API_TEST_MODEL: str = "grok-4.5"
+GROK2API_DEFAULT_PROXY: str = ""
+GROK2API_DEFAULT_PROXY_POOL: list = []
+GROK2API_AUTO_IMPORT_AFTER_REGISTER: bool = False
+GROK2API_IMPORT_SSO_AS_GROK_WEB: bool = False
 
 LUCKMAIL_PREFERRED_DOMAIN: str = ""
 LUCKMAIL_EMAIL_TYPE: str = ""
@@ -412,6 +430,8 @@ OPENAI_CPA_WEBHOOK_SECRET = ""
 USE_ORIGINAL_PASSWORD_FLOW: bool = False
 CF_API_EMAIL: str = ""
 CF_API_KEY: str = ""
+DOMAIN_REGISTER: dict = {}
+DIGITALPLAT: dict = {}  # compat alias
 TEAM_MODE_ENABLE: bool = False
 TEAM_MODE_OVERSPEED: bool = False
 TEAM_INVITE_ENABLE: bool = False
@@ -488,7 +508,16 @@ def reload_all_configs(new_config_dict=None):
     global SUB2API_PUSH_FORMAT, SUB2API_AGENT_IDENTITY_FALLBACK_OAUTH, SUB2API_AGENT_IDENTITY_USE_REG_PROXY
     global SUB2API_AGENT_IDENTITY_RUNTIME_RECOVERY, SUB2API_AGENT_IDENTITY_RECOVERY_CROSS_ACCOUNT, SUB2API_UPDATE_EXISTING
     global ENABLE_IMAGE2API_MODE, IMAGE2API_URL, IMAGE2API_KEY, IMAGE2API_RETAIN_REG_ONLY, IMAGE2API_IMG_ONLY_MODE
-    global CF_API_EMAIL, CF_API_KEY
+    global GROK2API_URL, GROK2API_ADMIN_PASSWORD, GROK2API_AUTO_IMPORT_AFTER_REGISTER, GROK2API_IMPORT_SSO_AS_GROK_WEB
+    global ENABLE_GROK2API_MODE, SAVE_TO_LOCAL_IN_GROK2API_MODE
+    global GROK2API_MIN_THRESHOLD, GROK2API_BATCH_COUNT, GROK2API_MIN_REMAINING_WEEKLY_PERCENT
+    global GROK2API_REMOVE_ON_LIMIT_REACHED, GROK2API_REMOVE_DEAD_ACCOUNTS, GROK2API_ENABLE_TOKEN_REVIVE
+    global GROK2API_CHECK_INTERVAL, GROK2API_THREADS, GROK2API_AUTO_CHECK
+    global GROK2API_RETAIN_REG_ONLY, GROK2API_AUTO_RE_OAUTH
+    global GROK2API_ACCOUNT_CONCURRENCY, GROK2API_ACCOUNT_LOAD_FACTOR, GROK2API_ACCOUNT_PRIORITY
+    global GROK2API_ACCOUNT_RATE_MULTIPLIER, GROK2API_ACCOUNT_GROUP_IDS, GROK2API_ENABLE_WS_MODE
+    global GROK2API_TEST_MODEL, GROK2API_DEFAULT_PROXY, GROK2API_DEFAULT_PROXY_POOL
+    global CF_API_EMAIL, CF_API_KEY, DOMAIN_REGISTER, DIGITALPLAT
     global LUCKMAIL_API_KEY, LUCKMAIL_PREFERRED_DOMAIN, LUCKMAIL_EMAIL_TYPE, LUCKMAIL_VARIANT_MODE, LUCKMAIL_REUSE_PURCHASED, LUCKMAIL_TAG_ID
     global HERO_SMS_ENABLED, HERO_SMS_API_KEY, HERO_SMS_BASE_URL, HERO_SMS_COUNTRY, HERO_SMS_SERVICE
     global HERO_SMS_AUTO_PICK_COUNTRY, HERO_SMS_REUSE_PHONE, HERO_SMS_MAX_PRICE, HERO_SMS_VERIFY_ON_REGISTER
@@ -509,8 +538,6 @@ def reload_all_configs(new_config_dict=None):
     global REG_PROVIDER
     # Grok 仅加载可配置项；其余固定常量不在此处改写
     global GROK_OAUTH_TIMEOUT
-    global GROK2API_ENABLE, GROK2API_URL, GROK2API_USERNAME, GROK2API_PASSWORD
-    global GROK2API_TARGET, GROK2API_PUSH_USE_PROXY, GROK2API_PUSH_PROXY, GROK2API_TIMEOUT
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
     global DB_TYPE, MYSQL_CFG
@@ -739,6 +766,10 @@ def reload_all_configs(new_config_dict=None):
 
     CF_API_EMAIL = _c.get("cf_api_email", "")
     CF_API_KEY = _c.get("cf_api_key", "")
+    DOMAIN_REGISTER = _c.get("domain_register") if isinstance(_c.get("domain_register"), dict) else (
+        _c.get("digitalplat") if isinstance(_c.get("digitalplat"), dict) else {}
+    )
+    DIGITALPLAT = DOMAIN_REGISTER  # backward compatible alias
 
     _ocpa = _c.get("openai_cpa", {})
     OPENAI_CPA_WEBHOOK_SECRET = str(_ocpa.get("webhook_secret", "")).strip()
@@ -810,18 +841,6 @@ def reload_all_configs(new_config_dict=None):
     )
     SUB2API_UPDATE_EXISTING = safe_bool(_sub2api.get("update_existing", True), default=True)
 
-    _grok2api = _c.get("grok2api_mode", {})
-    GROK2API_ENABLE = safe_bool(_grok2api.get("enable", False), default=False)
-    GROK2API_URL = format_docker_url(str(_grok2api.get("api_url", "")).strip()).rstrip("/")
-    GROK2API_USERNAME = str(_grok2api.get("username", "") or "").strip()
-    GROK2API_PASSWORD = str(_grok2api.get("password", "") or "")
-    GROK2API_TARGET = str(_grok2api.get("target", "grok_console") or "grok_console").strip().lower()
-    if GROK2API_TARGET not in {"grok_console", "grok_web"}:
-        GROK2API_TARGET = "grok_console"
-    GROK2API_PUSH_USE_PROXY = safe_bool(_grok2api.get("push_use_proxy", False), default=False)
-    GROK2API_PUSH_PROXY = format_docker_url(str(_grok2api.get("push_proxy", "") or "").strip())
-    GROK2API_TIMEOUT = safe_int(_grok2api.get("timeout", 180), 180, minimum=15)
-
     raw_sub2api_default_proxy = _sub2api.get("default_proxy", "")
 
     if isinstance(raw_sub2api_default_proxy, list):
@@ -840,13 +859,70 @@ def reload_all_configs(new_config_dict=None):
     IMAGE2API_RETAIN_REG_ONLY = safe_bool(_image2api.get("retain_reg_only", False))
     IMAGE2API_IMG_ONLY_MODE = safe_bool(_image2api.get("img_only_mode", False))
 
+    _grok2api = _c.get("grok2api", {}) if isinstance(_c.get("grok2api"), dict) else {}
+    _legacy_grok2api = _c.get("grok2api_mode", {}) if isinstance(_c.get("grok2api_mode"), dict) else {}
+    if _legacy_grok2api and (
+        _legacy_grok2api.get("enable")
+        or _legacy_grok2api.get("api_url")
+        or _legacy_grok2api.get("password")
+    ):
+        _grok2api = dict(_grok2api)
+        if _legacy_grok2api.get("enable") and not _grok2api.get("enable"):
+            _grok2api["enable"] = True
+        if _legacy_grok2api.get("api_url") and (
+            not _grok2api.get("api_url") or _grok2api.get("api_url") == "http://host.docker.internal:8000"
+        ):
+            _grok2api["api_url"] = _legacy_grok2api["api_url"]
+        if _legacy_grok2api.get("password") and not _grok2api.get("admin_password"):
+            _grok2api["admin_password"] = _legacy_grok2api["password"]
+        if str(_legacy_grok2api.get("target", "")).strip().lower() == "grok_web":
+            _grok2api["import_sso_as_grok_web"] = True
+    ENABLE_GROK2API_MODE = safe_bool(_grok2api.get("enable", False))
+    SAVE_TO_LOCAL_IN_GROK2API_MODE = safe_bool(_grok2api.get("save_to_local", True), default=True)
+    GROK2API_URL = format_docker_url(str(_grok2api.get("api_url", "")).strip()).rstrip("/")
+    GROK2API_ADMIN_PASSWORD = str(_grok2api.get("admin_password", "")).strip()
+    GROK2API_MIN_THRESHOLD = safe_int(_grok2api.get("min_accounts_threshold", 20), 20, minimum=0)
+    GROK2API_BATCH_COUNT = safe_int(_grok2api.get("batch_reg_count", 1), 1, minimum=1)
+    GROK2API_MIN_REMAINING_WEEKLY_PERCENT = safe_int(_grok2api.get("min_remaining_weekly_percent", 0), 0, minimum=0)
+    GROK2API_MIN_REMAINING_WEEKLY_PERCENT = min(100, GROK2API_MIN_REMAINING_WEEKLY_PERCENT)
+    GROK2API_REMOVE_ON_LIMIT_REACHED = safe_bool(_grok2api.get("remove_on_limit_reached", True), default=True)
+    GROK2API_REMOVE_DEAD_ACCOUNTS = safe_bool(_grok2api.get("remove_dead_accounts", True), default=True)
+    GROK2API_ENABLE_TOKEN_REVIVE = safe_bool(_grok2api.get("enable_token_revive", False))
+    GROK2API_CHECK_INTERVAL = safe_int(_grok2api.get("check_interval_minutes", 60), 60, minimum=1)
+    GROK2API_THREADS = safe_int(_grok2api.get("threads", 5), 5, minimum=1)
+    GROK2API_AUTO_CHECK = safe_bool(_grok2api.get("auto_check", True), default=True)
+    GROK2API_RETAIN_REG_ONLY = safe_bool(_grok2api.get("retain_reg_only", False))
+    GROK2API_AUTO_RE_OAUTH = safe_bool(_grok2api.get("auto_re_oauth", False))
+    GROK2API_ACCOUNT_CONCURRENCY = safe_int(_grok2api.get("account_concurrency", 10), 10, minimum=1)
+    GROK2API_ACCOUNT_LOAD_FACTOR = safe_int(_grok2api.get("account_load_factor", 10), 10, minimum=1)
+    GROK2API_ACCOUNT_PRIORITY = safe_int(_grok2api.get("account_priority", 1), 1, minimum=1)
+    GROK2API_ACCOUNT_RATE_MULTIPLIER = safe_float(_grok2api.get("account_rate_multiplier", 1.0), 1.0, minimum=0.0)
+    GROK2API_ACCOUNT_GROUP_IDS = parse_group_ids(_grok2api.get("account_group_ids", ""))
+    GROK2API_ENABLE_WS_MODE = safe_bool(_grok2api.get("enable_ws_mode", True), default=True)
+    GROK2API_TEST_MODEL = str(_grok2api.get("test_model", "grok-4.5") or "grok-4.5").strip()
+    raw_grok2api_default_proxy = _grok2api.get("default_proxy", "")
+    if isinstance(raw_grok2api_default_proxy, list):
+        GROK2API_DEFAULT_PROXY = "\n".join(str(item).strip() for item in raw_grok2api_default_proxy if str(item).strip())
+    else:
+        GROK2API_DEFAULT_PROXY = str(raw_grok2api_default_proxy or "")
+    GROK2API_DEFAULT_PROXY_POOL = [
+        format_docker_url(item)
+        for item in get_valid_sub2api_proxy_urls(raw_grok2api_default_proxy)
+    ]
+    GROK2API_AUTO_IMPORT_AFTER_REGISTER = safe_bool(
+        _grok2api.get("auto_import_after_register", ENABLE_GROK2API_MODE)
+    )
+    GROK2API_IMPORT_SSO_AS_GROK_WEB = safe_bool(
+        _grok2api.get("import_sso_as_grok_web", False)
+    )
+
     reset_sub2api_proxy_rotation()
     _normal = _c.get("normal_mode", {})
     NORMAL_SLEEP_MIN = _normal.get("sleep_min", 5)
     NORMAL_SLEEP_MAX = _normal.get("sleep_max", 30)
     NORMAL_TARGET_COUNT = _normal.get("target_count", 0)
     NORMAL_SAVE_IMG_TO_LOCAL = safe_bool(_normal.get("save_img_to_local", False))
-    
+
     _clash_conf = _c.get("clash_proxy_pool", {})
     _clash_enable = _clash_conf.get("enable", False)
     _clash_pool_mode = _clash_conf.get("pool_mode", False)
