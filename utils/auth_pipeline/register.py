@@ -200,9 +200,11 @@ def run(
             ok, loc, elapsed, error = _preflight_proxy(s_reg, proxies)
             if ok:
                 print(f"[{cfg.ts()}] [INFO] 节点测活成功！地区: {loc} | 延迟: {elapsed:.2f}s")
-            else:
-                print(f"[{cfg.ts()}] [ERROR] 代理网络检查失败（已重试 1 次）: {error}")
+            elif loc in ("CN", "HK"):
+                print(f"[{cfg.ts()}] [ERROR] 当前代理所在地不支持 OpenAI ({loc})")
                 return None, None
+            else:
+                print(f"[{cfg.ts()}] [WARNING] 代理网络检查失败（已重试 1 次），继续实际注册流程: {error}")
         try:
             s_reg.close()
         except:
