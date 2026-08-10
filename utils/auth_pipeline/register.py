@@ -20,7 +20,7 @@ from utils.integrations.smsbower_sms import get_phone_for_signup as sb_get_phone
 from utils.integrations.fivesim_sms import try_verify_phone_via_fivesim
 from utils.integrations.fivesim_sms import get_phone_for_signup as fs_get_phone, wait_code_for_signup as fs_wait_code, report_signup_result as fs_report
 from utils.integrations.image2api_client import Image2APIClient
-from .http_utils import _ssl_verify, _skip_net_check, _post_with_retry, _oai_headers, _follow_redirect_chain_local
+from .http_utils import _ssl_verify, _skip_net_check, _preflight_proxy, _post_with_retry, _oai_headers, _follow_redirect_chain_local
 from .common import _extract_next_url, _parse_workspace_from_auth_cookie, _otp_verify_loop, _create_account_about_you
 from .oauth import generate_oauth_url, submit_callback_url
 from utils.integrations.agent_identity import (
@@ -197,19 +197,11 @@ def run(
         target_continue_url = ""
 
         if not _skip_net_check():
-            try:
-                start = time.time()
-                res = s_reg.get(
-                    "https://cloudflare.com/cdn-cgi/trace",
-                    proxies=proxies, verify=_ssl_verify(), timeout=10,
-                )
-                elapsed = time.time() - start
-                loc = (re.search(r"^loc=(.+)$", res.text, re.MULTILINE) or [None, None])[1]
-                if loc in ("CN", "HK"):
-                    raise RuntimeError(f"当前{proxies}代理所在地不支持 OpenAI ({loc})")
+            ok, loc, elapsed, error = _preflight_proxy(s_reg, proxies)
+            if ok:
                 print(f"[{cfg.ts()}] [INFO] 节点测活成功！地区: {loc} | 延迟: {elapsed:.2f}s")
-            except Exception as e:
-                print(f"[{cfg.ts()}] [ERROR] 代理网络检查失败: {e}")
+            else:
+                print(f"[{cfg.ts()}] [ERROR] 代理网络检查失败（已重试 1 次）: {error}")
                 return None, None
         try:
             s_reg.close()

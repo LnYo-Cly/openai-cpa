@@ -2,6 +2,7 @@ import os
 import uuid
 import random
 import time
+import re
 import urllib.parse
 from typing import Any, Dict, Optional, Tuple
 
@@ -17,6 +18,27 @@ def _ssl_verify() -> bool:
 def _skip_net_check() -> bool:
     flag = os.getenv("SKIP_NET_CHECK", "0").strip().lower()
     return flag in {"1", "true", "yes", "on"}
+
+
+def _preflight_proxy(session: requests.Session, proxies: Any) -> Tuple[bool, Optional[str], float, str]:
+    """Accept one transient TLS reset before discarding an otherwise usable exit."""
+    last_error = ""
+    for attempt in range(2):
+        started = time.time()
+        try:
+            response = session.get(
+                "https://cloudflare.com/cdn-cgi/trace",
+                proxies=proxies, verify=_ssl_verify(), timeout=10,
+            )
+            loc = (re.search(r"^loc=(.+)$", response.text, re.MULTILINE) or [None, None])[1]
+            if loc in ("CN", "HK"):
+                return False, loc, 0.0, f"当前{proxies}代理所在地不支持 OpenAI ({loc})"
+            return True, loc, time.time() - started, ""
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt == 0:
+                time.sleep(0.3)
+    return False, None, 0.0, last_error
 
 
 def _to_int(v: Any) -> int:
