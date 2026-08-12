@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Optional, Tuple
+
+from curl_cffi import requests
 
 from utils import config as cfg
 from utils.email_providers.mail_service import (
@@ -205,6 +208,24 @@ def run(
         session_cookies.setdefault("sso-rw", sso)
         _log("SSO 提取成功", email)
 
+        account_state = inspect_sso_account_state(session_cookies, proxy=proxy or "")
+        if account_state["found"]:
+            bot_flag = account_state.get("bot_flag_source")
+            if bot_flag is None:
+                iq_status = "账号智商状态未知"
+            else:
+                iq_status = "账号智商正常" if bot_flag == 0 else f"账号已降智({bot_flag})，可能需更换 IP"
+            deny_status = "被拒(死号)" if account_state.get("denied") else "通过"
+            risk = account_state.get("risk")
+            _log(f"状态: {iq_status}，注册: {deny_status}，风险值: {risk if risk is not None else '无'}", email)
+            if account_state.get("denied") or (
+                bot_flag not in (None, 0) and getattr(cfg, "DISCARD_ON_DOWNGRADE", True)
+            ):
+                _log("触发风控拒绝或降智丢弃规则，账号已作废不入库", email)
+                return None, None
+        else:
+            _log(f"账号状态检测失败: {account_state['error']}，继续 OAuth", email)
+
         # Grok Web is an optional attachment of the Grok2API warehouse. Whether
         # this succeeds or fails, Build OAuth and the normal Build import continue.
         _import_grok_web_before_oauth(sso, email, run_ctx)
@@ -259,3 +280,62 @@ def run(
         if email:
             set_last_email(email)
         return None, None
+
+
+def _parse_grok_account_state(html_text: str) -> dict:
+    raw = str(html_text or "")
+    result = {"found": False, "bot_flag_source": None, "bot_flag_details": "", "policy": "", "risk": None, "event": "", "denied": False, "error": ""}
+    if "Just a moment" in raw or "cf-browser-verification" in raw or "cf-turnstile" in raw:
+        result["error"] = "被 CF 拦截"
+        return result
+    if "Sign in to xAI" in raw or "sign in" in raw.lower():
+        result["error"] = "SSO 无效"
+        return result
+
+    normalized = raw.replace('\\"', '"')
+    source_match = re.search(r'botFlagSource"\s*:\s*(null|-?\d+|"[^"]*")', normalized)
+    details_match = re.search(r'botFlagDetails"\s*:\s*(?:null|"([^"]*)")', normalized)
+    if source_match and source_match.group(1) != "null":
+        value = source_match.group(1).strip('"')
+        try:
+            result["bot_flag_source"] = int(value)
+        except ValueError:
+            result["bot_flag_source"] = value
+    details = details_match.group(1) if details_match and details_match.group(1) else ""
+    result["bot_flag_details"] = details
+    fields = {}
+    for item in details.split(","):
+        key, separator, value = item.partition("=")
+        if separator and key.strip():
+            fields[key.strip().lower()] = value.strip()
+    try:
+        if fields.get("risk"):
+            result["risk"] = float(fields["risk"])
+    except ValueError:
+        pass
+    result["policy"] = fields.get("policy", "").lower()
+    result["event"] = fields.get("event", "")
+    result["denied"] = result["policy"] == "deny" and result["event"] == "$registration"
+    result["found"] = bool(source_match or details_match)
+    if not result["found"]:
+        result["error"] = "未找到 botFlag 字段"
+    return result
+
+
+def inspect_sso_account_state(session_cookies: dict, proxy: str = "") -> dict:
+    result = {"status_code": 0, "found": False, "bot_flag_source": None, "bot_flag_details": "", "policy": "", "risk": None, "event": "", "denied": False, "error": ""}
+    try:
+        response = requests.get(
+            "https://grok.com/", cookies=session_cookies,
+            proxies={"http": proxy, "https": proxy} if proxy else {},
+            impersonate="chrome", timeout=15,
+        )
+        result["status_code"] = response.status_code
+        if response.status_code >= 400:
+            suffix = " (可能是 Cloudflare 限制)" if response.status_code in (403, 429, 503) else ""
+            result["error"] = f"请求失败 (HTTP {response.status_code}){suffix}"
+            return result
+        result.update(_parse_grok_account_state(response.text))
+    except Exception as exc:
+        result["error"] = f"请求异常 ({exc})"
+    return result

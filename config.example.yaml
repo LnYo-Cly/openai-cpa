@@ -501,6 +501,7 @@ plus_activation:
   shop_dujiao_product_id: 1                             # 商品 ID
   shop_dujiao_sku_id: 1                                 # SKU ID
 enable_codex_agent_identity: false
+discard_on_downgrade: true
 
 # [可选插件] 仅当 plugin/*/manifest.json 存在时生效
 domain_register:

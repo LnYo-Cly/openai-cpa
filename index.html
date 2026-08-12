@@ -5510,6 +5510,18 @@
                                         </p>
                                     </div>
 
+                                    <div class="bg-red-50/40 p-5 md:p-6 rounded-2xl border border-red-100 shadow-inner">
+                                        <label class="block text-red-800 text-xs font-black uppercase tracking-wider mb-3">Grok 账号风控处理</label>
+                                        <label class="relative inline-flex items-center cursor-pointer group w-full">
+                                            <input type="checkbox" v-model="config.discard_on_downgrade" @change="saveConfig" class="sr-only peer">
+                                            <div class="relative w-11 h-6 shrink-0 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500 shadow-inner"></div>
+                                            <span class="ml-4 text-sm font-black text-red-900 tracking-wide">降智号立即作废丢弃</span>
+                                        </label>
+                                        <p class="text-[11px] text-red-700/80 mt-3 font-medium bg-red-100/50 px-3 py-1.5 rounded-lg border border-red-200 shadow-sm inline-block">
+                                            注册取得 SSO 后检测账号状态；关闭时仍检测并记录，但不会因降智中止入库。死号始终丢弃。
+                                        </p>
+                                    </div>
+
                                 </div>
                             </div>
                             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-slate-200/60 border-t-8 border-t-amber-400 bg-gradient-to-br from-amber-50/30 to-white">

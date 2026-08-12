@@ -198,6 +198,7 @@ MAIL_DOMAIN_PREFER_LOW_FAILURE_MODE: bool = False
 MAIL_DOMAIN_FAILURE_TYPES: list[str] = ["discarded_email"]
 MAIL_DOMAIN_FAIL_THRESHOLD: int = 3
 MAIL_DOMAIN_FAIL_COOLDOWN_SEC: int = 600
+DISCARD_ON_DOWNGRADE: bool = True
 GPTMAIL_BASE: str = ""
 ADMIN_AUTH: str = ""
 IMAP_SERVER: str = ""
@@ -537,7 +538,7 @@ def reload_all_configs(new_config_dict=None):
     global REG_MODE
     global REG_PROVIDER
     # Grok 仅加载可配置项；其余固定常量不在此处改写
-    global GROK_OAUTH_TIMEOUT
+    global GROK_OAUTH_TIMEOUT, DISCARD_ON_DOWNGRADE
     global LOCAL_MS_ENABLE_FISSION, LOCAL_MS_MASTER_EMAIL, LOCAL_MS_PASSWORD, LOCAL_MS_CLIENT_ID, LOCAL_MS_REFRESH_TOKEN, LOCAL_MS_POOL_FISSION
     global LOCAL_MS_SUFFIX_MODE, LOCAL_MS_SUFFIX_LEN_MIN, LOCAL_MS_SUFFIX_LEN_MAX
     global DB_TYPE, MYSQL_CFG
@@ -679,6 +680,7 @@ def reload_all_configs(new_config_dict=None):
     WEB_PASSWORD = str(_c.get("web_password", "admin")).strip()
     RETAIN_REG_ONLY = safe_bool(_c.get("retain_reg_only", False))
     ENABLE_CODEX_AGENT_IDENTITY = safe_bool(_c.get("enable_codex_agent_identity", False))
+    DISCARD_ON_DOWNGRADE = safe_bool(_c.get("discard_on_downgrade", True), default=True)
 
     EMAIL_API_MODE = _c.get("email_api_mode", "cloudflare_temp_email")
     MAIL_DOMAINS = _c.get("mail_domains", "")
